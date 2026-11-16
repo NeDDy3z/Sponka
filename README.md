@@ -4,11 +4,11 @@
 <img src="assets/icon.png" alt="sponka icon" width="120" />
 
 # sponka
-
-**A vector-based handwriting-first notebook, e-reader, infinite canvas, pixel-based sketch *(soon)*, and notes management app for Android.**  
+### **Introducing sponka…**
+**a vector-based handwriting-first notebook, e-reader, infinite canvas, pixel-based sketch *(soon)*, and notes management app for Android.**  
 Built on [xnotes](https://github.com/shardulvs/xnotes-android), ready for so much more.
 
-*Introducing sponka… App icon by [@failure-404](https://github.com/failure-404).*
+*App icon by [@failure-404](https://github.com/failure-404).*
 
 [![Release](https://img.shields.io/github/v/release/NeDDy3z/n-notes?style=flat-square&color=blue)](https://github.com/NeDDy3z/n-notes/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-orange.svg?style=flat-square)](LICENSE)
