@@ -1,21 +1,14 @@
 package com.xnotes.core.text
 
-import org.json.JSONObject
-
-/**
- * How one math model misreads one user's handwriting: for each token the model put out, how often
- * the user meant which token instead. Learned from training formulas and from edits of converted
- * formulas, then used to fix new results and to offer alternatives.
- */
+/** How often this user meant which token when a math model read another, used to fix and vary results. */
 class MathCorrections {
 
     /** recognized token -> meant token -> times seen; meant == recognized counts a correct read. */
     private val seen = HashMap<String, HashMap<String, Int>>()
 
-    fun learn(recognized: String, meant: String) = count(recognized, meant, +1)
-
-    /** Takes back an earlier [learn] of the same pair, so a formula edited twice counts once. */
-    fun unlearn(recognized: String, meant: String) = count(recognized, meant, -1)
+    fun learn(recognized: String, meant: String) {
+        for ((r, m) in pairs(recognized, meant)) seen.getOrPut(r) { HashMap() }.merge(m, 1, Int::plus)
+    }
 
     /** [latex] with every token swapped for what this user usually means by it. */
     fun apply(latex: String): String = RecognizedLatex.join(RecognizedLatex.tokens(latex).map { best(it) ?: it })
@@ -40,8 +33,6 @@ class MathCorrections {
             .take(max)
     }
 
-    val isEmpty: Boolean get() = seen.values.all { m -> m.values.all { it <= 0 } }
-
     /** A swap is trusted once seen twice and more often than the token was read right. */
     private fun best(token: String): String? {
         val m = seen[token] ?: return null
@@ -50,27 +41,10 @@ class MathCorrections {
         return meant.takeIf { n >= 2 && n > right }
     }
 
-    private fun count(recognized: String, meant: String, sign: Int) {
-        for ((r, m) in pairs(recognized, meant)) {
-            val row = seen.getOrPut(r) { HashMap() }
-            val n = (row[m] ?: 0) + sign
-            if (n <= 0) row.remove(m) else row[m] = n
-            if (row.isEmpty()) seen.remove(r)
-        }
-    }
-
-    fun toJson(): JSONObject = JSONObject().apply {
-        for ((r, row) in seen.toSortedMap()) put(r, JSONObject().apply { for ((m, n) in row.toSortedMap()) put(m, n) })
-    }
-
     /** The top reading of [candidates] (the model's, best first) after corrections, and others to offer. */
     class Suggestion(val raw: String, val best: String, val variants: List<String>)
 
-    /**
-     * [want] or more alternatives where they exist: the model's other readings (corrected and as
-     * they came), its top reading uncorrected, then single-token swaps. [renders] drops LaTeX that
-     * cannot be set.
-     */
+    /** Up to [want] or more alternatives: other readings, the uncorrected top one, then single-token swaps. */
     fun suggest(candidates: List<String>, renders: (String) -> Boolean, want: Int = 3): Suggestion? {
         val raw = candidates.firstOrNull() ?: return null
         val best = apply(raw)
@@ -97,26 +71,7 @@ class MathCorrections {
             "<" to listOf("\\leq"), ">" to listOf("\\geq"), "\\leq" to listOf("<"), "\\geq" to listOf(">"),
         )
 
-        /** Each count the higher of [a]'s and [b]'s: what two devices learned, merged without double counting. */
-        fun max(a: MathCorrections, b: MathCorrections): MathCorrections = MathCorrections().apply {
-            for (src in listOf(a, b)) for ((r, row) in src.seen) for ((m, n) in row) {
-                val mine = seen.getOrPut(r) { HashMap() }
-                mine[m] = maxOf(mine[m] ?: 0, n)
-            }
-        }
-
-        fun fromJson(o: JSONObject): MathCorrections = MathCorrections().apply {
-            for (r in o.keys()) {
-                val row = o.getJSONObject(r)
-                seen[r] = HashMap<String, Int>().apply { for (m in row.keys()) put(m, row.getInt(m)) }
-            }
-        }
-
-        /**
-         * One-to-one token pairs from a Levenshtein alignment of the two formulas. Inserted and
-         * dropped tokens are skipped: they are new content more often than a misread. A rewrite
-         * (more than half the tokens changed, and more than one) teaches nothing.
-         */
+        /** Token pairs from a Levenshtein alignment; insertions are skipped and a rewrite teaches nothing. */
         internal fun pairs(recognized: String, meant: String): List<Pair<String, String>> {
             val a = RecognizedLatex.tokens(recognized)
             val b = RecognizedLatex.tokens(meant)

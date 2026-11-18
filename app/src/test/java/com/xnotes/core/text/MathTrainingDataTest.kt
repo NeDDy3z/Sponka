@@ -46,22 +46,35 @@ class MathTrainingDataTest {
         val b = MathTrainingData.fromJson(JSONObject(a.toJson().toString()))
         b.deleteSession("s2")
         b.add(sample("4", "s3", "y"))
-        a.usage("m").learn("u", "\\mu")
-        b.usage("m").learn("u", "\\mu")
         a.merge(b)
         assertEquals(setOf("1", "2", "4"), a.samples().map { it.id }.toSet())
-        // Both devices learned the same pick once; merging must not make it twice.
-        assertEquals("u", a.corrections("m").apply("u"))
-        a.usage("m").learn("u", "\\mu")
-        assertEquals("\\mu", a.corrections("m").apply("u"))
         a.merge(MathTrainingData.fromJson(JSONObject(a.toJson().toString())))
         assertEquals(3, a.samples().size)
     }
 
-    @Test fun mergedUsageKeepsHigherCount() {
-        val a = MathCorrections().apply { learn("u", "\\mu") }
-        val b = MathCorrections().apply { repeat(2) { learn("u", "\\mu") } }
-        assertEquals("\\mu", MathCorrections.max(a, b).apply("u"))
-        assertEquals("u", MathCorrections.max(a, a).apply("u"))
+    @Test fun mergedUsageCountsEachPickOnce() {
+        val a = MathTrainingData().apply { learnUsage("m", "u", "\\mu") }
+        val b = MathTrainingData.fromJson(JSONObject(a.toJson().toString()))
+        a.merge(b)
+        assertEquals("u", a.corrections("m").apply("u"))
+        b.learnUsage("m", "u", "\\mu")
+        a.merge(b)
+        assertEquals("\\mu", a.corrections("m").apply("u"))
+    }
+
+    @Test fun unlearnSurvivesMergeWithOlderCopy() {
+        val a = MathTrainingData().apply { repeat(2) { learnUsage("m", "u", "\\mu") } }
+        val older = MathTrainingData.fromJson(JSONObject(a.toJson().toString()))
+        a.unlearnUsage("m", "u", "\\mu")
+        a.merge(older)
+        assertEquals("u", a.corrections("m").apply("u"))
+    }
+
+    @Test fun deleteAllForgetsUsage() {
+        val a = MathTrainingData().apply { repeat(2) { learnUsage("m", "u", "\\mu") } }
+        val older = MathTrainingData.fromJson(JSONObject(a.toJson().toString()))
+        a.deleteAll()
+        a.merge(older)
+        assertEquals("u", a.corrections("m").apply("u"))
     }
 }

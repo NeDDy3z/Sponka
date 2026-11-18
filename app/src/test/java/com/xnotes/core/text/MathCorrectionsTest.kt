@@ -41,21 +41,6 @@ class MathCorrectionsTest {
         assertEquals("a+b", c.variants("a+b").first())
     }
 
-    @Test fun unlearnUndoesLearn() {
-        val c = MathCorrections()
-        c.learn("a+b", "\\alpha+b")
-        c.unlearn("a+b", "\\alpha+b")
-        assertTrue(c.isEmpty)
-        assertEquals("{}", c.toJson().toString())
-    }
-
-    @Test fun jsonRoundTrip() {
-        val c = MathCorrections()
-        repeat(2) { c.learn("x+y", "x\\times y") }
-        val back = MathCorrections.fromJson(org.json.JSONObject(c.toJson().toString()))
-        assertEquals("x\\times y", back.apply("x+y"))
-    }
-
     @Test fun lookalikesGiveVariantsBeforeAnyTraining() {
         assertEquals(listOf("\\times^{2}", "X^{2}", "\\chi^{2}"), MathCorrections().variants("x^{2}"))
     }

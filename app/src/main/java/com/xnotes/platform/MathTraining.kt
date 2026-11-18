@@ -59,30 +59,21 @@ object MathTraining {
     @Synchronized
     fun unlearnedCount(context: Context, model: String): Int = data(context).unlearned(model).size
 
-    /** The user picked [meant] for what model [model] read as [raw]. */
-    @Synchronized
-    fun learn(context: Context, model: String, raw: String, meant: String) {
-        data(context).usage(model).learn(raw, meant)
-        save(context)
-    }
-
     /** A formula the model made went from [from] to [to] (an edit, or its undo). */
     @Synchronized
     fun relearn(context: Context, origin: MathOrigin, from: String, to: String) {
-        val c = data(context).usage(origin.model)
-        c.unlearn(origin.raw, from)
-        c.learn(origin.raw, to)
+        val d = data(context)
+        d.unlearnUsage(origin.model, origin.raw, from)
+        d.learnUsage(origin.model, origin.raw, to)
         save(context)
     }
 
     fun newSession(): String = UUID.randomUUID().toString()
 
-    private val worker = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    /** One at a time: recognition holds the model lock anyway, and samples keep their order. */
+    private val worker = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
 
-    /**
-     * Recognize a training formula and [record] it, in the background and in order, so the user
-     * can keep writing; it finishes even if the training screen closes. Nothing read, nothing kept.
-     */
+    /** Recognize a training formula and [record] it in the background, even if the training screen closes. */
     fun trainLater(context: Context, model: String, session: String, latex: String, strokes: List<Stroke>, bounds: Rect) {
         val app = context.applicationContext
         worker.launch {

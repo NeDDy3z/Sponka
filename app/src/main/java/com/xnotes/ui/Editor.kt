@@ -931,7 +931,6 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                     return@launch
                 }
                 val box = controller.replaceInkWithMath(sel, suggestion.best, com.xnotes.core.model.MathOrigin(model, suggestion.raw)) ?: return@launch
-                launch(Dispatchers.IO) { com.xnotes.platform.MathTraining.learn(appContext, model, suggestion.raw, suggestion.best) }
                 mathChoices = MathChoices(box, suggestion.variants).takeIf { suggestion.variants.isNotEmpty() }
             } finally {
                 mathConverting--

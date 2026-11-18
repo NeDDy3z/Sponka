@@ -4,12 +4,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * Everything the math models learned from this user, as one mergeable record: every training
- * formula they wrote (kept so any model can learn from it), which model read each one as what,
- * and per model the corrections learned in use (picked readings, edited formulas).
- *
- * Training is stored as facts rather than counts, so two devices merge by union without counting
- * anything twice; deleted formulas leave their id behind so a merge does not bring them back.
+ * What the math models learned from this user, kept as facts with ids so devices merge by union;
+ * a deleted fact leaves its id behind so a merge does not bring it back.
  */
 class MathTrainingData {
 
@@ -32,8 +28,8 @@ class MathTrainingData {
     /** model -> sample id -> what the model read. */
     private val read = HashMap<String, HashMap<String, String>>()
 
-    /** model -> corrections learned outside training. */
-    private val usage = HashMap<String, MathCorrections>()
+    /** model -> fact id -> (what the model read, what the user meant), learned outside training. */
+    private val usage = HashMap<String, HashMap<String, Pair<String, String>>>()
 
     fun samples(): List<Sample> = samples.values.toList()
 
@@ -43,7 +39,8 @@ class MathTrainingData {
 
     /** Model [model]'s corrections: everything its training taught plus what use taught it. */
     fun corrections(model: String): MathCorrections {
-        val c = usage[model]?.let { MathCorrections.fromJson(it.toJson()) } ?: MathCorrections()
+        val c = MathCorrections()
+        for ((raw, meant) in usage[model].orEmpty().values) c.learn(raw, meant)
         for ((id, raw) in read[model].orEmpty()) samples[id]?.let { c.learn(raw, it.latex) }
         return c
     }
@@ -63,41 +60,45 @@ class MathTrainingData {
         read.getOrPut(model) { HashMap() }[sampleId] = raw
     }
 
-    fun usage(model: String): MathCorrections = usage.getOrPut(model) { MathCorrections() }
+    /** In use, model [model]'s [raw] turned out to mean [meant]. */
+    fun learnUsage(model: String, raw: String, meant: String) {
+        usage.getOrPut(model) { HashMap() }[java.util.UUID.randomUUID().toString()] = raw to meant
+    }
+
+    /** Takes back one earlier [learnUsage] of the same pair, if there is one. */
+    fun unlearnUsage(model: String, raw: String, meant: String) {
+        usage[model]?.entries?.firstOrNull { it.value == raw to meant }?.let { delete(it.key) }
+    }
 
     /** Forget training run [session] for every model. */
     fun deleteSession(session: String) {
         for (s in samples.values.filter { it.session == session }) delete(s.id)
     }
 
+    /** Forget all training and everything learned in use. */
     fun deleteAll() {
-        for (id in samples.keys.toList()) delete(id)
+        for (id in samples.keys + usage.values.flatMap { it.keys }) delete(id)
     }
 
     private fun delete(id: String) {
         samples.remove(id)
         deleted += id
         for (m in read.values) m.remove(id)
+        for (m in usage.values) m.remove(id)
     }
 
-    /**
-     * Take in [other] (another device's copy): formulas and readings join by id, deletions on
-     * either side win, and each learned-in-use count keeps the higher of the two.
-     */
+    /** Take in [other] (another device's copy): everything joins by id and deletions on either side win. */
     fun merge(other: MathTrainingData) {
         deleted += other.deleted
         for (id in deleted) delete(id)
         for (s in other.samples.values) add(s)
         for ((model, m) in other.read) for ((id, raw) in m) if (id !in deleted) read.getOrPut(model) { HashMap() }.putIfAbsent(id, raw)
-        for ((model, c) in other.usage) {
-            val mine = usage[model]
-            usage[model] = if (mine == null) MathCorrections.fromJson(c.toJson()) else MathCorrections.max(mine, c)
-        }
+        for ((model, m) in other.usage) for ((id, pair) in m) if (id !in deleted) usage.getOrPut(model) { HashMap() }.putIfAbsent(id, pair)
     }
 
     /** Written in a fixed order, so equal data gives equal text and sync can tell nothing changed. */
     fun toJson(): JSONObject = JSONObject()
-        .put("version", 1)
+        .put("version", 2)
         .put(
             "samples",
             JSONArray(
@@ -111,7 +112,7 @@ class MathTrainingData {
         )
         .put("deleted", JSONArray(deleted.sorted()))
         .put("read", JSONObject(read.mapValues { (_, r) -> JSONObject(r.toSortedMap() as Map<*, *>) }.toSortedMap() as Map<*, *>))
-        .put("usage", JSONObject(usage.mapValues { (_, c) -> c.toJson() }.toSortedMap() as Map<*, *>))
+        .put("usage", JSONObject(usage.mapValues { (_, m) -> JSONObject(m.mapValues { (_, p) -> JSONArray(listOf(p.first, p.second)) }.toSortedMap() as Map<*, *>) }.toSortedMap() as Map<*, *>))
 
     companion object {
 
@@ -136,7 +137,13 @@ class MathTrainingData {
                     for (id in row.keys()) if (id !in deleted) learned(m, id, row.getString(id))
                 }
             }
-            o.optJSONObject("usage")?.let { u -> for (m in u.keys()) usage[m] = MathCorrections.fromJson(u.getJSONObject(m)) }
+            // Version 1 kept usage as counts, which cannot merge; that early data is dropped.
+            if (o.optInt("version") >= 2) o.optJSONObject("usage")?.let { u ->
+                for (m in u.keys()) {
+                    val row = u.getJSONObject(m)
+                    for (id in row.keys()) if (id !in deleted) row.getJSONArray(id).let { usage.getOrPut(m) { HashMap() }[id] = it.getString(0) to it.getString(1) }
+                }
+            }
         }
     }
 }
