@@ -1428,7 +1428,7 @@
     <string name="math_model_license">Licencia: %1$s</string>
     <string name="math_model_website">Sitio web</string>
     <string name="math_model_size">Descarga de %1$d MB, %2$d MB en el dispositivo</string>
-    <string name="math_model_specs">Se recomiendan %1$s GB de RAM (mínimo %2$s GB). Unos %3$s s por fórmula en un teléfono de gama media.</string>
+    <string name="math_model_specs">Se recomiendan %1$s GB de RAM (mínimo %2$s GB). Unos %3$s s por fórmula en un teléfono de gama media. Los resultados pueden variar según el dispositivo.</string>
     <string name="math_model_speed_here">En este dispositivo: unos %1$s s por fórmula</string>
     <string name="math_model_low_ram">Este dispositivo tiene %1$s GB de RAM, menos de lo recomendado. El reconocimiento puede ser lento o fallar.</string>
     <string name="math_model_update">Actualizar a %1$s (%2$d MB)</string>

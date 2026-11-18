@@ -1436,7 +1436,7 @@
     <string name="math_model_license">License: %1$s</string>
     <string name="math_model_website">Website</string>
     <string name="math_model_size">Download %1$d MB, %2$d MB on the device</string>
-    <string name="math_model_specs">Recommended %1$s GB RAM (at least %2$s GB). About %3$s s per formula on a mid-range phone.</string>
+    <string name="math_model_specs">Recommended %1$s GB RAM (at least %2$s GB). About %3$s s per formula on a mid-range phone. Results may vary by device.</string>
     <string name="math_model_speed_here">On this device: about %1$s s per formula</string>
     <string name="math_model_low_ram">This device has %1$s GB RAM, less than recommended. Recognition may be slow or fail.</string>
     <string name="math_model_update">Update to %1$s (%2$d MB)</string>

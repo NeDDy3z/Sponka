@@ -1177,7 +1177,7 @@
     <string name="math_model_license">许可证：%1$s</string>
     <string name="math_model_website">网站</string>
     <string name="math_model_size">下载 %1$d MB，设备上占用 %2$d MB</string>
-    <string name="math_model_specs">建议 %1$s GB 内存（至少 %2$s GB）。在中端手机上每个公式约 %3$s 秒。</string>
+    <string name="math_model_specs">建议 %1$s GB 内存（至少 %2$s GB）。在中端手机上每个公式约 %3$s 秒。实际结果因设备而异。</string>
     <string name="math_model_speed_here">在此设备上：每个公式约 %1$s 秒</string>
     <string name="math_model_low_ram">此设备有 %1$s GB 内存，低于建议值。识别可能很慢或失败。</string>
     <string name="math_model_update">更新到 %1$s（%2$d MB）</string>
