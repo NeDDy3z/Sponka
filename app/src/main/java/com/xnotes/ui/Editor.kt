@@ -271,6 +271,9 @@ private const val COLOR_NAMES_FILE = "color-names.json"
 /** The most a settings backup's entry may hold: fonts are the largest thing in one. */
 private const val SETTINGS_ENTRY_MAX = 32L * 1024 * 1024
 
+/** The math models' training inside a settings backup. */
+private const val MATH_TRAINING_ENTRY = "math-training.json"
+
 /** The top folder's sidecar file naming the notes pinned to the top of it. */
 private const val PINS_FILE = "pins.json"
 
@@ -866,25 +869,83 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         }
     }
 
-    override val canConvertToMath: Boolean get() = com.xnotes.platform.MathOcr.isInstalled(appContext)
+    override val canConvertToMath: Boolean get() = com.xnotes.platform.MathOcr.isInstalled(appContext, settings.prefs.mathModel)
 
-    override fun convertSelectionToMath() {
-        val sel = controller.inkSelection() ?: return
-        android.widget.Toast.makeText(appContext, appContext.getString(R.string.ocr_recognizing_math), android.widget.Toast.LENGTH_SHORT).show()
+    /** How many Convert to math runs are still recognizing; the note shows a small progress pill meanwhile. */
+    var mathConverting by mutableStateOf(0)
+        private set
+
+    /** The other readings of the formula Convert to math last made, shown under it while it stays selected. */
+    class MathChoices(val item: com.xnotes.core.model.TextItem, val variants: List<String>)
+
+    var mathChoices by mutableStateOf<MathChoices?>(null)
+        private set
+
+    /** Why the last Convert to math failed, shown on the note until dismissed or a few seconds pass. */
+    var mathError by mutableStateOf<String?>(null)
+        private set
+
+    fun dismissMathError() {
+        mathError = null
+    }
+
+    private fun showMathError(message: String) {
+        mathError = message
         autosaveScope.launch {
-            val latex = try {
-                withContext(Dispatchers.Default) { com.xnotes.platform.MathOcr.recognize(appContext, sel.strokes, sel.bounds) }
-            } catch (e: Throwable) {
-                android.widget.Toast.makeText(appContext, appContext.getString(R.string.ocr_math_failed, e.message), android.widget.Toast.LENGTH_LONG).show()
-                return@launch
-            }
-            if (latex.isBlank()) {
-                android.widget.Toast.makeText(appContext, appContext.getString(R.string.ocr_no_math), android.widget.Toast.LENGTH_SHORT).show()
-                return@launch
-            }
-            controller.replaceInkWithMath(sel, latex)
+            kotlinx.coroutines.delay(8_000)
+            if (mathError == message) mathError = null
         }
     }
+
+    /**
+     * Recognize the selected ink (and drawn shapes) in the background while the user keeps working,
+     * then put the best reading in its place, selected, with the other readings offered below it.
+     */
+    override fun convertSelectionToMath() {
+        val sel = controller.mathInkSelection() ?: return
+        val model = settings.prefs.mathModel
+        mathConverting++
+        autosaveScope.launch {
+            try {
+                val suggestion = try {
+                    withContext(Dispatchers.Default) {
+                        val readings = com.xnotes.platform.MathOcr.recognize(appContext, model, sel.strokes, sel.bounds)
+                        com.xnotes.platform.MathTraining.corrections(appContext, model)
+                            .suggest(readings, renders = { com.xnotes.platform.MathRendering.measure(it, 12.0, display = true) != null })
+                    }
+                } catch (e: Throwable) {
+                    // The runtime's own message runs to paragraphs; its first line says enough.
+                    val reason = (e.message ?: e.javaClass.simpleName).lineSequence().first().take(160)
+                    val name = com.xnotes.platform.MathOcr.catalog.value.firstOrNull { it.id == model }?.name ?: model
+                    showMathError(appContext.getString(R.string.math_convert_failed, name, reason))
+                    return@launch
+                }
+                if (suggestion == null) {
+                    showMathError(appContext.getString(R.string.ocr_no_math))
+                    return@launch
+                }
+                val box = controller.replaceInkWithMath(sel, suggestion.best, com.xnotes.core.model.MathOrigin(model, suggestion.raw)) ?: return@launch
+                launch(Dispatchers.IO) { com.xnotes.platform.MathTraining.learn(appContext, model, suggestion.raw, suggestion.best) }
+                mathChoices = MathChoices(box, suggestion.variants).takeIf { suggestion.variants.isNotEmpty() }
+            } finally {
+                mathConverting--
+            }
+        }
+    }
+
+    /** Swap the offered formula for [latex]: an ordinary formula edit, so it undoes and teaches like one. */
+    fun chooseMath(latex: String) {
+        val c = mathChoices ?: return
+        if (controller.singleSelectedText() === c.item) controller.setSelectedMath(latex)
+        mathChoices = null
+    }
+
+    fun dismissMathChoices() {
+        mathChoices = null
+    }
+
+    /** [mathChoices] while its formula is still the lone selection, else null. */
+    val shownMathChoices: MathChoices? get() = mathChoices?.takeIf { selectionMenu != null && controller.singleSelectedText() === it.item }
 
     /** Viewport rect to anchor the screenshot tool's "copy as image" menu, or null when hidden. */
     var screenshotMenu by mutableStateOf<com.xnotes.core.geometry.Rect?>(null)
@@ -1878,6 +1939,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         onViewSettingsChanged(com.xnotes.canvas.ViewSettings(), viewSettings)
         view.onKey = { e -> e.action == android.view.KeyEvent.ACTION_DOWN && handleKeyDown(e) }
         controller.clipboardHasImage = { clipboardImageUri() != null }
+        controller.onMathRelearn = { origin, from, to ->
+            autosaveScope.launch(Dispatchers.IO) { com.xnotes.platform.MathTraining.relearn(appContext, origin, from, to) }
+        }
         controller.onMarkupTap = { at, withLink -> tapMarkup(at, withLink) }
         controller.onTap = { at -> tapClosesNotePeek(at) }
         controller.onItemLinkTap = onItemLinkTap@{ pageIndex, pageLocal ->
@@ -10362,6 +10426,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         internal val fonts: List<Pair<String, ByteArray>>,
         internal val codeTheme: Pair<String?, ByteArray>?,
         internal val keepsBuiltInCodeTheme: Boolean,
+        /** The math models' training, merged into this device's on import. */
+        internal val mathTraining: org.json.JSONObject? = null,
     )
 
     /**
@@ -10392,6 +10458,11 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                 theme.inputStream().use { it.copyTo(zip) }
                 zip.closeEntry()
             }
+            if (com.xnotes.platform.MathTraining.file(appContext).exists()) {
+                zip.putNextEntry(java.util.zip.ZipEntry(MATH_TRAINING_ENTRY))
+                zip.write(com.xnotes.platform.MathTraining.json(appContext).toString().toByteArray(Charsets.UTF_8))
+                zip.closeEntry()
+            }
         }
     }
 
@@ -10400,24 +10471,26 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         var root: org.json.JSONObject? = null
         val fonts = ArrayList<Pair<String, ByteArray>>()
         var theme: ByteArray? = null
+        var training: org.json.JSONObject? = null
         java.util.zip.ZipInputStream(input).use { zis ->
             while (true) {
                 val entry = zis.nextEntry ?: break
                 val name = entry.name
-                val wanted = name == "settings.json" || name == "code-theme.toml" ||
+                val wanted = name == "settings.json" || name == "code-theme.toml" || name == MATH_TRAINING_ENTRY ||
                     (name.startsWith("fonts/") && name.count { it == '/' } == 1 && name.length > 6)
                 if (!wanted || entry.isDirectory) continue
                 val bytes = readAtMost(zis, SETTINGS_ENTRY_MAX) ?: return@runCatching null
                 when {
                     name == "settings.json" -> root = org.json.JSONObject(bytes.toString(Charsets.UTF_8))
                     name == "code-theme.toml" -> theme = bytes
+                    name == MATH_TRAINING_ENTRY -> training = runCatching { org.json.JSONObject(bytes.toString(Charsets.UTF_8)) }.getOrNull()
                     else -> fonts += name.removePrefix("fonts/") to bytes
                 }
             }
         }
         val r = root?.takeIf { it.optString("format") == com.xnotes.settings.SettingsBackup.FORMAT } ?: return@runCatching null
         val json = r.optJSONObject("settings") ?: return@runCatching null
-        SettingsBackup(json, fonts, theme?.let { r.optString("code_theme_name").ifEmpty { null } to it }, !r.optBoolean("code_theme", true))
+        SettingsBackup(json, fonts, theme?.let { r.optString("code_theme_name").ifEmpty { null } to it }, !r.optBoolean("code_theme", true), training)
     }.getOrNull()
 
     /** Up to [max] bytes of the zip entry [zis] stands at, or null when it holds more. */
@@ -10441,6 +10514,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      */
     fun applySettingsBackup(backup: SettingsBackup) {
         val merged = com.xnotes.settings.SettingsBackup.merged(settings.toJson(), backup.settings)
+        backup.mathTraining?.let { runCatching { com.xnotes.platform.MathTraining.merge(appContext, it) } }
         val next = runCatching { Settings.fromJson(merged) }.getOrNull() ?: run {
             message = appContext.getString(R.string.err_import_settings)
             return

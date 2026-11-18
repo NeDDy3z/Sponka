@@ -164,6 +164,7 @@ class EditorActivity : ComponentActivity() {
         com.xnotes.platform.TemplateLibrary.init(this)
         com.xnotes.ui.AudioPlayback.init(this)
         com.xnotes.ui.AudioRecording.init(this)
+        com.xnotes.platform.MathOcr.resume(this)
         setTheme(com.xnotes.R.style.Theme_Xnotes) // leave the launch theme behind
         applyFullscreen(!deviceHasDisplayCutout(this)) // provisional; reconciled once the editor loads prefs
         // The intent that started the task comes back whenever Android rebuilds it, from a saved state
@@ -1976,6 +1977,7 @@ private fun EditorPane(
                             )
                             com.xnotes.ui.CropOverlay(editor)
                             com.xnotes.ui.ScreenshotMenu(editor, onShare = actions.onShareImage)
+                            com.xnotes.ui.MathChoicesStrip(editor)
                             com.xnotes.ui.TextStyleBar(editor)
                             com.xnotes.ui.LongPressMenu(editor, onInsertImageAt = { c -> actions.onInsertImage(editor, c) })
                             com.xnotes.ui.FlowEditMenu(editor)
