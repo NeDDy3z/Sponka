@@ -93,6 +93,11 @@
             android:foregroundServiceType="dataSync" />
 
         <service
+            android:name=".platform.MathDownloadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <service
             android:name=".platform.RecordingService"
             android:exported="false"
             android:foregroundServiceType="microphone" />
