@@ -289,7 +289,7 @@ fun Onboarding(editor: Editor) {
                                     FieldLabel(stringResource(R.string.pref_ocr_handwriting_language))
                                     HandwritingLanguageControls(prefs.ocrLanguage) { update(prefs.copy(ocrLanguage = it)) }
                                     FieldLabel(stringResource(R.string.pref_ocr_math))
-                                    MathAddonControls(prefs.mathModel, { update(prefs.copy(mathModel = it)) }, onTrain = { practiceOpen = true })
+                                    MathAddonControls(prefs, ::update, onTrain = { practiceOpen = true })
                                 }
                                 OnboardingStep.TOOLBAR -> {
                                     SectionTitle(stringResource(R.string.pref_toolbar))

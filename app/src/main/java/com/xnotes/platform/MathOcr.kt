@@ -59,6 +59,9 @@ object MathOcr {
     /** The one the picker marks as recommended. */
     const val RECOMMENDED_MODEL = "texteller"
 
+    /** The picker's last option: an LLM behind an API the user sets up, see [MathLlm]. */
+    const val CUSTOM_LLM = "custom-llm"
+
     /** Picker order, best pick first; models not listed follow by name. */
     private val ORDER = listOf("texteller", "pix2text-mfr", "pp-formulanet-l")
 
@@ -126,7 +129,8 @@ object MathOcr {
         return model.takeIf { m -> m.files.all { File(dir, it.name).length() == it.installedSize } }
     }
 
-    fun isInstalled(context: Context, id: String): Boolean = supported && installed(context, id) != null
+    fun isInstalled(context: Context, id: String): Boolean =
+        if (id == CUSTOM_LLM) MathLlm.ready(context) else supported && installed(context, id) != null
 
     /** Sync [states] and [catalog] with what is on disk; a download in flight is left to report itself. */
     fun refresh(context: Context) {
@@ -448,6 +452,7 @@ object MathOcr {
      * first, or none when nothing came out. Blocks; call off the main thread.
      */
     fun recognize(context: Context, id: String, strokes: List<Stroke>, bounds: Rect): List<String> {
+        if (id == CUSTOM_LLM) return MathLlm.recognize(context, strokes, bounds)
         val start = System.nanoTime()
         val out = synchronized(lock) {
             idle?.cancel()
@@ -558,8 +563,38 @@ object MathOcr {
      * centered on white when it keeps the aspect, as a normalized CHW float image.
      */
     private fun render(strokes: List<Stroke>, bounds: Rect, input: MathModel.Input): FloatArray {
+        val bmp = inkBitmap(strokes, bounds, input.margin)
+        val w = bmp.width
+        val h = bmp.height
+        var fitted: Pair<Int, Int>? = null
+        val sized = if (input.keepAspect) {
+            val fit = minOf(input.width.toFloat() / w, input.height.toFloat() / h)
+            val sw = (w * fit).toInt().coerceIn(1, input.width)
+            val sh = (h * fit).toInt().coerceIn(1, input.height)
+            fitted = sw to sh
+            val small = Bitmap.createScaledBitmap(bmp, sw, sh, true)
+            Bitmap.createBitmap(input.width, input.height, Bitmap.Config.ARGB_8888).also {
+                Canvas(it).apply {
+                    drawColor(if (input.padding == MathModel.Padding.CENTER_BLACK) Color.BLACK else Color.WHITE)
+                    if (input.padding == MathModel.Padding.TOP_LEFT_MEAN) drawBitmap(small, 0f, 0f, null)
+                    else drawBitmap(small, ((input.width - sw) / 2).toFloat(), ((input.height - sh) / 2).toFloat(), null)
+                }
+                small.recycle()
+            }
+        } else {
+            Bitmap.createScaledBitmap(bmp, input.width, input.height, true)
+        }
+        bmp.recycle()
+        val px = IntArray(input.width * input.height)
+        sized.getPixels(px, 0, input.width, 0, 0, input.width, input.height)
+        sized.recycle()
+        return MathTokens.normalize(px, input, fitted.takeIf { input.padding == MathModel.Padding.TOP_LEFT_MEAN })
+    }
+
+    /** [strokes] black on white, glyphs about 160 px tall, with [margin] px of white around. */
+    internal fun inkBitmap(strokes: List<Stroke>, bounds: Rect, margin: Int): Bitmap {
         val scale = minOf(160.0 / maxOf(bounds.h, bounds.w / 10.0, 1.0), 2400.0 / maxOf(bounds.w, 1.0))
-        val pad = maxOf(input.margin, 2) // at least half the 4 px line, so edge strokes are not cut
+        val pad = maxOf(margin, 2) // at least half the 4 px line, so edge strokes are not cut
         val w = (bounds.w * scale).toInt() + 2 * pad
         val h = (bounds.h * scale).toInt() + 2 * pad
         val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
@@ -585,28 +620,6 @@ object MathOcr {
             for (i in 1 until n) path.lineTo(x(i), y(i))
             canvas.drawPath(path, paint)
         }
-        var fitted: Pair<Int, Int>? = null
-        val sized = if (input.keepAspect) {
-            val fit = minOf(input.width.toFloat() / w, input.height.toFloat() / h)
-            val sw = (w * fit).toInt().coerceIn(1, input.width)
-            val sh = (h * fit).toInt().coerceIn(1, input.height)
-            fitted = sw to sh
-            val small = Bitmap.createScaledBitmap(bmp, sw, sh, true)
-            Bitmap.createBitmap(input.width, input.height, Bitmap.Config.ARGB_8888).also {
-                Canvas(it).apply {
-                    drawColor(if (input.padding == MathModel.Padding.CENTER_BLACK) Color.BLACK else Color.WHITE)
-                    if (input.padding == MathModel.Padding.TOP_LEFT_MEAN) drawBitmap(small, 0f, 0f, null)
-                    else drawBitmap(small, ((input.width - sw) / 2).toFloat(), ((input.height - sh) / 2).toFloat(), null)
-                }
-                small.recycle()
-            }
-        } else {
-            Bitmap.createScaledBitmap(bmp, input.width, input.height, true)
-        }
-        bmp.recycle()
-        val px = IntArray(input.width * input.height)
-        sized.getPixels(px, 0, input.width, 0, 0, input.width, input.height)
-        sized.recycle()
-        return MathTokens.normalize(px, input, fitted.takeIf { input.padding == MathModel.Padding.TOP_LEFT_MEAN })
+        return bmp
     }
 }

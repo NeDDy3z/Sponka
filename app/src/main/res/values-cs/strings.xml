@@ -1571,4 +1571,20 @@
     <string name="onboarding_full_setup_text">Navíc vzhled, synchronizace, oprávnění, rozpoznávání písma a panel nástrojů.</string>
     <string name="math_download_channel">Stahování modelů</string>
     <string name="math_download_title">Stahuje se %1$s</string>
+    <string name="math_llm_option">Vlastní LLM API</string>
+    <string name="math_llm_description">Odeslat rukopis AI modelu podle vašeho výběru: veřejnému s API klíčem, nebo vlastnímu na vašem serveru. Model musí číst obrázky a používat formát OpenAI chat completions, který podporuje většina poskytovatelů i vlastních serverů.</string>
+    <string name="math_llm_url">URL API</string>
+    <string name="math_llm_url_hint">Příklady: OpenAI https://api.openai.com/v1 - Gemini https://generativelanguage.googleapis.com/v1beta/openai - Claude https://api.anthropic.com/v1 - OpenRouter https://openrouter.ai/api/v1 - Ollama http://&lt;počítač&gt;:11434/v1</string>
+    <string name="math_llm_insecure">Tato adresa není šifrovaná. Pro servery mimo domácí síť použijte https.</string>
+    <string name="math_llm_key">API klíč</string>
+    <string name="math_llm_key_hint">U většiny vlastních modelů není potřeba</string>
+    <string name="math_llm_model">Model</string>
+    <string name="math_llm_prompt">Prompt</string>
+    <string name="math_llm_prompt_reset">Obnovit prompt</string>
+    <string name="math_llm_test">Otestovat</string>
+    <string name="math_llm_testing">Odesílá se ukázkový vzorec...</string>
+    <string name="math_llm_test_ok">Funguje to. Ukázka byla přečtena jako: %1$s</string>
+    <string name="math_llm_test_failed">Test selhal: %1$s</string>
+    <string name="math_llm_privacy">Při převodu se rukopis odešle na tento server. API klíč zůstává v tomto zařízení.</string>
+    <string name="math_wip">Ve vývoji: tato funkce se stále vyvíjí a můžete narazit na problémy.</string>
 </resources>

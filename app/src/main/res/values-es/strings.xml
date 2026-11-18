@@ -1548,4 +1548,20 @@
     <string name="onboarding_full_setup_text">También tema, sincronización, permisos, reconocimiento de escritura y barra de herramientas.</string>
     <string name="math_download_channel">Descargas de modelos</string>
     <string name="math_download_title">Descargando %1$s</string>
+    <string name="math_llm_option">API de LLM personalizada</string>
+    <string name="math_llm_description">Envía la escritura a un modelo de IA que elijas: uno público con clave de API o uno alojado por ti. Debe leer imágenes y usar el formato de chat completions de OpenAI, que usan la mayoría de proveedores y servidores propios.</string>
+    <string name="math_llm_url">URL de la API</string>
+    <string name="math_llm_url_hint">Ejemplos: OpenAI https://api.openai.com/v1 - Gemini https://generativelanguage.googleapis.com/v1beta/openai - Claude https://api.anthropic.com/v1 - OpenRouter https://openrouter.ai/api/v1 - Ollama http://&lt;equipo&gt;:11434/v1</string>
+    <string name="math_llm_insecure">Esta dirección no está cifrada. Usa https para servidores fuera de tu red doméstica.</string>
+    <string name="math_llm_key">Clave de API</string>
+    <string name="math_llm_key_hint">No hace falta en la mayoría de modelos propios</string>
+    <string name="math_llm_model">Modelo</string>
+    <string name="math_llm_prompt">Instrucción</string>
+    <string name="math_llm_prompt_reset">Restablecer instrucción</string>
+    <string name="math_llm_test">Probar</string>
+    <string name="math_llm_testing">Enviando una fórmula de ejemplo...</string>
+    <string name="math_llm_test_ok">Funciona. El ejemplo se leyó como: %1$s</string>
+    <string name="math_llm_test_failed">La prueba falló: %1$s</string>
+    <string name="math_llm_privacy">Tu escritura se envía a este servidor al convertirla. La clave de API se queda en este dispositivo.</string>
+    <string name="math_wip">En desarrollo: esta función aún se está desarrollando y puede que encuentres problemas.</string>
 </resources>

@@ -103,6 +103,7 @@ import com.xnotes.core.shapes.ShapePresets
 import com.xnotes.core.tools.InkPalette
 import com.xnotes.core.util.NameTemplate
 import com.xnotes.platform.HandwritingOcr
+import com.xnotes.platform.MathLlm
 import com.xnotes.platform.MathModel
 import com.xnotes.platform.MathOcr
 import com.xnotes.platform.MathTraining
@@ -387,7 +388,7 @@ fun PreferencesPane(
                 FieldLabel(stringResource(R.string.pref_ocr_handwriting_language))
                 HandwritingLanguageControls(prefs.ocrLanguage) { update(prefs.copy(ocrLanguage = it)) }
                 FieldLabel(stringResource(R.string.pref_ocr_math))
-                MathAddonControls(prefs.mathModel, { update(prefs.copy(mathModel = it)) }, onTrain = { mathPracticeOpen = true })
+                MathAddonControls(prefs, ::update, onTrain = { mathPracticeOpen = true })
             }
             if (shown(PrefCategory.NEW_NOTES)) {
                 if (all) HorizontalDivider(color = palette.border.toComposeColor())
@@ -615,7 +616,10 @@ fun PreferencesPane(
  * finishes, a dialog offers it (or learning from formulas written before).
  */
 @Composable
-internal fun MathAddonControls(selected: String, onSelect: (String) -> Unit, onTrain: (() -> Unit)? = null) {
+internal fun MathAddonControls(prefs: Preferences, update: (Preferences) -> Unit, onTrain: (() -> Unit)? = null) {
+    val selected = prefs.mathModel
+    val onSelect: (String) -> Unit = { update(prefs.copy(mathModel = it)) }
+    val custom = selected == MathOcr.CUSTOM_LLM
     val context = LocalContext.current
     val palette = LocalPalette.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
@@ -636,7 +640,10 @@ internal fun MathAddonControls(selected: String, onSelect: (String) -> Unit, onT
         return
     }
     val model = catalog.firstOrNull { it.id == selected } ?: catalog.firstOrNull() ?: return
-    val state = states[model.id] ?: MathOcr.State.Missing
+    val state = if (custom) MathOcr.State.Missing else states[model.id] ?: MathOcr.State.Missing
+    // What training and corrections are kept under, and whether the pick can convert yet.
+    val usedId = if (custom) MathOcr.CUSTOM_LLM else model.id
+    val usable = if (custom) prefs.mathLlmUrl.isNotBlank() && prefs.mathLlmModel.isNotBlank() else state == MathOcr.State.Installed
     val installedIds = catalog.filter { states[it.id] == MathOcr.State.Installed }.map { it.id }.toSet()
     val sizeMb = model.downloadBytes / 1_000_000
 
@@ -668,15 +675,16 @@ internal fun MathAddonControls(selected: String, onSelect: (String) -> Unit, onT
     Row(verticalAlignment = Alignment.CenterVertically) {
         val recommended = stringResource(R.string.math_model_recommended)
     OptionDropdown(
-        catalog.map { it.id to "${it.name} ${it.version}" + if (it.id == MathOcr.RECOMMENDED_MODEL) " ($recommended)" else "" },
-        model.id, installedIds, onSelect,
+        catalog.map { it.id to "${it.name} ${it.version}" + if (it.id == MathOcr.RECOMMENDED_MODEL) " ($recommended)" else "" } +
+            (MathOcr.CUSTOM_LLM to stringResource(R.string.math_llm_option)),
+        usedId, installedIds, MathOcr.CUSTOM_LLM, onSelect,
     )
         when (state) {
             MathOcr.State.Installed -> {
                 Text(stringResource(R.string.math_model_downloaded), color = palette.textDim.toComposeColor(), fontSize = 12.sp, modifier = Modifier.padding(start = 8.dp))
                 TextButton(onClick = { confirmDelete = true }) { Text(stringResource(R.string.delete), fontSize = 13.sp) }
             }
-            MathOcr.State.Missing ->
+            MathOcr.State.Missing -> if (!custom)
                 TextButton(onClick = { MathOcr.startDownload(context, model) }) { Text(stringResource(R.string.math_model_download, sizeMb), fontSize = 13.sp) }
             else -> Unit
         }
@@ -696,14 +704,14 @@ internal fun MathAddonControls(selected: String, onSelect: (String) -> Unit, onT
         }
         else -> Unit
     }
-    MathModelInfo(model)
-    if (state == MathOcr.State.Installed) {
-        val here = remember(model.id, states) { MathOcr.installed(context, model.id) }
+    if (custom) MathLlmControls(prefs, update) else MathModelInfo(model)
+    if (usable) {
+        val here = if (custom) null else remember(model.id, states) { MathOcr.installed(context, model.id) }
         if (here != null && MathModel.newer(model.version, here.version)) {
             TextButton(onClick = { MathOcr.startDownload(context, model) }) { Text(stringResource(R.string.math_model_update, model.version, sizeMb), fontSize = 13.sp) }
         }
-        val trained = remember(model.id, trainedVersion, learning) { MathTraining.trainedCount(context, model.id) }
-        val unlearned = remember(model.id, trainedVersion, learning) { MathTraining.unlearnedCount(context, model.id) }
+        val trained = remember(usedId, trainedVersion, learning) { MathTraining.trainedCount(context, usedId) }
+        val unlearned = remember(usedId, trainedVersion, learning) { MathTraining.unlearnedCount(context, usedId) }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 if (trained > 0) pluralStringResource(R.plurals.math_model_trained, trained, trained) else stringResource(R.string.math_model_untrained),
@@ -715,7 +723,7 @@ internal fun MathAddonControls(selected: String, onSelect: (String) -> Unit, onT
         if (progress != null) {
             Text(progress, color = palette.textDim.toComposeColor(), fontSize = 12.sp)
         } else if (unlearned > 0) {
-            TextButton(onClick = { learnFromSaved(model.id) }) { Text(stringResource(R.string.math_model_learn_saved, unlearned), fontSize = 13.sp) }
+            TextButton(onClick = { learnFromSaved(usedId) }) { Text(stringResource(R.string.math_model_learn_saved, unlearned), fontSize = 13.sp) }
         }
     }
     if (confirmDelete) {
@@ -746,6 +754,70 @@ internal fun MathAddonControls(selected: String, onSelect: (String) -> Unit, onT
             },
             dismissButton = { TextButton(onClick = { offerFor = null }) { Text(stringResource(R.string.math_training_later)) } },
         )
+    }
+}
+
+/**
+ * The custom LLM option: where the API is, the key (kept on this device), the model and the prompt,
+ * plus a test that sends a sample formula and shows what came back.
+ */
+@Composable
+private fun MathLlmControls(prefs: Preferences, update: (Preferences) -> Unit) {
+    val context = LocalContext.current
+    val palette = LocalPalette.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val dim = palette.textDim.toComposeColor()
+    var key by remember { mutableStateOf(MathLlm.key(context)) }
+    var testing by remember { mutableStateOf(false) }
+    var result by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
+    @Composable
+    fun field(label: String, value: String, placeholder: String, keyboard: KeyboardType = KeyboardType.Uri, mask: Boolean = false, lines: Int = 1, onChange: (String) -> Unit) {
+        OutlinedTextField(
+            value = value, onValueChange = onChange, singleLine = lines == 1, minLines = lines,
+            label = { Text(label) },
+            placeholder = { Text(placeholder, color = dim) },
+            keyboardOptions = KeyboardOptions(keyboardType = keyboard),
+            visualTransformation = if (mask) androidx.compose.ui.text.input.PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(stringResource(R.string.math_wip), color = palette.danger.toComposeColor(), fontSize = 12.sp)
+        Text(stringResource(R.string.math_llm_description), color = palette.text.toComposeColor(), fontSize = 12.sp)
+        field(stringResource(R.string.math_llm_url), prefs.mathLlmUrl, "https://api.openai.com/v1") { update(prefs.copy(mathLlmUrl = it.trim())) }
+        Text(stringResource(R.string.math_llm_url_hint), color = dim, fontSize = 12.sp)
+        if (MathLlm.insecure(prefs.mathLlmUrl)) Text(stringResource(R.string.math_llm_insecure), color = palette.danger.toComposeColor(), fontSize = 12.sp)
+        field(stringResource(R.string.math_llm_key), key, stringResource(R.string.math_llm_key_hint), KeyboardType.Password, mask = true) {
+            key = it.trim()
+            MathLlm.setKey(context, key)
+        }
+        field(stringResource(R.string.math_llm_model), prefs.mathLlmModel, "gpt-4o-mini") { update(prefs.copy(mathLlmModel = it.trim())) }
+        field(stringResource(R.string.math_llm_prompt), prefs.mathLlmPrompt, MathLlm.DEFAULT_PROMPT, KeyboardType.Text, lines = 3) { update(prefs.copy(mathLlmPrompt = it)) }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TextButton(
+                enabled = !testing && prefs.mathLlmUrl.isNotBlank() && prefs.mathLlmModel.isNotBlank(),
+                onClick = {
+                    testing = true
+                    result = null
+                    scope.launch {
+                        result = withContext(Dispatchers.IO) {
+                            runCatching { MathLlm.recognizePng(context, context.assets.open("math/llm-test.png").use { it.readBytes() }) }
+                                .fold({ true to it }, { false to (it.message ?: it.javaClass.simpleName) })
+                        }
+                        testing = false
+                    }
+                },
+            ) { Text(stringResource(R.string.math_llm_test), fontSize = 13.sp) }
+            if (prefs.mathLlmPrompt.isNotEmpty()) TextButton(onClick = { update(prefs.copy(mathLlmPrompt = "")) }) { Text(stringResource(R.string.math_llm_prompt_reset), fontSize = 13.sp) }
+        }
+        if (testing) Text(stringResource(R.string.math_llm_testing), color = dim, fontSize = 12.sp)
+        result?.let { (ok, text) ->
+            Text(
+                if (ok) stringResource(R.string.math_llm_test_ok, text) else stringResource(R.string.math_llm_test_failed, text),
+                color = if (ok) palette.text.toComposeColor() else palette.danger.toComposeColor(), fontSize = 12.sp,
+            )
+        }
+        Text(stringResource(R.string.math_llm_privacy), color = dim, fontSize = 12.sp)
     }
 }
 
@@ -820,7 +892,7 @@ internal fun HandwritingLanguageControls(selected: String, onSelect: (String) ->
     }
     val isDownloaded = selected in downloaded
     Row(verticalAlignment = Alignment.CenterVertically) {
-        OptionDropdown(options, selected, downloaded, onSelect)
+        OptionDropdown(options, selected, downloaded, onSelect = onSelect)
         TextButton(enabled = !busy && !isDownloaded, onClick = { act { HandwritingOcr.ensureModelDownloaded(selected) } }) {
             Text(stringResource(if (busy) R.string.working else R.string.download), fontSize = 13.sp)
         }
@@ -1710,7 +1782,7 @@ private fun MillimetreField(label: String, value: Double, onChange: (Double) -> 
 
 /** The shared preferences dropdown: a bordered field showing the current choice and a down chevron. */
 @Composable
-internal fun OptionDropdown(options: List<Pair<String, String>>, selectedId: String, checked: Set<String> = emptySet(), onSelect: (String) -> Unit) {
+internal fun OptionDropdown(options: List<Pair<String, String>>, selectedId: String, checked: Set<String> = emptySet(), dividerBefore: String? = null, onSelect: (String) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     val palette = LocalPalette.current
     val label = options.firstOrNull { it.first == selectedId }?.second ?: options.first().second
@@ -1729,6 +1801,7 @@ internal fun OptionDropdown(options: List<Pair<String, String>>, selectedId: Str
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             options.forEach { (id, lbl) ->
+                if (id == dividerBefore) HorizontalDivider(color = palette.border.toComposeColor())
                 DropdownMenuItem(
                     text = { Text(lbl) },
                     trailingIcon = if (id in checked) {

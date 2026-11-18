@@ -1555,4 +1555,20 @@
     <string name="onboarding_full_setup_text">Also theme, sync, permissions, handwriting recognition and toolbar.</string>
     <string name="math_download_channel">Model downloads</string>
     <string name="math_download_title">Downloading %1$s</string>
+    <string name="math_llm_option">Custom LLM API</string>
+    <string name="math_llm_description">Send the handwriting to an AI model you choose: a public one with an API key, or one you host yourself. It must read images and use the OpenAI chat completions format, which most providers and self-hosted servers do.</string>
+    <string name="math_llm_url">API URL</string>
+    <string name="math_llm_url_hint">Examples: OpenAI https://api.openai.com/v1 - Gemini https://generativelanguage.googleapis.com/v1beta/openai - Claude https://api.anthropic.com/v1 - OpenRouter https://openrouter.ai/api/v1 - Ollama http://&lt;computer&gt;:11434/v1</string>
+    <string name="math_llm_insecure">This address is not encrypted. Use https for servers outside your home network.</string>
+    <string name="math_llm_key">API key</string>
+    <string name="math_llm_key_hint">Not needed for most self-hosted models</string>
+    <string name="math_llm_model">Model</string>
+    <string name="math_llm_prompt">Prompt</string>
+    <string name="math_llm_prompt_reset">Reset prompt</string>
+    <string name="math_llm_test">Test</string>
+    <string name="math_llm_testing">Sending a sample formula...</string>
+    <string name="math_llm_test_ok">It works. The sample was read as: %1$s</string>
+    <string name="math_llm_test_failed">Test failed: %1$s</string>
+    <string name="math_llm_privacy">Your handwriting is sent to this server when you convert it. The API key stays on this device.</string>
+    <string name="math_wip">Work in progress: this feature is still being developed and you may run into issues.</string>
 </resources>

@@ -1308,4 +1308,20 @@
     <string name="onboarding_full_setup_text">另含主题、同步、权限、手写识别和工具栏。</string>
     <string name="math_download_channel">模型下载</string>
     <string name="math_download_title">正在下载 %1$s</string>
+    <string name="math_llm_option">自定义 LLM API</string>
+    <string name="math_llm_description">将手写内容发送到你选择的 AI 模型：带 API 密钥的公共模型，或你自己托管的模型。模型必须能读取图片并使用 OpenAI chat completions 格式，大多数服务商和自托管服务器都支持。</string>
+    <string name="math_llm_url">API 地址</string>
+    <string name="math_llm_url_hint">示例：OpenAI https://api.openai.com/v1 - Gemini https://generativelanguage.googleapis.com/v1beta/openai - Claude https://api.anthropic.com/v1 - OpenRouter https://openrouter.ai/api/v1 - Ollama http://&lt;电脑&gt;:11434/v1</string>
+    <string name="math_llm_insecure">此地址未加密。家庭网络以外的服务器请使用 https。</string>
+    <string name="math_llm_key">API 密钥</string>
+    <string name="math_llm_key_hint">大多数自托管模型不需要</string>
+    <string name="math_llm_model">模型</string>
+    <string name="math_llm_prompt">提示词</string>
+    <string name="math_llm_prompt_reset">重置提示词</string>
+    <string name="math_llm_test">测试</string>
+    <string name="math_llm_testing">正在发送示例公式...</string>
+    <string name="math_llm_test_ok">可以使用。示例被识别为：%1$s</string>
+    <string name="math_llm_test_failed">测试失败：%1$s</string>
+    <string name="math_llm_privacy">转换时你的手写内容会发送到此服务器。API 密钥只保存在本设备上。</string>
+    <string name="math_wip">开发中：此功能仍在开发，可能会遇到问题。</string>
 </resources>

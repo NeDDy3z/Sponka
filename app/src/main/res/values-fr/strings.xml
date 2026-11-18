@@ -1526,4 +1526,20 @@
     <string name="onboarding_full_setup_text">Aussi le thème, la synchronisation, les autorisations, la reconnaissance d\'écriture et la barre d\'outils.</string>
     <string name="math_download_channel">Téléchargements de modèles</string>
     <string name="math_download_title">Téléchargement de %1$s</string>
+    <string name="math_llm_option">API LLM personnalisée</string>
+    <string name="math_llm_description">Envoie l\'écriture à un modèle d\'IA de votre choix : un modèle public avec une clé d\'API, ou un modèle que vous hébergez. Il doit lire les images et utiliser le format chat completions d\'OpenAI, comme la plupart des fournisseurs et serveurs auto-hébergés.</string>
+    <string name="math_llm_url">URL de l\'API</string>
+    <string name="math_llm_url_hint">Exemples : OpenAI https://api.openai.com/v1 - Gemini https://generativelanguage.googleapis.com/v1beta/openai - Claude https://api.anthropic.com/v1 - OpenRouter https://openrouter.ai/api/v1 - Ollama http://&lt;ordinateur&gt;:11434/v1</string>
+    <string name="math_llm_insecure">Cette adresse n\'est pas chiffrée. Utilisez https pour les serveurs hors de votre réseau local.</string>
+    <string name="math_llm_key">Clé d\'API</string>
+    <string name="math_llm_key_hint">Inutile pour la plupart des modèles auto-hébergés</string>
+    <string name="math_llm_model">Modèle</string>
+    <string name="math_llm_prompt">Consigne</string>
+    <string name="math_llm_prompt_reset">Réinitialiser la consigne</string>
+    <string name="math_llm_test">Tester</string>
+    <string name="math_llm_testing">Envoi d\'une formule d\'exemple...</string>
+    <string name="math_llm_test_ok">Ça marche. L\'exemple a été lu comme : %1$s</string>
+    <string name="math_llm_test_failed">Échec du test : %1$s</string>
+    <string name="math_llm_privacy">Votre écriture est envoyée à ce serveur lors de la conversion. La clé d\'API reste sur cet appareil.</string>
+    <string name="math_wip">En cours de développement : cette fonction est encore en chantier et vous pourriez rencontrer des problèmes.</string>
 </resources>

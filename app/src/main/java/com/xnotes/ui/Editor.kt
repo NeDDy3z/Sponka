@@ -916,7 +916,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                 } catch (e: Throwable) {
                     // The runtime's own message runs to paragraphs; its first line says enough.
                     val reason = (e.message ?: e.javaClass.simpleName).lineSequence().first().take(160)
-                    val name = com.xnotes.platform.MathOcr.catalog.value.firstOrNull { it.id == model }?.name ?: model
+                    val name = com.xnotes.platform.MathOcr.catalog.value.firstOrNull { it.id == model }?.name
+                        ?: if (model == com.xnotes.platform.MathOcr.CUSTOM_LLM) appContext.getString(R.string.math_llm_option) else model
                     showMathError(appContext.getString(R.string.math_convert_failed, name, reason))
                     return@launch
                 }

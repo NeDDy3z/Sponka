@@ -163,6 +163,7 @@ fun MathPractice(modelId: String, onBack: () -> Unit) {
                 }
                 when (phase) {
                     Phase.INTRO -> {
+                        Text(stringResource(R.string.math_wip), color = palette.danger.toComposeColor(), fontSize = 13.sp)
                         Text(stringResource(R.string.math_training_instructions, EXERCISES.size, MIN_TRAINED), color = palette.text.toComposeColor(), fontSize = 14.sp)
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             for (tip in TIPS) Bullet(stringResource(tip))
