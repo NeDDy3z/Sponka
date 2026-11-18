@@ -12,11 +12,12 @@ class MathLlmTest {
     }
 
     @Test fun requestCarriesPromptAndImage() {
-        val r = MathLlm.request("gpt-4o-mini", "read it", "AAAA")
+        val r = MathLlm.request("gpt-4o-mini", "read it", "AAAA", tuned = true)
         assertEquals("gpt-4o-mini", r.getString("model"))
         val content = r.getJSONArray("messages").getJSONObject(0).getJSONArray("content")
         assertEquals("read it", content.getJSONObject(0).getString("text"))
         assertEquals("data:image/png;base64,AAAA", content.getJSONObject(1).getJSONObject("image_url").getString("url"))
+        assertFalse(MathLlm.request("o3", "read it", "AAAA", tuned = false).has("max_tokens"))
     }
 
     @Test fun replyDropsFencesAndDelimiters() {
@@ -24,6 +25,7 @@ class MathLlmTest {
         assertEquals("y=2x-3", MathLlm.reply(body("y=2x-3")))
         assertEquals("\\frac{a}{b}", MathLlm.reply(body("```latex\n\\frac{a}{b}\n```")))
         assertEquals("x^2", MathLlm.reply(body("\$x^2\$")))
+        assertEquals("", MathLlm.reply("""{"choices":[{"message":{"content":null}}]}"""))
     }
 
     @Test fun errorMessageUsesServerText() {

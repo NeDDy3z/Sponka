@@ -16,11 +16,7 @@ import java.io.ByteArrayOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 
-/**
- * Handwriting to LaTeX through an LLM the user points at: any OpenAI-compatible chat completions
- * API (OpenAI, Gemini, Anthropic, OpenRouter, Ollama, LM Studio...). URL, model and prompt are
- * synced settings; the API key stays encrypted on this device.
- */
+/** Handwriting to LaTeX through any OpenAI-compatible chat completions API; the key stays encrypted here. */
 object MathLlm {
 
     const val DEFAULT_PROMPT = "Transcribe the handwritten math in this image to LaTeX. " +
@@ -49,8 +45,17 @@ object MathLlm {
     /** Send one PNG and return the reading; throws with the server's message when it fails. */
     fun recognizePng(context: Context, png: ByteArray): String {
         val p = prefs(context)
-        val body = request(p.mathLlmModel.trim(), p.mathLlmPrompt.ifBlank { DEFAULT_PROMPT }, Base64.encodeToString(png, Base64.NO_WRAP))
-        val conn = URL(endpoint(p.mathLlmUrl)).openConnection() as HttpURLConnection
+        val image = Base64.encodeToString(png, Base64.NO_WRAP)
+        val prompt = p.mathLlmPrompt.ifBlank { DEFAULT_PROMPT }
+        val (code, text) = post(context, p.mathLlmUrl, request(p.mathLlmModel.trim(), prompt, image, tuned = true))
+            // Reasoning models refuse temperature and max_tokens; ask again without them.
+            .takeIf { it.first != 400 } ?: post(context, p.mathLlmUrl, request(p.mathLlmModel.trim(), prompt, image, tuned = false))
+        if (code !in 200..299) error(errorMessage(code, text))
+        return reply(text)
+    }
+
+    private fun post(context: Context, url: String, body: JSONObject): Pair<Int, String> {
+        val conn = URL(endpoint(url)).openConnection() as HttpURLConnection
         try {
             conn.requestMethod = "POST"
             conn.connectTimeout = 20_000
@@ -61,8 +66,7 @@ object MathLlm {
             conn.outputStream.use { it.write(body.toString().toByteArray()) }
             val code = conn.responseCode
             val text = (if (code in 200..299) conn.inputStream else conn.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
-            if (code !in 200..299) error(errorMessage(code, text))
-            return reply(text)
+            return code to text
         } finally {
             conn.disconnect()
         }
@@ -74,10 +78,9 @@ object MathLlm {
         return if (b.endsWith("/chat/completions")) b else "$b/chat/completions"
     }
 
-    internal fun request(model: String, prompt: String, pngBase64: String): JSONObject = JSONObject()
+    internal fun request(model: String, prompt: String, pngBase64: String, tuned: Boolean): JSONObject = JSONObject()
         .put("model", model)
-        .put("temperature", 0)
-        .put("max_tokens", 512)
+        .apply { if (tuned) put("temperature", 0).put("max_tokens", 512) }
         .put(
             "messages",
             JSONArray().put(
@@ -92,7 +95,9 @@ object MathLlm {
 
     /** The reply's LaTeX: the first choice's text without code fences or math delimiters. */
     internal fun reply(json: String): String {
-        val content = JSONObject(json).getJSONArray("choices").getJSONObject(0).getJSONObject("message").optString("content")
+        val message = JSONObject(json).getJSONArray("choices").getJSONObject(0).getJSONObject("message")
+        // Android's optString turns a JSON null into the text "null".
+        val content = if (message.isNull("content")) "" else message.optString("content")
         val unfenced = content.trim().removePrefix("```latex").removePrefix("```tex").removePrefix("```").removeSuffix("```").trim()
         return RecognizedLatex.clean(unfenced)
     }
