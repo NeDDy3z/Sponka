@@ -39,6 +39,7 @@ import com.xnotes.core.history.RestyleText
 import com.xnotes.core.history.TransferItems
 import com.xnotes.core.history.TransformItems
 import com.xnotes.core.model.CanvasItem
+import com.xnotes.core.model.MathOrigin
 import com.xnotes.core.model.ConnectorDraft
 import com.xnotes.core.model.ConnectorEdit
 import com.xnotes.core.model.ConnectorItem
@@ -203,6 +204,9 @@ class InteractionController(
 ) {
     /** Whether the system clipboard currently holds an image (provided by the host). */
     var clipboardHasImage: () -> Boolean = { false }
+
+    /** A formula the math add-on made was edited from one LaTeX to another (or back, by undo). */
+    var onMathRelearn: ((MathOrigin, String, String) -> Unit)? = null
 
     /** The inline-flow caret controller; TEXT-tool gestures route here (installed by the Editor). */
     var flowText: FlowTextController? = null
@@ -4172,7 +4176,9 @@ class InteractionController(
             return false
         }
         item.mathBox()?.let { item.width = it.width }
-        history.push(EditText(item, old, latex))
+        val relearn = item.ocr?.let { origin -> onMathRelearn?.let { f -> { from: String, to: String -> f(origin, from, to) } } }
+        history.push(EditText(item, old, latex, relearn))
+        relearn?.invoke(old, latex)
         state.document.dirty = true
         selObb = selectionBox()
         onContentChanged()
@@ -4221,8 +4227,12 @@ class InteractionController(
         startEditing(item, sel.pageIndex, isNew = false)
     }
 
-    /** The selected handwriting on one page, captured for an async convert-to-text. */
-    class InkSelection(val pageIndex: Int, val strokes: List<Stroke>, val bounds: Rect)
+    /**
+     * The selected handwriting on one page, captured for an async convert. [shapes] are drawn
+     * shapes taken along (math reads them as ink); [strokes] may then hold their outlines as extra
+     * pen lines that are not on the page.
+     */
+    class InkSelection(val pageIndex: Int, val strokes: List<Stroke>, val bounds: Rect, val shapes: List<ShapeItem> = emptyList())
 
     /**
      * The selected ink strokes on the primary selected page, or null when nothing selected is a
@@ -4235,6 +4245,26 @@ class InteractionController(
         if (strokes.isEmpty()) return null
         val bounds = strokes.map { it.bounds() }.reduce { a, b -> a.union(b) }
         return InkSelection(pi, strokes, bounds)
+    }
+
+    /**
+     * [inkSelection] for maths: selected shapes count too, since shape recognition and hold-to-shape
+     * turn a fraction bar, root or arrow into one. Their outlines join the strokes as pen lines.
+     */
+    fun mathInkSelection(): InkSelection? {
+        val ink = inkSelection() ?: return null
+        val shapes = selection.filter { it.pageIndex == ink.pageIndex }.mapNotNull { it.item as? ShapeItem }
+        if (shapes.isEmpty()) return ink
+        val outlines = shapes.flatMap { shape ->
+            shape.paths().flatMap { path ->
+                path.contours.map { c ->
+                    val pts = com.xnotes.core.vector.PathFlattener.flatten(c, 0.5).let { if (c.closed) it + c.start else it }
+                    Stroke(Tool.PEN, ToolConfig(), pts.map { Sample(it.x, it.y, 1.0) })
+                }
+            }
+        }
+        val bounds = shapes.map { it.bounds() }.fold(ink.bounds) { a, b -> a.union(b) }
+        return InkSelection(ink.pageIndex, ink.strokes + outlines, bounds, shapes)
     }
 
     /**
@@ -4253,16 +4283,21 @@ class InteractionController(
     }
 
     /** Replace the selected handwriting with a formula box set about as tall as the writing was. */
-    fun replaceInkWithMath(sel: InkSelection, latex: String) {
-        val page = state.document.pages.getOrNull(sel.pageIndex) ?: return
-        val strokes = sel.strokes.filter { s -> page.items.any { it === s } }
-        if (strokes.isEmpty()) return
+    /** The formula box made, selected, or null when the ink is gone. Shapes in [sel] go with the ink. */
+    fun replaceInkWithMath(sel: InkSelection, latex: String, origin: MathOrigin? = null): TextItem? {
+        val page = state.document.pages.getOrNull(sel.pageIndex) ?: return null
+        val strokes = (sel.strokes + sel.shapes).filter { s -> page.items.any { it === s } }
+        if (strokes.none { it is Stroke }) return null
         val box = TextItem(Pt(sel.bounds.left, sel.bounds.top), sel.bounds.w, 0.0, latex, inkColor, textPointSize, textFace, measurer = textMeasurer, math = true)
+        box.ocr = origin
         box.mathBox()?.let { m ->
             if (m.height > 0.0) box.pointSize = (textPointSize * sel.bounds.h / m.height).coerceIn(textPointSize, textPointSize * 6.0)
         }
         box.mathBox()?.let { box.width = it.width }
         swapInk(page, strokes, box)
+        selectSingle(sel.pageIndex, box)
+        refreshSelectionMenu()
+        return box
     }
 
     private fun swapInk(page: Page, strokes: List<CanvasItem>, box: TextItem) {

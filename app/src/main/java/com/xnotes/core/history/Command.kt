@@ -225,13 +225,17 @@ class EditText(
     private val item: TextItem,
     private val oldText: String,
     private val newText: String,
+    /** Told each time the text flips, (from, to); a recognized formula relearns its corrections here. */
+    private val onSwap: ((String, String) -> Unit)? = null,
 ) : Command {
     override fun redo() {
         item.text = newText
+        onSwap?.invoke(oldText, newText)
     }
 
     override fun undo() {
         item.text = oldText
+        onSwap?.invoke(newText, oldText)
     }
 
     override fun touched(locate: (CanvasItem) -> Page?) = pagedItems(listOf(item), locate)

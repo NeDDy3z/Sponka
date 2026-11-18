@@ -46,6 +46,9 @@ class TextItem(
     override var group: Int? = null
     override var sync: SyncMark? = null
 
+    /** Set when the handwritten-maths add-on made this formula, so edits to it can teach the model's corrections. */
+    var ocr: MathOrigin? = null
+
     val font get() = FontSpec(pointSize, face, bold, italic)
 
     /** Layout flags carrying this box's decorations and alignment. */
@@ -189,3 +192,6 @@ private data class TextSnapshot(
     val height: Double,
     val pointSize: Double,
 ) : GeometrySnapshot
+
+/** The math [model] that recognized a formula and what it [raw]ly put out, before corrections. */
+data class MathOrigin(val model: String, val raw: String)

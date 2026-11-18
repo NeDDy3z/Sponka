@@ -6,6 +6,7 @@ import com.xnotes.core.geometry.Rect
 import com.xnotes.core.model.AudioData
 import com.xnotes.core.model.AudioItem
 import com.xnotes.core.model.Bookmark
+import com.xnotes.core.model.MathOrigin
 import com.xnotes.core.model.CanvasItem
 import com.xnotes.core.model.ConnectorEnd
 import com.xnotes.core.model.ConnectorItem
@@ -519,6 +520,10 @@ class DocumentCodec(
         if (t.strike) j.name("strike").value(true)
         if (t.align != com.xnotes.core.pal.HAlign.LEFT) j.name("align").value(t.align.name.lowercase())
         if (t.math) j.name("math").value(true)
+        t.ocr?.let {
+            j.name("math_ocr_model").value(it.model)
+            j.name("math_ocr_raw").value(it.raw)
+        }
         t.sync?.let { writeSync(j, it) }
         if (t.locked) j.name("locked").value(true)
         t.link?.let { j.name("link").value(it) }
@@ -1208,6 +1213,8 @@ class DocumentCodec(
         var textBold = false
         var textItalic = false
         var textMath = false
+        var ocrModel: String? = null
+        var ocrRaw: String? = null
         var textUnderline = false
         var textStrike = false
         var textAlign = "left"
@@ -1304,6 +1311,8 @@ class DocumentCodec(
                 "bold" -> s.textBold = boolOr(p, false)
                 "italic" -> s.textItalic = boolOr(p, false)
                 "math" -> s.textMath = boolOr(p, false)
+                "math_ocr_model" -> s.ocrModel = stringOrNull(p)
+                "math_ocr_raw" -> s.ocrRaw = stringOrNull(p)
                 "underline" -> s.textUnderline = boolOr(p, false)
                 "strike" -> s.textStrike = boolOr(p, false)
                 "align" -> s.textAlign = stringOr(p, "left")
@@ -1393,7 +1402,11 @@ class DocumentCodec(
                     },
                     measurer = textMeasurer,
                     math = s.textMath,
-                ),
+                ).also { t ->
+                    val model = s.ocrModel
+                    val raw = s.ocrRaw
+                    if (model != null && raw != null) t.ocr = MathOrigin(model, raw)
+                },
             )
             ShapeItem.KIND, ShapeItem.GLYPHS_KIND, ShapeItem.FILL_KIND -> {
                 val c = s.connector

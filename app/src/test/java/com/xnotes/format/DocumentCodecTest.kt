@@ -34,6 +34,7 @@ import com.xnotes.core.model.TapeItem
 import com.xnotes.core.model.TapeMode
 import com.xnotes.core.model.TapePattern
 import com.xnotes.core.model.TapeShape
+import com.xnotes.core.model.MathOrigin
 import com.xnotes.core.model.TextItem
 import com.xnotes.core.stroke.Sample
 import com.xnotes.core.stroke.StrokeSimplify
@@ -1289,5 +1290,16 @@ class DocumentCodecTest {
         assertEquals(band.shape, back[1].shape)
         assertEquals(TapePattern.SOLID, back[1].pattern)
         assertEquals(3, back[1].group)
+    }
+
+    @Test fun recognizedFormulaKeepsItsOrigin() {
+        val doc = Document(mutableListOf())
+        val page = Page(200.0, 200.0, mutableListOf())
+        page.items.add(TextItem(Pt(1.0, 1.0), text = "\\alpha", measurer = FakeTextMeasurer(), math = true).apply { ocr = MathOrigin("pix2text-mfr", "a") })
+        page.items.add(TextItem(Pt(1.0, 50.0), text = "x", measurer = FakeTextMeasurer(), math = true))
+        doc.pages.add(page)
+        val back = roundTrip(doc).pages[0].items
+        assertEquals(MathOrigin("pix2text-mfr", "a"), (back[0] as TextItem).ocr)
+        assertEquals(null, (back[1] as TextItem).ocr)
     }
 }
