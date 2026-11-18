@@ -1210,6 +1210,12 @@
         <item quantity="many">%d dne</item>
         <item quantity="other">%d dní</item>
     </plurals>
+    <plurals name="math_model_trained">
+        <item quantity="one">Trénováno na %1$d vzorci</item>
+        <item quantity="few">Trénováno na %1$d vzorcích</item>
+        <item quantity="many">Trénováno na %1$d vzorcích</item>
+        <item quantity="other">Trénováno na %1$d vzorcích</item>
+    </plurals>
 
     <!-- Preferences: home and explorer -->
     <string name="pref_home_explorer">Domů a průzkumník</string>
@@ -1416,8 +1422,42 @@
     <string name="on">Zapnuto</string>
     <string name="pref_ocr_handwriting_language">Jazyk rozpoznávání rukopisu (Převést na text)</string>
     <string name="pref_ocr_math">Ručně psaná matematika (Převést na matematiku)</string>
-    <string name="math_model_description">Model v zařízení, který převádí vybrané ručně psané vzorce do LaTeXu. Stačí ho jednou stáhnout, pak funguje i offline.</string>
+    <string name="math_model_description">Modely v zařízení, které převádějí vybrané ručně psané vzorce do LaTeXu. Vyberte jeden a stáhněte ho jednou, pak funguje i offline.</string>
     <string name="math_model_unsupported">Pro procesor tohoto zařízení není k dispozici.</string>
+    <string name="math_model_recommended">doporučeno</string>
+    <string name="math_convert_failed">%1$s to nedokázal převést: %2$s</string>
+    <string name="math_training_instructions">Uvidíte %1$d vzorců od jednoduchých po složité. Každý napište na plochu tak, jak běžně píšete, a klepněte na Další. Aplikace se naučí, jak píšete jednotlivé symboly, a Převést na matematiku vás bude číst lépe. Napište aspoň %2$d. Trénovat můžete kolikrát chcete, každý trénink se sčítá.</string>
+    <string name="math_training_begin">Začít trénink</string>
+    <string name="math_training_done">Trénovací sada uložena. Přidáno vzorců: %1$d, aplikace se z nich učí váš rukopis.</string>
+    <string name="math_training_again">Trénovat znovu</string>
+    <string name="math_training_past">Minulé tréninky</string>
+    <string name="math_training_none">Zatím žádné tréninky.</string>
+    <string name="math_training_session">%1$s, vzorců: %2$d</string>
+    <string name="math_training_delete_all">Smazat všechny tréninky</string>
+    <string name="math_training_delete_all_confirm">Smazat všechny tréninky? Všechny modely zapomenou, co se z nich naučily.</string>
+    <string name="math_training_formula">Vzorec %1$d z %2$d</string>
+    <string name="math_training_written">Napsáno: %1$d (aspoň %2$d)</string>
+    <string name="math_tool_pen">Pero</string>
+    <string name="math_tool_eraser">Guma</string>
+    <string name="math_training_offer_title">Trénovat %1$s?</string>
+    <string name="math_training_offer_text">Naučte nový model svůj rukopis napsáním několika vzorců. Zabere to pár minut.</string>
+    <string name="math_training_offer_text_saved">Naučte nový model svůj rukopis. Může se učit z %1$d vzorců, které jste už napsali, nebo můžete napsat nové.</string>
+    <string name="math_training_offer_saved">Použít uložené vzorce</string>
+    <string name="math_training_offer_write">Napsat vzorce</string>
+    <string name="math_training_later">Později</string>
+    <string name="math_converting">Převádění na matematiku...</string>
+    <string name="math_model_trained_on">Trénováno na: %1$s</string>
+    <string name="math_model_license">Licence: %1$s</string>
+    <string name="math_model_website">Web</string>
+    <string name="math_model_size">Stažení %1$d MB, %2$d MB v zařízení</string>
+    <string name="math_model_specs">Doporučeno %1$s GB RAM (aspoň %2$s GB). Asi %3$s s na vzorec na běžném telefonu.</string>
+    <string name="math_model_speed_here">Na tomto zařízení: asi %1$s s na vzorec</string>
+    <string name="math_model_low_ram">Toto zařízení má %1$s GB RAM, méně než je doporučeno. Rozpoznávání může být pomalé nebo selhat.</string>
+    <string name="math_model_update">Aktualizovat na %1$s (%2$d MB)</string>
+    <string name="math_model_untrained">Zatím netrénováno</string>
+    <string name="math_model_learn_saved">Naučit z uložených vzorců (%1$d)</string>
+    <string name="math_model_learning">Učení %1$d z %2$d...</string>
+    <string name="math_training_finish">Hotovo</string>
     <string name="math_model_download">Stáhnout (%1$d MB)</string>
     <string name="math_model_progress">%1$d z %2$d MB</string>
     <string name="math_model_downloaded">Staženo</string>
@@ -1462,8 +1502,6 @@
     <string name="ocr_recognizing_handwriting">Rozpoznávám rukopis...</string>
     <string name="ocr_handwriting_failed">Rozpoznání rukopisu se nezdařilo: %1$s</string>
     <string name="ocr_no_text">Nebyl rozpoznán žádný text</string>
-    <string name="ocr_recognizing_math">Rozpoznávám matematiku...</string>
-    <string name="ocr_math_failed">Rozpoznání matematiky se nezdařilo: %1$s</string>
     <string name="ocr_no_math">Nebyla rozpoznána žádná matematika</string>
     <string name="toast_cut">Vyjmuto</string>
     <string name="toast_inserted">Vloženo</string>
@@ -1506,14 +1544,11 @@
     <string name="onboarding_copy_skip">Začít prázdné</string>
     <string name="onboarding_copy_done">Zkopírováno položek: %1$d</string>
     <string name="onboarding_copy_partial">Zkopírováno položek: %1$d, selhalo: %2$d</string>
-    <string name="math_practice_open">Procvičit</string>
-    <string name="math_practice_title">Procvičování psaní rovnic</string>
+    <string name="math_practice_open">Trénovat</string>
+    <string name="math_practice_title">Trénování rozpoznávání vzorců</string>
     <string name="math_practice_write">Napište (%1$d z %2$d):</string>
     <string name="math_practice_clear">Smazat</string>
-    <string name="math_practice_check">Zkontrolovat</string>
     <string name="math_practice_next">Další</string>
-    <string name="math_practice_correct">Rozpoznáno správně</string>
-    <string name="math_practice_wrong">Ne úplně. Rozpoznalo se tohle:</string>
     <string name="math_tip_fractions">Zlomkovou čáru kreslete zřetelně a širší než čitatel i jmenovatel.</string>
     <string name="math_tip_exponents">Exponenty a indexy pište menší a zřetelně výš nebo níž.</string>
     <string name="math_tip_spacing">Mezi symboly nechte malou mezeru, ať se nedotýkají.</string>
@@ -1522,9 +1557,7 @@
     <string name="onboarding_skip_page">Přeskočit</string>
     <string name="onboarding_skip_title">Přeskočit nastavení?</string>
     <string name="onboarding_skip_message">Vše můžete nastavit později v Předvolbách nebo toto nastavení spustit znovu v sekci Obecné.</string>
-    <string name="onboarding_practice_text">Chcete si procvičit pár rovnic? Když je píšete tak, jak je rozpoznávání čeká, bude Převést na matematiku mnohem přesnější.</string>
-    <string name="onboarding_practice_yes">Procvičit</string>
-    <string name="onboarding_practice_no">Teď ne</string>
+    <string name="onboarding_train_reminder">Až se model stáhne, nezapomeňte ho naučit svůj rukopis. Kdykoli to uděláte v %1$s.</string>
     <string name="pref_language_system_default">Podle systému</string>
     <string name="pref_language_supported">Podporované jazyky: %1$s</string>
     <string name="pref_language_request">Požádat o jazyk</string>
@@ -1536,4 +1569,6 @@
     <string name="onboarding_welcome_skip_note">Povinný je jen jazyk a úložiště, zbytek je volitelný. Nastavení můžete znovu spustit v Předvolby &gt; Obecné.</string>
     <string name="onboarding_quick_setup_text">Jen jazyk a úložiště.</string>
     <string name="onboarding_full_setup_text">Navíc vzhled, synchronizace, oprávnění, rozpoznávání písma a panel nástrojů.</string>
+    <string name="math_download_channel">Stahování modelů</string>
+    <string name="math_download_title">Stahuje se %1$s</string>
 </resources>

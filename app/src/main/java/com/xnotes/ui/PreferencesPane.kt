@@ -81,6 +81,7 @@ import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.text.withLink
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -102,7 +103,9 @@ import com.xnotes.core.shapes.ShapePresets
 import com.xnotes.core.tools.InkPalette
 import com.xnotes.core.util.NameTemplate
 import com.xnotes.platform.HandwritingOcr
+import com.xnotes.platform.MathModel
 import com.xnotes.platform.MathOcr
+import com.xnotes.platform.MathTraining
 import com.xnotes.settings.HOME_SWIPES
 import com.xnotes.settings.Preferences
 import com.xnotes.settings.MaterialStyle
@@ -231,7 +234,7 @@ fun PreferencesPane(
     var mathPracticeOpen by remember { mutableStateOf(false) }
     var confirmOnboarding by remember { mutableStateOf(false) }
     if (mathPracticeOpen) {
-        MathPractice(onBack = { mathPracticeOpen = false })
+        MathPractice(prefs.mathModel, onBack = { mathPracticeOpen = false })
         return
     }
     // Hoisted here so the toolbar drag ghost can be drawn at the pane root, above the scroll.
@@ -384,7 +387,7 @@ fun PreferencesPane(
                 FieldLabel(stringResource(R.string.pref_ocr_handwriting_language))
                 HandwritingLanguageControls(prefs.ocrLanguage) { update(prefs.copy(ocrLanguage = it)) }
                 FieldLabel(stringResource(R.string.pref_ocr_math))
-                MathAddonControls(onPractice = { mathPracticeOpen = true })
+                MathAddonControls(prefs.mathModel, { update(prefs.copy(mathModel = it)) }, onTrain = { mathPracticeOpen = true })
             }
             if (shown(PrefCategory.NEW_NOTES)) {
                 if (all) HorizontalDivider(color = palette.border.toComposeColor())
@@ -606,45 +609,113 @@ fun PreferencesPane(
 }
 
 /**
- * Download or delete the handwritten-maths model. It is too big to bundle, so the selection
- * menu only offers Convert to math once it is here.
+ * Pick the handwritten-maths model and download, update or delete it. The list comes from the
+ * models repo when online and from the last listing and the installed copies otherwise, each
+ * with what it is, its size and the device it needs. [onTrain] opens training; when a download
+ * finishes, a dialog offers it (or learning from formulas written before).
  */
 @Composable
-internal fun MathAddonControls(onPractice: (() -> Unit)? = null) {
+internal fun MathAddonControls(selected: String, onSelect: (String) -> Unit, onTrain: (() -> Unit)? = null) {
     val context = LocalContext.current
     val palette = LocalPalette.current
-    LaunchedEffect(Unit) { MathOcr.refresh(context) }
-    val state by MathOcr.state.collectAsState()
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    LaunchedEffect(Unit) {
+        MathOcr.refresh(context)
+        MathOcr.refreshCatalog(context)
+    }
+    val catalog by MathOcr.catalog.collectAsState()
+    val states by MathOcr.states.collectAsState()
     var confirmDelete by remember { mutableStateOf(false) }
-    val sizeMb = MathOcr.DOWNLOAD_BYTES / 1_000_000
-    Text(
-        stringResource(R.string.math_model_description),
-        color = palette.textDim.toComposeColor(),
-        fontSize = 12.sp,
-    )
+    var learning by remember { mutableStateOf<String?>(null) }
+    var offerFor by remember { mutableStateOf<MathModel?>(null) }
+    // Bumped after training so the counts below are read again.
+    var trainedVersion by remember { mutableStateOf(0) }
+    Text(stringResource(R.string.math_model_description), color = palette.textDim.toComposeColor(), fontSize = 12.sp)
     if (!MathOcr.supported) {
         Text(stringResource(R.string.math_model_unsupported), color = palette.text.toComposeColor(), fontSize = 12.sp)
         return
     }
-    when (val s = state) {
-        MathOcr.State.Missing ->
-            TextButton(onClick = { MathOcr.startDownload(context) }) { Text(stringResource(R.string.math_model_download, sizeMb), fontSize = 13.sp) }
-        is MathOcr.State.Downloading -> {
-            LinearProgressIndicator(progress = { s.done.toFloat() / s.total }, modifier = Modifier.width(280.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(R.string.math_model_progress, s.done / 1_000_000, s.total / 1_000_000), color = palette.text.toComposeColor(), fontSize = 12.sp)
-                TextButton(onClick = { MathOcr.cancelDownload(context) }) { Text(stringResource(R.string.cancel), fontSize = 13.sp) }
-            }
+    val model = catalog.firstOrNull { it.id == selected } ?: catalog.firstOrNull() ?: return
+    val state = states[model.id] ?: MathOcr.State.Missing
+    val installedIds = catalog.filter { states[it.id] == MathOcr.State.Installed }.map { it.id }.toSet()
+    val sizeMb = model.downloadBytes / 1_000_000
+
+    // A download that just finished (seen going from Downloading to Installed) offers training.
+    var wasDownloading by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(model.id, state) {
+        if (state is MathOcr.State.Downloading) wasDownloading = model.id
+        else if (state == MathOcr.State.Installed && wasDownloading == model.id) {
+            wasDownloading = null
+            offerFor = model
         }
-        MathOcr.State.Installed ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(R.string.math_model_downloaded), color = palette.text.toComposeColor(), fontSize = 12.sp)
-                TextButton(onClick = { confirmDelete = true }) { Text(stringResource(R.string.delete), fontSize = 13.sp) }
-                onPractice?.let { TextButton(onClick = it) { Text(stringResource(R.string.math_practice_open), fontSize = 13.sp) } }
+    }
+
+    fun learnFromSaved(id: String) {
+        learning = ""
+        scope.launch {
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    MathTraining.trainFromSamples(context, id) { done, total ->
+                        scope.launch { learning = context.getString(R.string.math_model_learning, done, total) }
+                    }
+                }
             }
-        is MathOcr.State.Failed -> {
-            Text(stringResource(R.string.math_model_download_failed, s.message), color = palette.danger.toComposeColor(), fontSize = 12.sp)
-            TextButton(onClick = { MathOcr.startDownload(context) }) { Text(stringResource(R.string.retry), fontSize = 13.sp) }
+            learning = null
+            trainedVersion++
+        }
+    }
+
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        val recommended = stringResource(R.string.math_model_recommended)
+    OptionDropdown(
+        catalog.map { it.id to "${it.name} ${it.version}" + if (it.id == MathOcr.RECOMMENDED_MODEL) " ($recommended)" else "" },
+        model.id, installedIds, onSelect,
+    )
+        when (state) {
+            MathOcr.State.Installed -> {
+                Text(stringResource(R.string.math_model_downloaded), color = palette.textDim.toComposeColor(), fontSize = 12.sp, modifier = Modifier.padding(start = 8.dp))
+                TextButton(onClick = { confirmDelete = true }) { Text(stringResource(R.string.delete), fontSize = 13.sp) }
+            }
+            MathOcr.State.Missing ->
+                TextButton(onClick = { MathOcr.startDownload(context, model) }) { Text(stringResource(R.string.math_model_download, sizeMb), fontSize = 13.sp) }
+            else -> Unit
+        }
+    }
+    when (state) {
+        is MathOcr.State.Downloading -> Row(verticalAlignment = Alignment.CenterVertically) {
+            LinearProgressIndicator(progress = { state.done.toFloat() / state.total }, modifier = Modifier.width(200.dp))
+            Text(
+                stringResource(R.string.math_model_progress, state.done / 1_000_000, state.total / 1_000_000),
+                color = palette.text.toComposeColor(), fontSize = 12.sp, modifier = Modifier.padding(start = 8.dp),
+            )
+            TextButton(onClick = { MathOcr.cancelDownload(context) }) { Text(stringResource(R.string.cancel), fontSize = 13.sp) }
+        }
+        is MathOcr.State.Failed -> Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(stringResource(R.string.math_model_download_failed, state.message), color = palette.danger.toComposeColor(), fontSize = 12.sp, modifier = Modifier.weight(1f, fill = false))
+            TextButton(onClick = { MathOcr.startDownload(context, model) }) { Text(stringResource(R.string.retry), fontSize = 13.sp) }
+        }
+        else -> Unit
+    }
+    MathModelInfo(model)
+    if (state == MathOcr.State.Installed) {
+        val here = remember(model.id, states) { MathOcr.installed(context, model.id) }
+        if (here != null && MathModel.newer(model.version, here.version)) {
+            TextButton(onClick = { MathOcr.startDownload(context, model) }) { Text(stringResource(R.string.math_model_update, model.version, sizeMb), fontSize = 13.sp) }
+        }
+        val trained = remember(model.id, trainedVersion, learning) { MathTraining.trainedCount(context, model.id) }
+        val unlearned = remember(model.id, trainedVersion, learning) { MathTraining.unlearnedCount(context, model.id) }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                if (trained > 0) pluralStringResource(R.plurals.math_model_trained, trained, trained) else stringResource(R.string.math_model_untrained),
+                color = palette.textDim.toComposeColor(), fontSize = 12.sp,
+            )
+            onTrain?.let { TextButton(onClick = it) { Text(stringResource(R.string.math_practice_open), fontSize = 13.sp) } }
+        }
+        val progress = learning
+        if (progress != null) {
+            Text(progress, color = palette.textDim.toComposeColor(), fontSize = 12.sp)
+        } else if (unlearned > 0) {
+            TextButton(onClick = { learnFromSaved(model.id) }) { Text(stringResource(R.string.math_model_learn_saved, unlearned), fontSize = 13.sp) }
         }
     }
     if (confirmDelete) {
@@ -652,9 +723,75 @@ internal fun MathAddonControls(onPractice: (() -> Unit)? = null) {
             onDismissRequest = { confirmDelete = false },
             title = { Text(stringResource(R.string.math_model_delete_title)) },
             text = { Text(stringResource(R.string.math_model_delete_message, sizeMb)) },
-            confirmButton = { TextButton(onClick = { MathOcr.delete(context); confirmDelete = false }) { Text(stringResource(R.string.delete)) } },
+            confirmButton = { TextButton(onClick = { MathOcr.delete(context, model.id); confirmDelete = false }) { Text(stringResource(R.string.delete)) } },
             dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text(stringResource(R.string.cancel)) } },
         )
+    }
+    offerFor?.let { m ->
+        val saved = remember(m.id) { MathTraining.unlearnedCount(context, m.id) }
+        AlertDialog(
+            onDismissRequest = { offerFor = null },
+            title = { Text(stringResource(R.string.math_training_offer_title, m.name)) },
+            text = {
+                Text(
+                    if (saved > 0) stringResource(R.string.math_training_offer_text_saved, saved)
+                    else stringResource(R.string.math_training_offer_text),
+                )
+            },
+            confirmButton = {
+                Row {
+                    if (saved > 0) TextButton(onClick = { offerFor = null; learnFromSaved(m.id) }) { Text(stringResource(R.string.math_training_offer_saved)) }
+                    onTrain?.let { train -> TextButton(onClick = { offerFor = null; train() }) { Text(stringResource(R.string.math_training_offer_write)) } }
+                }
+            },
+            dismissButton = { TextButton(onClick = { offerFor = null }) { Text(stringResource(R.string.math_training_later)) } },
+        )
+    }
+}
+
+/** What a math model is and needs, as bullet points: description, training data, license, size, website, RAM and speed. */
+@Composable
+private fun MathModelInfo(model: MathModel) {
+    val context = LocalContext.current
+    val palette = LocalPalette.current
+    val dim = palette.textDim.toComposeColor()
+    fun gb(mb: Int) = String.format(java.util.Locale.US, "%.1f", mb / 1024.0)
+    fun secs(s: Double) = String.format(java.util.Locale.US, "%.1f", s)
+    val deviceMb = remember {
+        val info = android.app.ActivityManager.MemoryInfo()
+        context.getSystemService(android.app.ActivityManager::class.java)?.getMemoryInfo(info)
+        (info.totalMem / (1024 * 1024)).toInt()
+    }
+    val measured = remember(model.id) { MathOcr.measuredSeconds(context, model.id) }
+    @Composable
+    fun bullet(text: androidx.compose.ui.text.AnnotatedString, color: androidx.compose.ui.graphics.Color = dim) = Row {
+        Text("-", color = dim, fontSize = 12.sp, modifier = Modifier.padding(end = 6.dp))
+        Text(text, color = color, fontSize = 12.sp)
+    }
+    @Composable
+    fun bullet(text: String, color: androidx.compose.ui.graphics.Color = dim) = bullet(androidx.compose.ui.text.AnnotatedString(text), color)
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        if (model.description.isNotEmpty()) Text(model.description, color = palette.text.toComposeColor(), fontSize = 12.sp, modifier = Modifier.padding(bottom = 2.dp))
+        if (model.trainedOn.isNotEmpty()) bullet(stringResource(R.string.math_model_trained_on, model.trainedOn))
+        if (model.license.isNotEmpty()) bullet(stringResource(R.string.math_model_license, model.license))
+        bullet(stringResource(R.string.math_model_size, model.downloadBytes / 1_000_000, model.installedBytes / 1_000_000))
+        model.website?.let { site ->
+            val label = stringResource(R.string.math_model_website)
+            bullet(
+                androidx.compose.ui.text.buildAnnotatedString {
+                    append("$label: ")
+                    withLink(
+                        androidx.compose.ui.text.LinkAnnotation.Url(
+                            site,
+                            androidx.compose.ui.text.TextLinkStyles(androidx.compose.ui.text.SpanStyle(color = palette.accent.toComposeColor())),
+                        ),
+                    ) { append(site.removePrefix("https://")) }
+                },
+            )
+        }
+        if (model.recommendedRamMb > 0) bullet(stringResource(R.string.math_model_specs, gb(model.recommendedRamMb), gb(model.minRamMb), secs(model.avgSeconds)))
+        measured?.let { bullet(stringResource(R.string.math_model_speed_here, secs(it))) }
+        if (deviceMb in 1 until model.recommendedRamMb) bullet(stringResource(R.string.math_model_low_ram, gb(deviceMb)), palette.danger.toComposeColor())
     }
 }
 

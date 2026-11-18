@@ -1189,6 +1189,11 @@
         <item quantity="many">%d días</item>
         <item quantity="other">%d días</item>
     </plurals>
+    <plurals name="math_model_trained">
+        <item quantity="one">Entrenado con %1$d fórmula</item>
+        <item quantity="many">Entrenado con %1$d fórmulas</item>
+        <item quantity="other">Entrenado con %1$d fórmulas</item>
+    </plurals>
 
     <!-- Preferences: home and explorer -->
     <string name="pref_home_explorer">Inicio y explorador</string>
@@ -1395,8 +1400,42 @@
     <string name="on">Activado</string>
     <string name="pref_ocr_handwriting_language">Idioma del reconocimiento de escritura a mano (Convertir en texto)</string>
     <string name="pref_ocr_math">Matemáticas a mano (Convertir en matemáticas)</string>
-    <string name="math_model_description">Un modelo en el dispositivo que convierte las fórmulas escritas a mano seleccionadas en LaTeX. Descárgalo una vez; después funciona sin conexión.</string>
+    <string name="math_model_description">Modelos en el dispositivo que convierten las fórmulas escritas a mano seleccionadas en LaTeX. Elige uno y descárgalo una vez; después funciona sin conexión.</string>
     <string name="math_model_unsupported">No disponible para el procesador de este dispositivo.</string>
+    <string name="math_model_recommended">recomendado</string>
+    <string name="math_convert_failed">%1$s no pudo convertir esto: %2$s</string>
+    <string name="math_training_instructions">Verás %1$d fórmulas, de simples a difíciles. Escribe cada una en el panel como escribes normalmente y toca Siguiente. La app aprende cómo escribes cada símbolo y Convertir a matemáticas te leerá mejor. Escribe al menos %2$d. Puedes entrenar tantas veces como quieras y cada entrenamiento suma.</string>
+    <string name="math_training_begin">Empezar entrenamiento</string>
+    <string name="math_training_done">Conjunto de entrenamiento guardado. Se añadieron %1$d fórmulas y la app aprende tu letra a partir de ellas.</string>
+    <string name="math_training_again">Entrenar de nuevo</string>
+    <string name="math_training_past">Entrenamientos anteriores</string>
+    <string name="math_training_none">Aún no hay entrenamientos.</string>
+    <string name="math_training_session">%1$s, %2$d fórmulas</string>
+    <string name="math_training_delete_all">Eliminar todos los entrenamientos</string>
+    <string name="math_training_delete_all_confirm">¿Eliminar todos los entrenamientos? Todos los modelos olvidan lo que aprendieron de ellos.</string>
+    <string name="math_training_formula">Fórmula %1$d de %2$d</string>
+    <string name="math_training_written">Escritas: %1$d (al menos %2$d)</string>
+    <string name="math_tool_pen">Lápiz</string>
+    <string name="math_tool_eraser">Borrador</string>
+    <string name="math_training_offer_title">¿Entrenar %1$s?</string>
+    <string name="math_training_offer_text">Enseña tu letra al nuevo modelo escribiendo algunas fórmulas. Lleva un par de minutos.</string>
+    <string name="math_training_offer_text_saved">Enseña tu letra al nuevo modelo. Puede aprender de las %1$d fórmulas que ya escribiste, o puedes escribir otras nuevas.</string>
+    <string name="math_training_offer_saved">Usar fórmulas guardadas</string>
+    <string name="math_training_offer_write">Escribir fórmulas</string>
+    <string name="math_training_later">Más tarde</string>
+    <string name="math_converting">Convirtiendo a matemáticas...</string>
+    <string name="math_model_trained_on">Entrenado con: %1$s</string>
+    <string name="math_model_license">Licencia: %1$s</string>
+    <string name="math_model_website">Sitio web</string>
+    <string name="math_model_size">Descarga de %1$d MB, %2$d MB en el dispositivo</string>
+    <string name="math_model_specs">Se recomiendan %1$s GB de RAM (mínimo %2$s GB). Unos %3$s s por fórmula en un teléfono de gama media.</string>
+    <string name="math_model_speed_here">En este dispositivo: unos %1$s s por fórmula</string>
+    <string name="math_model_low_ram">Este dispositivo tiene %1$s GB de RAM, menos de lo recomendado. El reconocimiento puede ser lento o fallar.</string>
+    <string name="math_model_update">Actualizar a %1$s (%2$d MB)</string>
+    <string name="math_model_untrained">Aún sin entrenar</string>
+    <string name="math_model_learn_saved">Aprender de las fórmulas guardadas (%1$d)</string>
+    <string name="math_model_learning">Aprendiendo %1$d de %2$d...</string>
+    <string name="math_training_finish">Terminar</string>
     <string name="math_model_download">Descargar (%1$d MB)</string>
     <string name="math_model_progress">%1$d de %2$d MB</string>
     <string name="math_model_downloaded">Descargado</string>
@@ -1440,8 +1479,6 @@
     <string name="ocr_recognizing_handwriting">Reconociendo escritura a mano...</string>
     <string name="ocr_handwriting_failed">Error en el reconocimiento de escritura a mano: %1$s</string>
     <string name="ocr_no_text">No se reconoció ningún texto</string>
-    <string name="ocr_recognizing_math">Reconociendo matemáticas...</string>
-    <string name="ocr_math_failed">Error en el reconocimiento de matemáticas: %1$s</string>
     <string name="ocr_no_math">No se reconocieron matemáticas</string>
     <string name="toast_cut">Cortado</string>
     <string name="toast_inserted">Insertado</string>
@@ -1484,14 +1521,11 @@
     <string name="onboarding_copy_skip">Empezar vacío</string>
     <string name="onboarding_copy_done">Elementos copiados: %1$d</string>
     <string name="onboarding_copy_partial">Copiados: %1$d, fallidos: %2$d</string>
-    <string name="math_practice_open">Practicar</string>
-    <string name="math_practice_title">Practicar la escritura de ecuaciones</string>
+    <string name="math_practice_open">Entrenar</string>
+    <string name="math_practice_title">Entrenar el reconocimiento de fórmulas</string>
     <string name="math_practice_write">Escribe esto (%1$d de %2$d):</string>
     <string name="math_practice_clear">Borrar</string>
-    <string name="math_practice_check">Comprobar</string>
     <string name="math_practice_next">Siguiente</string>
-    <string name="math_practice_correct">Reconocido correctamente</string>
-    <string name="math_practice_wrong">Casi. Esto es lo que se reconoció:</string>
     <string name="math_tip_fractions">Dibuja la raya de fracción clara y más ancha que lo de arriba y abajo.</string>
     <string name="math_tip_exponents">Escribe exponentes y subíndices más pequeños y claramente arriba o abajo.</string>
     <string name="math_tip_spacing">Deja un poco de espacio entre símbolos para que no se toquen.</string>
@@ -1500,9 +1534,7 @@
     <string name="onboarding_skip_page">Omitir</string>
     <string name="onboarding_skip_title">¿Omitir la configuración?</string>
     <string name="onboarding_skip_message">Puedes configurarlo todo más tarde en Preferencias o repetir esta configuración desde General.</string>
-    <string name="onboarding_practice_text">¿Quieres practicar algunas ecuaciones? Escribirlas como espera el reconocedor hace que Convertir a matemáticas sea mucho más preciso.</string>
-    <string name="onboarding_practice_yes">Practicar ahora</string>
-    <string name="onboarding_practice_no">Ahora no</string>
+    <string name="onboarding_train_reminder">Recuerda entrenar el modelo de matemáticas con tu letra cuando termine de descargarse. Puedes hacerlo cuando quieras en %1$s.</string>
     <string name="pref_language_system_default">Predeterminado del sistema</string>
     <string name="pref_language_supported">Idiomas disponibles: %1$s</string>
     <string name="pref_language_request">Solicitar un idioma</string>
@@ -1514,4 +1546,6 @@
     <string name="onboarding_welcome_skip_note">Solo el idioma y el almacenamiento son obligatorios, el resto es opcional. Repite la configuración cuando quieras desde Preferencias &gt; General.</string>
     <string name="onboarding_quick_setup_text">Solo idioma y almacenamiento.</string>
     <string name="onboarding_full_setup_text">También tema, sincronización, permisos, reconocimiento de escritura y barra de herramientas.</string>
+    <string name="math_download_channel">Descargas de modelos</string>
+    <string name="math_download_title">Descargando %1$s</string>
 </resources>

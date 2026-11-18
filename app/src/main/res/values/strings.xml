@@ -1199,6 +1199,10 @@
         <item quantity="one">%d day</item>
         <item quantity="other">%d days</item>
     </plurals>
+    <plurals name="math_model_trained">
+        <item quantity="one">Trained with %1$d formula</item>
+        <item quantity="other">Trained with %1$d formulas</item>
+    </plurals>
 
     <!-- Preferences: home and explorer -->
     <string name="pref_home_explorer">Home &amp; explorer</string>
@@ -1404,8 +1408,42 @@
     <string name="on">On</string>
     <string name="pref_ocr_handwriting_language">Handwriting recognition language (Convert to text)</string>
     <string name="pref_ocr_math">Handwritten math (Convert to math)</string>
-    <string name="math_model_description">An on-device model that turns selected handwritten formulas into LaTeX. Download it once; it works offline after.</string>
+    <string name="math_model_description">On-device models that turn selected handwritten formulas into LaTeX. Pick one and download it once; it works offline after.</string>
     <string name="math_model_unsupported">Not available for this device\'s processor.</string>
+    <string name="math_model_recommended">recommended</string>
+    <string name="math_convert_failed">%1$s could not convert this: %2$s</string>
+    <string name="math_training_instructions">You will see %1$d formulas, from simple to hard. Write each one on the pad the way you normally write, then tap Next. The app learns how you write each symbol, and Convert to math gets better at reading you. Write at least %2$d. You can train as many times as you like, and every training adds up.</string>
+    <string name="math_training_begin">Begin training</string>
+    <string name="math_training_done">Training set saved. %1$d formulas were added, and the app keeps learning your handwriting from them.</string>
+    <string name="math_training_again">Train again</string>
+    <string name="math_training_past">Past trainings</string>
+    <string name="math_training_none">No trainings yet.</string>
+    <string name="math_training_session">%1$s, %2$d formulas</string>
+    <string name="math_training_delete_all">Delete all trainings</string>
+    <string name="math_training_delete_all_confirm">Delete all trainings? Every model forgets what they taught it.</string>
+    <string name="math_training_formula">Formula %1$d of %2$d</string>
+    <string name="math_training_written">Written: %1$d (at least %2$d)</string>
+    <string name="math_tool_pen">Pen</string>
+    <string name="math_tool_eraser">Eraser</string>
+    <string name="math_training_offer_title">Train %1$s?</string>
+    <string name="math_training_offer_text">Teach the new model your handwriting by writing a few formulas. It takes a couple of minutes.</string>
+    <string name="math_training_offer_text_saved">Teach the new model your handwriting. It can learn from the %1$d formulas you already wrote, or you can write new ones.</string>
+    <string name="math_training_offer_saved">Use saved formulas</string>
+    <string name="math_training_offer_write">Write formulas</string>
+    <string name="math_training_later">Later</string>
+    <string name="math_converting">Converting to math...</string>
+    <string name="math_model_trained_on">Trained on: %1$s</string>
+    <string name="math_model_license">License: %1$s</string>
+    <string name="math_model_website">Website</string>
+    <string name="math_model_size">Download %1$d MB, %2$d MB on the device</string>
+    <string name="math_model_specs">Recommended %1$s GB RAM (at least %2$s GB). About %3$s s per formula on a mid-range phone.</string>
+    <string name="math_model_speed_here">On this device: about %1$s s per formula</string>
+    <string name="math_model_low_ram">This device has %1$s GB RAM, less than recommended. Recognition may be slow or fail.</string>
+    <string name="math_model_update">Update to %1$s (%2$d MB)</string>
+    <string name="math_model_untrained">Not trained yet</string>
+    <string name="math_model_learn_saved">Learn from saved formulas (%1$d)</string>
+    <string name="math_model_learning">Learning %1$d of %2$d...</string>
+    <string name="math_training_finish">Finish</string>
     <string name="math_model_download">Download (%1$d MB)</string>
     <string name="math_model_progress">%1$d of %2$d MB</string>
     <string name="math_model_downloaded">Downloaded</string>
@@ -1448,8 +1486,6 @@
     <string name="ocr_recognizing_handwriting">Recognizing handwriting...</string>
     <string name="ocr_handwriting_failed">Handwriting recognition failed: %1$s</string>
     <string name="ocr_no_text">No text recognized</string>
-    <string name="ocr_recognizing_math">Recognizing math...</string>
-    <string name="ocr_math_failed">Math recognition failed: %1$s</string>
     <string name="ocr_no_math">No math recognized</string>
     <string name="toast_cut">Cut</string>
     <string name="toast_inserted">Inserted</string>
@@ -1492,14 +1528,11 @@
     <string name="onboarding_copy_skip">Start empty</string>
     <string name="onboarding_copy_done">Copied %1$d items</string>
     <string name="onboarding_copy_partial">Copied %1$d items, %2$d failed</string>
-    <string name="math_practice_open">Practice</string>
-    <string name="math_practice_title">Practice writing equations</string>
+    <string name="math_practice_open">Train</string>
+    <string name="math_practice_title">Train math recognition</string>
     <string name="math_practice_write">Write this (%1$d of %2$d):</string>
     <string name="math_practice_clear">Clear</string>
-    <string name="math_practice_check">Check</string>
     <string name="math_practice_next">Next</string>
-    <string name="math_practice_correct">Recognized correctly</string>
-    <string name="math_practice_wrong">Not quite. This is what was recognized:</string>
     <string name="math_tip_fractions">Draw the fraction bar clearly, wider than what is above and below it.</string>
     <string name="math_tip_exponents">Write exponents and indices smaller and clearly raised or lowered.</string>
     <string name="math_tip_spacing">Leave a little space between symbols so they don\'t touch.</string>
@@ -1508,9 +1541,7 @@
     <string name="onboarding_skip_page">Skip</string>
     <string name="onboarding_skip_title">Skip setup?</string>
     <string name="onboarding_skip_message">You can set everything up later in Preferences, or run this setup again from General.</string>
-    <string name="onboarding_practice_text">Want to practise a few equations? Writing them the way the recognizer expects makes Convert to math much more accurate.</string>
-    <string name="onboarding_practice_yes">Practise now</string>
-    <string name="onboarding_practice_no">Not now</string>
+    <string name="onboarding_train_reminder">Remember to train the math model to your handwriting once it is downloaded. You can do it any time in %1$s.</string>
     <string name="pref_language_system_default">System default</string>
     <string name="pref_language_supported">Supported languages: %1$s</string>
     <string name="pref_language_request">Request a language</string>
@@ -1522,4 +1553,6 @@
     <string name="onboarding_welcome_skip_note">Only language and storage are required, the rest is optional. Run the setup again anytime from Preferences &gt; General.</string>
     <string name="onboarding_quick_setup_text">Language and storage only.</string>
     <string name="onboarding_full_setup_text">Also theme, sync, permissions, handwriting recognition and toolbar.</string>
+    <string name="math_download_channel">Model downloads</string>
+    <string name="math_download_title">Downloading %1$s</string>
 </resources>

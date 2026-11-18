@@ -1011,6 +1011,9 @@
     <plurals name="days_count">
         <item quantity="other">%d 天</item>
     </plurals>
+    <plurals name="math_model_trained">
+        <item quantity="other">已用 %1$d 个公式训练</item>
+    </plurals>
 
     <!-- Preferences: home and explorer -->
     <string name="pref_home_explorer">首页与文件浏览器</string>
@@ -1146,8 +1149,42 @@
     <string name="on">开启</string>
     <string name="pref_ocr_handwriting_language">手写识别语言（转换为文本）</string>
     <string name="pref_ocr_math">手写公式（转换为公式）</string>
-    <string name="math_model_description">一个在设备上运行的模型，可将选中的手写公式转换为 LaTeX。只需下载一次，之后可离线使用。</string>
+    <string name="math_model_description">在设备上运行的模型，可将选中的手写公式转换为 LaTeX。选择一个并下载一次，之后可离线使用。</string>
     <string name="math_model_unsupported">此设备的处理器不支持。</string>
+    <string name="math_model_recommended">推荐</string>
+    <string name="math_convert_failed">%1$s 无法转换：%2$s</string>
+    <string name="math_training_instructions">你会看到 %1$d 个公式，从简单到复杂。按平时的书写方式把每个公式写在书写区，然后点“下一个”。应用会学习你如何书写每个符号，“转换为公式”会更好地识别你的笔迹。至少写 %2$d 个。你可以训练任意多次，每次训练都会累加。</string>
+    <string name="math_training_begin">开始训练</string>
+    <string name="math_training_done">训练集已保存。已添加 %1$d 个公式，应用会从中学习你的笔迹。</string>
+    <string name="math_training_again">再次训练</string>
+    <string name="math_training_past">过去的训练</string>
+    <string name="math_training_none">还没有训练。</string>
+    <string name="math_training_session">%1$s，%2$d 个公式</string>
+    <string name="math_training_delete_all">删除所有训练</string>
+    <string name="math_training_delete_all_confirm">删除所有训练？所有模型都会忘记从中学到的内容。</string>
+    <string name="math_training_formula">第 %1$d / %2$d 个公式</string>
+    <string name="math_training_written">已写：%1$d（至少 %2$d）</string>
+    <string name="math_tool_pen">笔</string>
+    <string name="math_tool_eraser">橡皮擦</string>
+    <string name="math_training_offer_title">训练 %1$s？</string>
+    <string name="math_training_offer_text">写几个公式，让新模型学习你的笔迹。只需几分钟。</string>
+    <string name="math_training_offer_text_saved">让新模型学习你的笔迹。它可以从你已写的 %1$d 个公式中学习，你也可以写新的。</string>
+    <string name="math_training_offer_saved">使用已保存的公式</string>
+    <string name="math_training_offer_write">写公式</string>
+    <string name="math_training_later">以后</string>
+    <string name="math_converting">正在转换为公式...</string>
+    <string name="math_model_trained_on">训练数据：%1$s</string>
+    <string name="math_model_license">许可证：%1$s</string>
+    <string name="math_model_website">网站</string>
+    <string name="math_model_size">下载 %1$d MB，设备上占用 %2$d MB</string>
+    <string name="math_model_specs">建议 %1$s GB 内存（至少 %2$s GB）。在中端手机上每个公式约 %3$s 秒。</string>
+    <string name="math_model_speed_here">在此设备上：每个公式约 %1$s 秒</string>
+    <string name="math_model_low_ram">此设备有 %1$s GB 内存，低于建议值。识别可能很慢或失败。</string>
+    <string name="math_model_update">更新到 %1$s（%2$d MB）</string>
+    <string name="math_model_untrained">尚未训练</string>
+    <string name="math_model_learn_saved">从已保存的公式学习（%1$d）</string>
+    <string name="math_model_learning">正在学习 %1$d / %2$d...</string>
+    <string name="math_training_finish">完成</string>
     <string name="math_model_download">下载（%1$d MB）</string>
     <string name="math_model_progress">%1$d / %2$d MB</string>
     <string name="math_model_downloaded">已下载</string>
@@ -1189,8 +1226,6 @@
     <string name="ocr_recognizing_handwriting">正在识别手写内容...</string>
     <string name="ocr_handwriting_failed">手写识别失败：%1$s</string>
     <string name="ocr_no_text">未识别到文本</string>
-    <string name="ocr_recognizing_math">正在识别公式...</string>
-    <string name="ocr_math_failed">公式识别失败：%1$s</string>
     <string name="ocr_no_math">未识别到公式</string>
     <string name="toast_cut">已剪切</string>
     <string name="toast_inserted">已插入</string>
@@ -1246,14 +1281,11 @@
     <string name="onboarding_copy_skip">从空白开始</string>
     <string name="onboarding_copy_done">已复制 %1$d 项</string>
     <string name="onboarding_copy_partial">已复制 %1$d 项，%2$d 项失败</string>
-    <string name="math_practice_open">练习</string>
-    <string name="math_practice_title">练习书写公式</string>
+    <string name="math_practice_open">训练</string>
+    <string name="math_practice_title">训练公式识别</string>
     <string name="math_practice_write">请写出（%1$d / %2$d）：</string>
     <string name="math_practice_clear">清除</string>
-    <string name="math_practice_check">检查</string>
     <string name="math_practice_next">下一个</string>
-    <string name="math_practice_correct">识别正确</string>
-    <string name="math_practice_wrong">不太对。识别结果如下：</string>
     <string name="math_tip_fractions">分数线要清楚，比上下内容更宽。</string>
     <string name="math_tip_exponents">指数和下标写小一些，并明显高于或低于基线。</string>
     <string name="math_tip_spacing">符号之间留一点空隙，不要相互接触。</string>
@@ -1262,9 +1294,7 @@
     <string name="onboarding_skip_page">跳过</string>
     <string name="onboarding_skip_title">跳过设置？</string>
     <string name="onboarding_skip_message">以后可以在偏好设置中完成设置，或在“常规”中重新运行此设置。</string>
-    <string name="onboarding_practice_text">要练习几个公式吗？按识别器期望的方式书写，可以让“转换为公式”更准确。</string>
-    <string name="onboarding_practice_yes">现在练习</string>
-    <string name="onboarding_practice_no">以后再说</string>
+    <string name="onboarding_train_reminder">模型下载完成后，记得用你的笔迹训练它。你可以随时在 %1$s 中进行。</string>
     <string name="pref_language_system_default">跟随系统</string>
     <string name="pref_language_supported">支持的语言：%1$s</string>
     <string name="pref_language_request">申请新语言</string>
@@ -1276,4 +1306,6 @@
     <string name="onboarding_welcome_skip_note">只有语言和存储是必需的，其余均为可选。可随时在 偏好设置 &gt; 常规 中重新运行设置。</string>
     <string name="onboarding_quick_setup_text">仅语言和存储。</string>
     <string name="onboarding_full_setup_text">另含主题、同步、权限、手写识别和工具栏。</string>
+    <string name="math_download_channel">模型下载</string>
+    <string name="math_download_title">正在下载 %1$s</string>
 </resources>

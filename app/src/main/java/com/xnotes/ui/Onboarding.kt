@@ -81,7 +81,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private enum class OnboardingStep { WELCOME, STORAGE, THEME, INPUT, HOME, SYNC, PERMISSIONS, OCR, MATH_PRACTICE, TOOLBAR, DONE }
+private enum class OnboardingStep { WELCOME, STORAGE, THEME, INPUT, HOME, SYNC, PERMISSIONS, OCR, TOOLBAR, DONE }
 
 /**
  * The first-run setup, drawn over everything until finished or skipped. Storage must be picked first;
@@ -103,10 +103,8 @@ fun Onboarding(editor: Editor) {
     }
     val battery = rememberBatteryUnrestricted()
     // Moving between pages hops over Permissions when there is nothing left to grant.
-    // The practice offer only follows OCR once the math model is in.
     fun skips(i: Int) = when (steps[i]) {
         OnboardingStep.PERMISSIONS -> appPermissions && (battery || CloudServices.byId(editor.preferences.cloudService) == null)
-        OnboardingStep.MATH_PRACTICE -> !MathOcr.isInstalled(context)
         else -> false
     }
     // What each page ended as, by step index: true when set up (Continue), false when skipped.
@@ -119,6 +117,13 @@ fun Onboarding(editor: Editor) {
     fun back() {
         stepIndex--
         if (skips(stepIndex)) stepIndex--
+    }
+    // Leaving the OCR page while a math model downloads: remind once where training lives, then go on.
+    var reminded by rememberSaveable { mutableStateOf(false) }
+    var afterReminder by remember { mutableStateOf<(() -> Unit)?>(null) }
+    fun leave(go: () -> Unit) {
+        val downloading = MathOcr.states.value[editor.preferences.mathModel] is MathOcr.State.Downloading
+        if (steps[stepIndex] == OnboardingStep.OCR && downloading && !reminded) afterReminder = go else go()
     }
     var prefs by remember { mutableStateOf(editor.preferences) }
     fun update(p: Preferences) {
@@ -169,10 +174,10 @@ fun Onboarding(editor: Editor) {
     }
     LaunchedEffect(stepIndex) { scroll.scrollTo(0) }
     // Back walks the pages; on the first one it is swallowed, since storage must be picked.
-    BackHandler(enabled = !practiceOpen) { if (stepIndex > 0) back() }
+    BackHandler(enabled = !practiceOpen) { if (stepIndex > 0) leave(::back) }
 
     if (practiceOpen) {
-        MathPractice(onBack = { practiceOpen = false; forward() })
+        MathPractice(editor.preferences.mathModel, onBack = { practiceOpen = false })
         return
     }
 
@@ -284,15 +289,7 @@ fun Onboarding(editor: Editor) {
                                     FieldLabel(stringResource(R.string.pref_ocr_handwriting_language))
                                     HandwritingLanguageControls(prefs.ocrLanguage) { update(prefs.copy(ocrLanguage = it)) }
                                     FieldLabel(stringResource(R.string.pref_ocr_math))
-                                    MathAddonControls()
-                                }
-                                OnboardingStep.MATH_PRACTICE -> {
-                                    SectionTitle(stringResource(R.string.math_practice_title))
-                                    Text(stringResource(R.string.onboarding_practice_text), color = palette.textDim.toComposeColor(), fontSize = 13.sp)
-                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        Button(onClick = { practiceOpen = true }, colors = accentButton) { Text(stringResource(R.string.onboarding_practice_yes)) }
-                                        TextButton(onClick = { forward(setUp = false) }) { Text(stringResource(R.string.onboarding_practice_no)) }
-                                    }
+                                    MathAddonControls(prefs.mathModel, { update(prefs.copy(mathModel = it)) }, onTrain = { practiceOpen = true })
                                 }
                                 OnboardingStep.TOOLBAR -> {
                                     SectionTitle(stringResource(R.string.pref_toolbar))
@@ -322,7 +319,7 @@ fun Onboarding(editor: Editor) {
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     // Back on the leading edge, the way forward on the trailing one.
-                    if (stepIndex > 0) TextButton(onClick = ::back) { Text(stringResource(R.string.onboarding_back)) }
+                    if (stepIndex > 0) TextButton(onClick = { leave(::back) }) { Text(stringResource(R.string.onboarding_back)) }
                     Spacer(Modifier.weight(1f))
                     if (step == OnboardingStep.DONE) {
                         Button(onClick = editor::finishOnboarding, colors = accentButton) { Text(stringResource(R.string.onboarding_finish)) }
@@ -331,15 +328,31 @@ fun Onboarding(editor: Editor) {
                     } else {
                         TextButton(onClick = { confirmSkip = true }, enabled = ready) { Text(stringResource(R.string.onboarding_skip)) }
                         // Storage can't be skipped, so its page only offers Continue.
-                        if (step != OnboardingStep.MATH_PRACTICE) {
-                            if (step != OnboardingStep.STORAGE) TextButton(onClick = { forward(setUp = false) }) { Text(stringResource(R.string.onboarding_skip_page)) }
-                            Button(onClick = { forward() }, enabled = ready, colors = accentButton) { Text(stringResource(R.string.onboarding_continue)) }
-                        }
+                        if (step != OnboardingStep.STORAGE) TextButton(onClick = { leave { forward(setUp = false) } }) { Text(stringResource(R.string.onboarding_skip_page)) }
+                        Button(onClick = { leave { forward() } }, enabled = ready, colors = accentButton) { Text(stringResource(R.string.onboarding_continue)) }
                     }
                 }
             }
         }
         drag.Ghost(rootTopLeft)
+    }
+
+    afterReminder?.let { go ->
+
+        val path = listOf(R.string.preferences, R.string.pref_ocr, R.string.pref_ocr_math, R.string.math_practice_open)
+
+            .map { stringResource(it) }.joinToString(" > ")
+
+        AlertDialog(
+
+            onDismissRequest = { reminded = true; afterReminder = null; go() },
+
+            text = { Text(stringResource(R.string.onboarding_train_reminder, path)) },
+
+            confirmButton = { TextButton(onClick = { reminded = true; afterReminder = null; go() }) { Text(stringResource(android.R.string.ok)) } },
+
+        )
+
     }
 
     if (confirmSkip) {
