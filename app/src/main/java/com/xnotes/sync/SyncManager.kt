@@ -196,6 +196,8 @@ object SyncManager {
                 val summary = engine.sync(state)
                 runCatching { SettingsSync.sync(context, storage, folderId, state, engine.localUris) }
                     .onFailure { synchronized(log) { log.add("  Error settings: ${it.message}") } }
+                runCatching { MathTrainingSync.sync(context, storage, folderId, state) }
+                    .onFailure { synchronized(log) { log.add("  Error math training: ${it.message}") } }
                 state.save(context, service.id)
                 summary to state.filePaths().count { !LocalNoteStore.isHiddenPath(it) }
             }
