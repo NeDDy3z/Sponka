@@ -1323,5 +1323,8 @@
     <string name="math_llm_test_ok">可以使用。示例被识别为：%1$s</string>
     <string name="math_llm_test_failed">测试失败：%1$s</string>
     <string name="math_llm_privacy">转换时你的手写内容会发送到此服务器。API 密钥只保存在本设备上。</string>
+    <string name="math_llm_offline">离线时使用</string>
+    <string name="math_llm_offline_none">无</string>
+    <string name="math_llm_offline_hint">没有网络时，转换为公式会使用这个已下载的模型。</string>
     <string name="math_wip">开发中：此功能仍在开发，可能会遇到问题。</string>
 </resources>

@@ -1563,5 +1563,8 @@
     <string name="math_llm_test_ok">Funciona. El ejemplo se leyó como: %1$s</string>
     <string name="math_llm_test_failed">La prueba falló: %1$s</string>
     <string name="math_llm_privacy">Tu escritura se envía a este servidor al convertirla. La clave de API se queda en este dispositivo.</string>
+    <string name="math_llm_offline">Sin conexión, usar</string>
+    <string name="math_llm_offline_none">Ninguno</string>
+    <string name="math_llm_offline_hint">Sin red, Convertir en matemáticas usa este modelo descargado.</string>
     <string name="math_wip">En desarrollo: esta función aún se está desarrollando y puede que encuentres problemas.</string>
 </resources>

@@ -55,6 +55,8 @@ data class Preferences(
     val mathLlmUrl: String = "",
     val mathLlmModel: String = "",
     val mathLlmPrompt: String = "",
+    /** On-device math model used instead of the custom LLM when there is no network; "" = none. */
+    val mathLlmOffline: String = "",
     /** Tool the stylus side button activates while held; "none" disables it. */
     val penButtonTool: String = "eraser",
     /** Whether the side-button tool also activates during hover (no contact needed); eraser/pan only. */
@@ -200,6 +202,7 @@ data class Preferences(
         .put("math_llm_url", mathLlmUrl)
         .put("math_llm_model", mathLlmModel)
         .put("math_llm_prompt", mathLlmPrompt)
+        .put("math_llm_offline", mathLlmOffline)
         .put("pen_button_tool", penButtonTool)
         .put("pen_button_hover", penButtonHover)
         .put("two_finger_tap", twoFingerTap)
@@ -367,6 +370,7 @@ data class Preferences(
                 mathLlmUrl = o.optString("math_llm_url", ""),
                 mathLlmModel = o.optString("math_llm_model", ""),
                 mathLlmPrompt = o.optString("math_llm_prompt", ""),
+                mathLlmOffline = o.optString("math_llm_offline", ""),
                 penButtonTool = o.optString("pen_button_tool", "eraser").ifEmpty { "eraser" },
                 penButtonHover = o.optBoolean("pen_button_hover", false),
                 twoFingerTap = tapAction("two_finger_tap"),

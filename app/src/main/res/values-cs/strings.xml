@@ -1586,5 +1586,8 @@
     <string name="math_llm_test_ok">Funguje to. Ukázka byla přečtena jako: %1$s</string>
     <string name="math_llm_test_failed">Test selhal: %1$s</string>
     <string name="math_llm_privacy">Při převodu se rukopis odešle na tento server. API klíč zůstává v tomto zařízení.</string>
+    <string name="math_llm_offline">Bez internetu použít</string>
+    <string name="math_llm_offline_none">Nic</string>
+    <string name="math_llm_offline_hint">Bez sítě použije Převést na matematiku tento stažený model.</string>
     <string name="math_wip">Ve vývoji: tato funkce se stále vyvíjí a můžete narazit na problémy.</string>
 </resources>

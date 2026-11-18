@@ -1541,5 +1541,8 @@
     <string name="math_llm_test_ok">Ça marche. L\'exemple a été lu comme : %1$s</string>
     <string name="math_llm_test_failed">Échec du test : %1$s</string>
     <string name="math_llm_privacy">Votre écriture est envoyée à ce serveur lors de la conversion. La clé d\'API reste sur cet appareil.</string>
+    <string name="math_llm_offline">Hors ligne, utiliser</string>
+    <string name="math_llm_offline_none">Aucun</string>
+    <string name="math_llm_offline_hint">Sans réseau, Convertir en maths utilise ce modèle téléchargé.</string>
     <string name="math_wip">En cours de développement : cette fonction est encore en chantier et vous pourriez rencontrer des problèmes.</string>
 </resources>

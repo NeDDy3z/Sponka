@@ -903,7 +903,12 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      */
     override fun convertSelectionToMath() {
         val sel = controller.mathInkSelection() ?: return
-        val model = settings.prefs.mathModel
+        val model = settings.prefs.let { p ->
+            p.mathLlmOffline.takeIf {
+                p.mathModel == com.xnotes.platform.MathOcr.CUSTOM_LLM && it.isNotEmpty() &&
+                    com.xnotes.platform.MathLlm.offline(appContext) && com.xnotes.platform.MathOcr.isInstalled(appContext, it)
+            } ?: p.mathModel
+        }
         mathConverting++
         autosaveScope.launch {
             try {

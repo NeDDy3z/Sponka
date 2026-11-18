@@ -1570,5 +1570,8 @@
     <string name="math_llm_test_ok">It works. The sample was read as: %1$s</string>
     <string name="math_llm_test_failed">Test failed: %1$s</string>
     <string name="math_llm_privacy">Your handwriting is sent to this server when you convert it. The API key stays on this device.</string>
+    <string name="math_llm_offline">When offline, use</string>
+    <string name="math_llm_offline_none">None</string>
+    <string name="math_llm_offline_hint">With no network, Convert to math uses this downloaded model instead.</string>
     <string name="math_wip">Work in progress: this feature is still being developed and you may run into issues.</string>
 </resources>

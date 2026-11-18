@@ -704,7 +704,7 @@ internal fun MathAddonControls(prefs: Preferences, update: (Preferences) -> Unit
         }
         else -> Unit
     }
-    if (custom) MathLlmControls(prefs, update) else MathModelInfo(model)
+    if (custom) MathLlmControls(prefs, update, catalog.filter { it.id in installedIds }) else MathModelInfo(model)
     if (usable) {
         val here = if (custom) null else remember(model.id, states) { MathOcr.installed(context, model.id) }
         if (here != null && MathModel.newer(model.version, here.version)) {
@@ -762,7 +762,7 @@ internal fun MathAddonControls(prefs: Preferences, update: (Preferences) -> Unit
  * plus a test that sends a sample formula and shows what came back.
  */
 @Composable
-private fun MathLlmControls(prefs: Preferences, update: (Preferences) -> Unit) {
+private fun MathLlmControls(prefs: Preferences, update: (Preferences) -> Unit, installed: List<MathModel>) {
     val context = LocalContext.current
     val palette = LocalPalette.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
@@ -818,6 +818,14 @@ private fun MathLlmControls(prefs: Preferences, update: (Preferences) -> Unit) {
             )
         }
         Text(stringResource(R.string.math_llm_privacy), color = dim, fontSize = 12.sp)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(stringResource(R.string.math_llm_offline), color = palette.text.toComposeColor(), fontSize = 14.sp, modifier = Modifier.padding(end = 8.dp))
+            OptionDropdown(
+                listOf("" to stringResource(R.string.math_llm_offline_none)) + installed.map { it.id to it.name },
+                prefs.mathLlmOffline,
+            ) { update(prefs.copy(mathLlmOffline = it)) }
+        }
+        Text(stringResource(R.string.math_llm_offline_hint), color = dim, fontSize = 12.sp)
     }
 }
 

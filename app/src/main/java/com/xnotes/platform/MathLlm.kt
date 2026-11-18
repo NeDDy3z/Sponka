@@ -2,6 +2,7 @@ package com.xnotes.platform
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.net.ConnectivityManager
 import android.util.Base64
 import com.xnotes.core.geometry.Rect
 import com.xnotes.core.model.Stroke
@@ -32,6 +33,8 @@ object MathLlm {
     fun setKey(context: Context, key: String) = blob(context).save(key)
 
     private fun prefs(context: Context) = LiveSettings.get(SettingsRepository(context)).prefs
+
+    fun offline(context: Context): Boolean = context.getSystemService(ConnectivityManager::class.java)?.activeNetwork == null
 
     fun ready(context: Context): Boolean = prefs(context).let { it.mathLlmUrl.isNotBlank() && it.mathLlmModel.isNotBlank() }
 
