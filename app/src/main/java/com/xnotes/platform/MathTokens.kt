@@ -63,11 +63,7 @@ internal object MathTokens {
         bs.indices.associate { cs[it].toChar() to bs[it] }
     }
 
-    /**
-     * One beam step. [logits] is the decoder's [beams, steps, vocab] output; each beam's last row
-     * becomes log-probabilities added to its [scores]. Returns the best [width] continuations of
-     * each beam as (beam, token, score), best first.
-     */
+    /** One beam step over the decoder's [beams, steps, vocab] [logits]: the best (beam, token, score) first. */
     fun extend(logits: FloatBuffer, vocab: Int, scores: List<Double>, steps: Int, width: Int): List<Triple<Int, Long, Double>> {
         val out = ArrayList<Triple<Int, Long, Double>>()
         for (k in scores.indices) {

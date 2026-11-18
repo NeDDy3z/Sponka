@@ -34,11 +34,7 @@ import com.xnotes.ui.theme.LocalPalette
 import com.xnotes.ui.theme.toComposeColor
 import kotlin.math.roundToInt
 
-/**
- * Convert to math's companions on the note: a small pill while formulas are being recognized (the
- * user keeps working meanwhile), and under a freshly converted formula, while it stays selected,
- * its other readings ("did you mean") to swap in with a tap.
- */
+/** A pill while formulas are recognized, and the other readings under a freshly converted formula. */
 @Composable
 fun MathChoicesStrip(editor: Editor) {
     val palette = LocalPalette.current

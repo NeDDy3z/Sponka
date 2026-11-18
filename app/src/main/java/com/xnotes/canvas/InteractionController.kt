@@ -4227,11 +4227,7 @@ class InteractionController(
         startEditing(item, sel.pageIndex, isNew = false)
     }
 
-    /**
-     * The selected handwriting on one page, captured for an async convert. [shapes] are drawn
-     * shapes taken along (math reads them as ink); [strokes] may then hold their outlines as extra
-     * pen lines that are not on the page.
-     */
+    /** The selected handwriting on one page for an async convert; [strokes] may include [shapes]' outlines. */
     class InkSelection(val pageIndex: Int, val strokes: List<Stroke>, val bounds: Rect, val shapes: List<ShapeItem> = emptyList())
 
     /**

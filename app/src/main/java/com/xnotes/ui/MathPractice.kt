@@ -105,12 +105,7 @@ private val TIPS = listOf(
 
 private enum class Phase { INTRO, WRITING, DONE }
 
-/**
- * Training for math model [modelId]. It starts with instructions and the past trainings (each can
- * be deleted), then a pad for formulas from simple to hard. Next hands each written formula to the
- * model in the background and learns what it read against what was asked; every run adds to the
- * ones before. The writing is kept, so other models can learn from it too.
- */
+/** Training for math model [modelId]: past runs, then a pad for formulas that are learned in the background. */
 @Composable
 fun MathPractice(modelId: String, onBack: () -> Unit) {
     BackHandler(onBack = onBack)

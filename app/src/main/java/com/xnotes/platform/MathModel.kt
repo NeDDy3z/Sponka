@@ -3,11 +3,7 @@ package com.xnotes.platform
 import org.json.JSONArray
 import org.json.JSONObject
 
-/**
- * One handwritten-maths model as its release's model.json describes it: what the picker shows
- * (description, license, size, RAM, speed), which files to fetch and how to run them. The app
- * keeps a copy next to the installed files, so all of it works offline.
- */
+/** One handwritten-maths model as its release's model.json describes it: what to show, fetch and run. */
 class MathModel(
     val id: String,
     val name: String,

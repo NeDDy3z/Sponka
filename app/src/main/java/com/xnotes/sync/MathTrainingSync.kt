@@ -5,11 +5,7 @@ import com.xnotes.core.text.MathTrainingData
 import com.xnotes.platform.MathTraining
 import org.json.JSONObject
 
-/**
- * Carries the math models' training between devices as one file next to the synced settings.
- * Unlike settings it is merged, not replaced: every device's training formulas and corrections
- * add up, and a deletion on one device reaches the others.
- */
+/** Carries the math training between devices as one file that is merged, not replaced. */
 object MathTrainingSync {
     const val REMOTE_FILE = "math-training.json"
     private const val STATE_PATH = "${SettingsSync.REMOTE_DIR}/$REMOTE_FILE"

@@ -338,21 +338,13 @@ fun Onboarding(editor: Editor) {
     }
 
     afterReminder?.let { go ->
-
         val path = listOf(R.string.preferences, R.string.pref_ocr, R.string.pref_ocr_math, R.string.math_practice_open)
-
             .map { stringResource(it) }.joinToString(" > ")
-
         AlertDialog(
-
             onDismissRequest = { reminded = true; afterReminder = null; go() },
-
             text = { Text(stringResource(R.string.onboarding_train_reminder, path)) },
-
             confirmButton = { TextButton(onClick = { reminded = true; afterReminder = null; go() }) { Text(stringResource(android.R.string.ok)) } },
-
         )
-
     }
 
     if (confirmSkip) {
