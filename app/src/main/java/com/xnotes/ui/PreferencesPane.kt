@@ -609,12 +609,7 @@ fun PreferencesPane(
     }
 }
 
-/**
- * Pick the handwritten-maths model and download, update or delete it. The list comes from the
- * models repo when online and from the last listing and the installed copies otherwise, each
- * with what it is, its size and the device it needs. [onTrain] opens training; when a download
- * finishes, a dialog offers it (or learning from formulas written before).
- */
+/** Pick the handwritten-maths model and download, update or delete it; [onTrain] opens training. */
 @Composable
 internal fun MathAddonControls(prefs: Preferences, update: (Preferences) -> Unit, onTrain: (() -> Unit)? = null) {
     val selected = prefs.mathModel
@@ -646,6 +641,8 @@ internal fun MathAddonControls(prefs: Preferences, update: (Preferences) -> Unit
     val usable = if (custom) prefs.mathLlmUrl.isNotBlank() && prefs.mathLlmModel.isNotBlank() else state == MathOcr.State.Installed
     val installedIds = catalog.filter { states[it.id] == MathOcr.State.Installed }.map { it.id }.toSet()
     val sizeMb = model.downloadBytes / 1_000_000
+    // One download at a time: the others' buttons wait for it.
+    val busy = states.any { (id, st) -> st is MathOcr.State.Downloading && id != model.id }
 
     // A download that just finished (seen going from Downloading to Installed) offers training.
     var wasDownloading by remember { mutableStateOf<String?>(null) }
@@ -674,18 +671,18 @@ internal fun MathAddonControls(prefs: Preferences, update: (Preferences) -> Unit
 
     Row(verticalAlignment = Alignment.CenterVertically) {
         val recommended = stringResource(R.string.math_model_recommended)
-    OptionDropdown(
-        catalog.map { it.id to "${it.name} ${it.version}" + if (it.id == MathOcr.RECOMMENDED_MODEL) " ($recommended)" else "" } +
-            (MathOcr.CUSTOM_LLM to stringResource(R.string.math_llm_option)),
-        usedId, installedIds, MathOcr.CUSTOM_LLM, onSelect,
-    )
+        OptionDropdown(
+            catalog.map { it.id to "${it.name} ${it.version}" + if (it.id == MathOcr.RECOMMENDED_MODEL) " ($recommended)" else "" } +
+                (MathOcr.CUSTOM_LLM to stringResource(R.string.math_llm_option)),
+            usedId, installedIds, MathOcr.CUSTOM_LLM, onSelect,
+        )
         when (state) {
             MathOcr.State.Installed -> {
                 Text(stringResource(R.string.math_model_downloaded), color = palette.textDim.toComposeColor(), fontSize = 12.sp, modifier = Modifier.padding(start = 8.dp))
                 TextButton(onClick = { confirmDelete = true }) { Text(stringResource(R.string.delete), fontSize = 13.sp) }
             }
             MathOcr.State.Missing -> if (!custom)
-                TextButton(onClick = { MathOcr.startDownload(context, model) }) { Text(stringResource(R.string.math_model_download, sizeMb), fontSize = 13.sp) }
+                TextButton(onClick = { MathOcr.startDownload(context, model) }, enabled = !busy) { Text(stringResource(R.string.math_model_download, sizeMb), fontSize = 13.sp) }
             else -> Unit
         }
     }
@@ -700,7 +697,7 @@ internal fun MathAddonControls(prefs: Preferences, update: (Preferences) -> Unit
         }
         is MathOcr.State.Failed -> Row(verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(R.string.math_model_download_failed, state.message), color = palette.danger.toComposeColor(), fontSize = 12.sp, modifier = Modifier.weight(1f, fill = false))
-            TextButton(onClick = { MathOcr.startDownload(context, model) }) { Text(stringResource(R.string.retry), fontSize = 13.sp) }
+            TextButton(onClick = { MathOcr.startDownload(context, model) }, enabled = !busy) { Text(stringResource(R.string.retry), fontSize = 13.sp) }
         }
         else -> Unit
     }
@@ -708,7 +705,7 @@ internal fun MathAddonControls(prefs: Preferences, update: (Preferences) -> Unit
     if (usable) {
         val here = if (custom) null else remember(model.id, states) { MathOcr.installed(context, model.id) }
         if (here != null && MathModel.newer(model.version, here.version)) {
-            TextButton(onClick = { MathOcr.startDownload(context, model) }) { Text(stringResource(R.string.math_model_update, model.version, sizeMb), fontSize = 13.sp) }
+            TextButton(onClick = { MathOcr.startDownload(context, model) }, enabled = !busy) { Text(stringResource(R.string.math_model_update, model.version, sizeMb), fontSize = 13.sp) }
         }
         val trained = remember(usedId, trainedVersion, learning) { MathTraining.trainedCount(context, usedId) }
         val unlearned = remember(usedId, trainedVersion, learning) { MathTraining.unlearnedCount(context, usedId) }

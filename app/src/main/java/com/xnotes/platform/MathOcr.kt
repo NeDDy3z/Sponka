@@ -38,13 +38,7 @@ import java.nio.FloatBuffer
 import java.nio.LongBuffer
 import java.security.MessageDigest
 
-/**
- * Handwritten maths to LaTeX, fully on device, as optional add-ons. Each model is a release of
- * the Sponka-Math-Models repo whose model.json says what it is and how to run it; ONNX Runtime's
- * core library is one more download shared by all of them. Preferences picks, downloads and
- * deletes models. Recognition renders the selected strokes to an image, runs the model's encoder
- * once, then beam-searches its decoder for a few readings, best first.
- */
+/** Handwritten maths to LaTeX on device, with models downloaded from the Sponka-Math-Models releases. */
 object MathOcr {
 
     sealed interface State {
@@ -112,21 +106,20 @@ object MathOcr {
 
     private fun runtimeInstalled(context: Context) = runtimeFile?.let { File(runtimeDir(context), it.name).length() == it.installedSize } == true
 
-    /** Parsed model.json files by path, valid while the file's modification time stays the same. */
-    private val manifests = HashMap<String, Pair<Long, MathModel?>>()
+    /** [installed] results by model id, cleared whenever this object changes the files. */
+    private val installedCache = HashMap<String, MathModel?>()
+
+    private fun filesChanged() = synchronized(installedCache) { installedCache.clear() }
 
     /** The installed copy of model [id], read from its own model.json, or null when it is not all here. */
-    fun installed(context: Context, id: String): MathModel? {
+    fun installed(context: Context, id: String): MathModel? = synchronized(installedCache) {
+        if (id in installedCache) return installedCache[id]
         migrate(context)
-        if (!runtimeInstalled(context)) return null
         val dir = modelDir(context, id)
-        val file = File(dir, MANIFEST)
-        val stamp = file.lastModified()
-        val model = synchronized(manifests) {
-            manifests[file.path]?.takeIf { it.first == stamp }?.second
-                ?: runCatching { MathModel.parse(JSONObject(file.readText())) }.getOrNull().also { manifests[file.path] = stamp to it }
-        } ?: return null
-        return model.takeIf { m -> m.files.all { File(dir, it.name).length() == it.installedSize } }
+        val model = runCatching { MathModel.parse(JSONObject(File(dir, MANIFEST).readText())) }.getOrNull()
+            ?.takeIf { m -> runtimeInstalled(context) && m.files.all { File(dir, it.name).length() == it.installedSize } }
+        installedCache[id] = model
+        model
     }
 
     fun isInstalled(context: Context, id: String): Boolean =
@@ -206,36 +199,46 @@ object MathOcr {
         bundled(context)?.let { File(dir, MANIFEST).writeText(it.json.toString()) }
     }
 
-    /** Fetch [model] (and the runtime, if it is not here yet); its model.json lands last, marking it whole. */
+    /**
+     * Fetch [model] (and the runtime, if it is not here yet) into .part files, then swap them in
+     * together, so a failed or cancelled update leaves the installed version working.
+     */
     fun startDownload(context: Context, model: MathModel) {
         if (download?.isActive == true) return
         val app = context.applicationContext
         val runtime = runtimeFile ?: return
+        val previous = download
         downloading = model.id
         downloadName = "${model.name} ${model.version}"
         lastProgress = null
         shownPercent = -1
-        download = scope.launch {
-            synchronized(lock) { release() }
-            val dir = modelDir(app, model.id).apply { mkdirs() }
-            pendingFile(app).writeText(model.json.toString())
-            File(dir, MANIFEST).delete()
-            val jobs = buildList {
-                if (!runtimeInstalled(app)) add(runtimeDir(app).apply { mkdirs() } to runtime)
-                for (f in model.files) add(dir to f)
-            }
-            val total = jobs.sumOf { it.second.size }
-            var done = 0L
+        val dir = modelDir(app, model.id)
+        val jobs = buildList {
+            if (!runtimeInstalled(app)) add(runtimeDir(app) to runtime)
+            for (f in model.files) add(dir to f)
+        }
+        val total = jobs.sumOf { it.second.size }
+        val job = scope.launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
+            // A cancelled download may still be stuck in a read; let it finish before touching the same files.
+            previous?.join()
+            val self = coroutineContext[Job]
+            val mine = { download === self }
             fun report(s: State) {
+                if (!mine()) return
                 _states.value = _states.value + (model.id to s)
                 if (s is State.Downloading) notifyProgress(app, s)
             }
+            var done = 0L
+            val ready = ArrayList<Pair<File, File>>()
             try {
+                pendingFile(app).writeText(model.json.toString())
                 for ((target, f) in jobs) {
+                    target.mkdirs()
                     val out = File(target, f.name)
-                    if (out.length() == f.installedSize && (f.installedSize != f.size || sha256(out) == f.sha256)) { done += f.size; continue }
-                    val url = f.url ?: error("${f.name} has no download link")
                     val part = File(target, f.name + ".part")
+                    if (out.length() == f.installedSize && (f.installedSize != f.size || sha256(out) == f.sha256)) { done += f.size; continue }
+                    if (f.installedSize == f.size && part.length() == f.size && sha256(part) == f.sha256) { ready += part to out; done += f.size; continue }
+                    val url = f.url ?: error("${f.name} has no download link")
                     val digest = MessageDigest.getInstance("SHA-256")
                     val gzipped = f.installedSize != f.size
                     // A plain file cut off earlier (app killed, network gone) goes on from where it stopped.
@@ -277,25 +280,38 @@ object MathOcr {
                     } finally {
                         conn.disconnect()
                     }
-                    if (!isActive) { part.delete(); return@launch }
+                    if (!isActive) return@launch
                     val sha = digest.digest().joinToString("") { "%02x".format(it) }
                     if (sha != f.sha256 || part.length() != f.installedSize) {
                         part.delete()
                         error("${f.name} is corrupt, try again")
                     }
-                    out.delete()
-                    part.renameTo(out)
+                    ready += part to out
                 }
-                File(dir, MANIFEST).writeText(model.json.toString())
+                synchronized(lock) {
+                    release()
+                    File(dir, MANIFEST).delete()
+                    for ((part, out) in ready) {
+                        out.delete()
+                        part.renameTo(out)
+                    }
+                    File(dir, MANIFEST).writeText(model.json.toString())
+                    filesChanged()
+                }
                 report(State.Installed)
             } catch (e: Exception) {
                 report(State.Failed(e.message ?: e.javaClass.simpleName))
             } finally {
-                downloading = null
-                pendingFile(app).delete()
-                service?.finish()
+                if (mine()) {
+                    downloading = null
+                    pendingFile(app).delete()
+                    service?.finish()
+                }
             }
         }
+        download = job
+        _states.value = _states.value + (model.id to State.Downloading(0, total))
+        job.start()
         startService(app)
     }
 
@@ -405,6 +421,7 @@ object MathOcr {
             synchronized(lock) { release() }
             modelDir(app, id).deleteRecursively()
             if (root(app).resolve("models").listFiles().isNullOrEmpty()) runtimeDir(app).deleteRecursively()
+            filesChanged()
             refresh(app)
         }
     }
@@ -487,10 +504,7 @@ object MathOcr {
 
     private class Beam(val ids: List<Long>, val score: Double)
 
-    /**
-     * Up to `beam` token sequences, best first. Every live beam runs as one row of a single
-     * decoder batch per step; there is no cache, so each step reruns the sequence so far.
-     */
+    /** Up to `beam` token sequences, best first; all live beams run as one decoder batch per step. */
     private fun beamSearch(l: Loaded, strokes: List<Stroke>, bounds: Rect): List<List<Long>> {
         val env = OrtEnvironment.getEnvironment()
         val m = l.model
