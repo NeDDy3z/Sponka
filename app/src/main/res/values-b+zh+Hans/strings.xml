@@ -114,6 +114,8 @@
     <string name="view_cover">封面</string>
     <string name="caption_vertical_scrolling">纵向滚动</string>
     <string name="caption_free_movement">页面自由移动</string>
+    <string name="caption_autoscroll">自动滚动</string>
+    <string name="caption_autoscroll_speed">速度</string>
     <string name="caption_pdf_filters">PDF 颜色滤镜</string>
     <string name="adjust">调整</string>
     <string name="filter_contrast">对比度</string>
@@ -342,6 +344,11 @@
     <string name="theme_dark">深色</string>
     <string name="theme_light">浅色</string>
     <string name="theme_oled">OLED</string>
+    <string name="pref_background_brightness">背景</string>
+    <string name="background_darker">更暗</string>
+    <string name="background_default">默认</string>
+    <string name="background_dim">柔暗</string>
+    <string name="background_soft">柔和</string>
     <string name="pref_accent_colour">强调色</string>
     <string name="pref_start_fullscreen">启动时全屏</string>
     <string name="pref_input">输入</string>
@@ -399,6 +406,11 @@
     <string name="remove">移除</string>
     <string name="pref_toolbar">工具栏</string>
     <string name="pref_toolbar_help">点按工具以显示或隐藏。长按可在分组内或分组间拖动。长按分组顶部可移动整个分组。</string>
+    <string name="audio_rename">重命名音频</string>
+    <string name="pref_selection_bar">选择工具栏</string>
+    <string name="pref_selection_bar_help">点按操作以显示或隐藏。长按可在工具栏和三点菜单之间拖动。</string>
+    <string name="selection_bar_main">工具栏</string>
+    <string name="selection_bar_more">三点菜单</string>
     <string name="toggle_pan">切换平移</string>
     <string name="toggle_eraser">切换橡皮擦</string>
     <string name="toggle_previous">切换上一个工具</string>
@@ -408,6 +420,8 @@
     <string name="pref_max_cache_px">"最大缓存分辨率  %1$d px"</string>
     <string name="pref_hidden_shapes">形状工具中的形状和连接线</string>
     <string name="pref_hidden_shapes_help">取消勾选某页可隐藏该页全部项目，点按某一项可只隐藏它。长按某页或某一项并拖动可调整顺序。</string>
+    <string name="pref_shapes_heading">形状</string>
+    <string name="pref_connectors_heading">连接线</string>
     <string name="pref_toolbar_colours_n">"工具栏颜色  %1$d"</string>
 
     <!-- Home screen and explorer -->
@@ -625,6 +639,11 @@
     <string name="pref_backup">备份</string>
     <string name="pref_backup_help">你的笔和工具、工具栏、颜色、主题、手势和手写笔按键、新笔记、画布和表格的默认设置、浏览器视图、导入的字体和代码主题，打包成一个文件，带到另一台设备上。笔记文件夹、固定项、最近项和这台设备的性能设置不会带走。</string>
     <string name="export_settings">导出设置…</string>
+    <string name="export_settings_with_notes">导出设置和笔记…</string>
+    <string name="import_settings_notes">此文件中的笔记会恢复到一个新文件夹，笔记文件夹中的内容不会改变。</string>
+    <string name="notes_restored">笔记已恢复到 %1$s。</string>
+    <string name="err_restore_notes">无法恢复全部笔记。</string>
+    <string name="restored_folder">已恢复 %1$s</string>
     <string name="import_settings">导入设置…</string>
     <string name="import_settings_title">导入设置？</string>
     <string name="import_settings_confirm">此文件中的内容将替换当前的设置，文件中没有的内容保持不变。</string>
@@ -1143,6 +1162,7 @@
     <string name="canvas_menu_formula">公式</string>
     <string name="canvas_menu_maths_keys">数学键盘</string>
     <string name="pref_keep_screen_on">应用打开时保持屏幕常亮</string>
+    <string name="pref_disable_back_button">禁用返回键</string>
     <string name="pref_updates">更新</string>
     <string name="pref_split_categories">将设置分为多个类别</string>
     <string name="pref_snap_rotation_90">旋转时吸附到 90 度</string>

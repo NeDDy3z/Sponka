@@ -55,4 +55,11 @@ class SettingsBackupTest {
         assertTrue(next.prefs.fingerDraws)
         assertNull(next.newNoteFlow)
     }
+
+    @Test fun restoredNotesStayInsideTheirFolder() {
+        assertEquals("R/a/b.xnote", SettingsBackup.restoredPath("notes/a/b.xnote", "R"))
+        assertNull(SettingsBackup.restoredPath("notes/../x.xnote", "R"))
+        assertNull(SettingsBackup.restoredPath("notes//x.xnote", "R"))
+        assertNull(SettingsBackup.restoredPath("fonts/a.ttf", "R"))
+    }
 }

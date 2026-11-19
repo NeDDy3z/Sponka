@@ -1,6 +1,7 @@
-# Contributing to xnotes
+# Contributing to Sponka
+_Disclaimer: this file is 1:1 copied (with tiny changes) from the original repository_
 
-Thank you for taking the time to improve xnotes.
+Thank you for taking the time to improve Sponka.
 
 The rules below apply to every pull request. A poorly prepared pull request can take longer to review than the change would take to write from scratch, so pull requests that do not follow these rules may be closed without review.
 

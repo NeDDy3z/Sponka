@@ -48,6 +48,8 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.xnotes.R
+import com.xnotes.core.tools.SelectionAction
+import com.xnotes.core.tools.SelectionBarLayout
 import com.xnotes.core.tools.ToolbarItem
 import com.xnotes.core.tools.ToolbarLayout
 import com.xnotes.core.tools.ToolbarSection
@@ -123,7 +125,9 @@ fun ToolbarCustomizerBody(
                         section.entries.forEachIndexed { idx, entry ->
                             if (dragging && dropTarget == sec to idx) InsertionCaret()
                             ChipCell(
-                                item = entry.item,
+                                key = entry.item,
+                                icon = itemIcon(entry.item),
+                                label = stringResource(entry.item.labelRes),
                                 visible = entry.visible,
                                 dragging = dragItem == entry.item,
                                 onTap = { onToggle(sec, idx) },
@@ -155,11 +159,18 @@ internal fun toolbarDropTarget(
     finger: Offset,
     chipBounds: Map<ToolbarItem, Rect>,
     sectionBounds: Map<Int, Rect>,
+): Pair<Int, Int>? = chipDropTarget(layout.sections.map { s -> s.entries.map { it.item } }, finger, chipBounds, sectionBounds)
+
+internal fun <K> chipDropTarget(
+    sections: List<List<K>>,
+    finger: Offset,
+    chipBounds: Map<K, Rect>,
+    sectionBounds: Map<Int, Rect>,
 ): Pair<Int, Int>? {
-    var sec = layout.sections.indices.firstOrNull { sectionBounds[it]?.contains(finger) == true } ?: -1
+    var sec = sections.indices.firstOrNull { sectionBounds[it]?.contains(finger) == true } ?: -1
     if (sec < 0) {
         var best = Float.MAX_VALUE
-        for (i in layout.sections.indices) {
+        for (i in sections.indices) {
             val r = sectionBounds[i] ?: continue
             val dx = maxOf(r.left - finger.x, 0f, finger.x - r.right)
             val dy = maxOf(r.top - finger.y, 0f, finger.y - r.bottom)
@@ -168,11 +179,11 @@ internal fun toolbarDropTarget(
         }
     }
     if (sec < 0) return null
-    val entries = layout.sections[sec].entries
+    val entries = sections[sec]
     if (entries.isEmpty()) return sec to 0
     fun before(r: Rect): Boolean = finger.y < r.top || (finger.y <= r.bottom && finger.x < r.center.x)
     for (idx in entries.indices) {
-        val r = chipBounds[entries[idx].item] ?: continue
+        val r = chipBounds[entries[idx]] ?: continue
         if (before(r)) return sec to idx
     }
     return sec to entries.size
@@ -295,7 +306,9 @@ private fun SectionDragStrip(
 
 @Composable
 private fun ChipCell(
-    item: ToolbarItem,
+    key: Any,
+    icon: ImageVector,
+    label: String,
     visible: Boolean,
     dragging: Boolean,
     onTap: () -> Unit,
@@ -313,13 +326,14 @@ private fun ChipCell(
     val dEnd by rememberUpdatedState(onDrop)
     val dCancel by rememberUpdatedState(onCancel)
     ChipFace(
-        item = item,
+        icon = icon,
+        label = label,
         visible = visible,
         modifier = Modifier
             .alpha(if (dragging) 0.15f else 1f)
             .onGloballyPositioned { onBounds(it.boundsInRoot()) }
-            .pointerInput(item) { detectTapGestures(onTap = { tap() }) }
-            .pointerInput(item) {
+            .pointerInput(key) { detectTapGestures(onTap = { tap() }) }
+            .pointerInput(key) {
                 detectDragGesturesAfterLongPress(
                     onDragStart = { dStart(it) },
                     onDrag = { _, delta -> dMove(delta) },
@@ -333,7 +347,7 @@ private fun ChipCell(
 /** The visual of a tool chip (icon + label, dimmed when hidden); shared by the bar editor and the
  *  section drag ghost so a lifted section looks exactly like its card. */
 @Composable
-private fun ChipFace(item: ToolbarItem, visible: Boolean, modifier: Modifier = Modifier) {
+private fun ChipFace(icon: ImageVector, label: String, visible: Boolean, modifier: Modifier = Modifier) {
     val palette = LocalPalette.current
     Row(
         modifier
@@ -344,15 +358,15 @@ private fun ChipFace(item: ToolbarItem, visible: Boolean, modifier: Modifier = M
             .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(itemIcon(item), null, tint = palette.textDim.toComposeColor(), modifier = Modifier.size(14.dp))
+        Icon(icon, null, tint = palette.textDim.toComposeColor(), modifier = Modifier.size(14.dp))
         Spacer(Modifier.width(4.dp))
-        Text(stringResource(item.labelRes), color = palette.text.toComposeColor(), fontSize = 12.sp)
+        Text(label, color = palette.text.toComposeColor(), fontSize = 12.sp)
     }
 }
 
 /** The floating chip that tracks the finger during a chip drag (drawn at the pane root). */
 @Composable
-fun ToolbarDragGhost(item: ToolbarItem) {
+fun ToolbarDragGhost(icon: ImageVector, label: String) {
     val palette = LocalPalette.current
     Row(
         Modifier
@@ -363,9 +377,9 @@ fun ToolbarDragGhost(item: ToolbarItem) {
             .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(itemIcon(item), null, tint = palette.accent.toComposeColor(), modifier = Modifier.size(14.dp))
+        Icon(icon, null, tint = palette.accent.toComposeColor(), modifier = Modifier.size(14.dp))
         Spacer(Modifier.width(4.dp))
-        Text(stringResource(item.labelRes), color = palette.accent.toComposeColor(), fontSize = 12.sp)
+        Text(label, color = palette.accent.toComposeColor(), fontSize = 12.sp)
     }
 }
 
@@ -403,7 +417,7 @@ fun SectionCardGhost(section: ToolbarSection, widthPx: Float) {
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                section.entries.forEach { e -> ChipFace(e.item, e.visible) }
+                section.entries.forEach { e -> ChipFace(itemIcon(e.item), stringResource(e.item.labelRes), e.visible) }
             }
         }
     }
@@ -502,7 +516,13 @@ class ToolbarDrag(private val editor: Editor) {
     /** The shape and connector lists under the bar, reordered by key. */
     internal val shapes = KeyReorder()
 
-    val active: Boolean get() = item != null || section != null || shapes.dragging != null
+    /** The selection bar's action being dragged, between the bar and its 3-dot menu. */
+    private var action by mutableStateOf<SelectionAction?>(null)
+    private var actionTarget by mutableStateOf<Pair<Int, Int>?>(null)
+    private val actionBounds = mutableMapOf<SelectionAction, Rect>()
+    private val actionListBounds = mutableMapOf<Int, Rect>()
+
+    val active: Boolean get() = item != null || section != null || action != null || shapes.dragging != null
     /** Where the finger is in whichever drag is running. */
     val pointer: Offset get() = if (shapes.dragging != null) shapes.finger else finger
     val layout: ToolbarLayout get() = if (canvasTab) editor.canvasToolbarLayout else editor.toolbarLayout
@@ -517,6 +537,7 @@ class ToolbarDrag(private val editor: Editor) {
         if (shapes.dragging != null) shapes.retarget()
         else if (item != null) dropTarget = toolbarDropTarget(layout, finger, chipBounds, sectionBounds)
         else if (section != null) sectionDropTarget = toolbarSectionDropTarget(layout, finger, sectionBounds)
+        else if (action != null) actionTarget = chipDropTarget(editor.selectionBarLayout.sections.map { s -> s.map { it.action } }, finger, actionBounds, actionListBounds)
     }
 
     fun showTab(canvas: Boolean) {
@@ -597,6 +618,69 @@ class ToolbarDrag(private val editor: Editor) {
         )
     }
 
+    /** The selection bar and its 3-dot menu as two cards; chips tap to hide and long-press to drag between them. */
+    @OptIn(ExperimentalLayoutApi::class)
+    @Composable
+    fun SelectionBody() {
+        val palette = LocalPalette.current
+        val layout = editor.selectionBarLayout
+        val dragging = action != null
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            for ((sec, title) in listOf(SelectionBarLayout.BAR to R.string.selection_bar_main, SelectionBarLayout.MORE to R.string.selection_bar_more)) {
+                val entries = layout.sections[sec]
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .onGloballyPositioned { actionListBounds[sec] = it.boundsInRoot() }
+                        .clip(MaterialTheme.shapes.small)
+                        .border(1.dp, (if (dragging && actionTarget?.first == sec) palette.accent else palette.border).toComposeColor(), MaterialTheme.shapes.small)
+                        .padding(8.dp),
+                ) {
+                    Text(stringResource(title), color = palette.textDim.toComposeColor(), fontSize = 12.sp, modifier = Modifier.padding(bottom = 6.dp))
+                    if (entries.isEmpty()) Text(stringResource(R.string.drop_here), color = palette.textDim.toComposeColor(), fontSize = 11.sp)
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        entries.forEachIndexed { idx, e ->
+                            if (dragging && actionTarget == sec to idx) InsertionCaret()
+                            ChipCell(
+                                key = e.action,
+                                icon = e.action.icon,
+                                label = stringResource(e.action.labelRes),
+                                visible = e.visible,
+                                dragging = action == e.action,
+                                onTap = { editor.applySelectionBarLayout(editor.selectionBarLayout.toggleVisible(sec, idx)) },
+                                onDragStart = { local ->
+                                    action = e.action
+                                    grab = local
+                                    finger = (actionBounds[e.action]?.topLeft ?: Offset.Zero) + local
+                                    retarget()
+                                },
+                                onDrag = { delta -> finger += delta; retarget() },
+                                onDrop = {
+                                    val target = actionTarget
+                                    val moving = action
+                                    val cur = editor.selectionBarLayout
+                                    val fSec = cur.sections.indexOfFirst { s -> s.any { it.action == moving } }
+                                    if (target != null && fSec >= 0) {
+                                        val fIdx = cur.sections[fSec].indexOfFirst { it.action == moving }
+                                        editor.applySelectionBarLayout(cur.moveItem(fSec, fIdx, target.first, target.second))
+                                    }
+                                    action = null
+                                    actionTarget = null
+                                },
+                                onCancel = { action = null; actionTarget = null },
+                                onBounds = { actionBounds[e.action] = it },
+                            )
+                        }
+                        if (dragging && actionTarget == sec to entries.size) InsertionCaret()
+                    }
+                }
+            }
+        }
+    }
+
     /** The dragged chip or section's floating copy, placed relative to the host root at [rootTopLeft]. */
     @Composable
     fun Ghost(rootTopLeft: Offset) {
@@ -607,8 +691,11 @@ class ToolbarDrag(private val editor: Editor) {
         if (shapes.dragging != null) {
             val f = shapes.finger - shapes.grab - rootTopLeft
             Box(Modifier.offset { IntOffset(f.x.toInt(), f.y.toInt()) }) { shapes.ghost() }
+        } else if (action != null) {
+            val a = action ?: return
+            Box(Modifier.offset { IntOffset(x, y) }) { ToolbarDragGhost(a.icon, stringResource(a.labelRes)) }
         } else if (chip != null) {
-            Box(Modifier.offset { IntOffset(x, y) }) { ToolbarDragGhost(chip) }
+            Box(Modifier.offset { IntOffset(x, y) }) { ToolbarDragGhost(itemIcon(chip), stringResource(chip.labelRes)) }
         } else if (sec != null) {
             val card = layout.sections.getOrNull(sec)
             val width = sectionBounds[sec]?.width

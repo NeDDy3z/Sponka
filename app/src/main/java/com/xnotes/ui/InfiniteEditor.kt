@@ -134,7 +134,6 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         onCommitSelection = { commitSelection(it) },
         onLiftSelection = { items, at -> scene.setLift(items, at) },
         devicePxPerDp = { devicePxPerDp },
-        measureSteadying = { debugVisible },
         onMinimapPress = { vx, vy -> minimapTap(vx, vy) },
         onContextMenu = { vp, content, locked -> contextMenu = ContextMenuTarget(vp.x, vp.y, content, locked) },
         hasPasteContent = { hasClipboardItems || clipboardHasImage },
@@ -845,6 +844,20 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
 
     /** The fills as a refill preview found them, so its settling call records them as one step. */
     private var refillBaseline: Map<ShapeItem, Rgba?>? = null
+
+    override fun selectionEffects() = com.xnotes.core.history.RestyleEffects.effects(selection.items)
+
+    override fun setSelectionEffects(dashed: Boolean?, neon: Boolean?, filled: Boolean?) {
+        val entries = com.xnotes.core.history.RestyleEffects.of(selection.items, dashed, neon, filled)
+        if (entries.isEmpty()) return
+        val command = com.xnotes.core.history.RestyleEffects(entries)
+        command.redo()
+        document.itemsChanged(entries.map { it.item })
+        history.push(OnCanvas(document, command, entries.map { it.item }))
+        markDirty()
+        refresh()
+        publishOverlay()
+    }
 
     override fun selectionTapePattern(): com.xnotes.core.model.TapePattern? =
         selection.items.firstNotNullOfOrNull { (it as? TapeItem)?.pattern }
@@ -1690,6 +1703,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
                 knobs = shape?.knobDots().orEmpty(),
                 moveGrip = selection.moveGrip(zoom, OverlayTessellator.GRIP_ARM_PX / zoom, margin),
                 onAccent = palette?.onSelectionAccent(view.paperColor) ?: com.xnotes.core.model.Rgba(255, 255, 255, 255),
+                grip = selection.turns,
             )
             val b = OverlayTessellator.selectionBounds(box, zoom)
             bounds = bounds?.union(b) ?: b

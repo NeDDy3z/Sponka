@@ -825,18 +825,22 @@ private fun EditorScreen(
     }
 
     // A settings backup written where the user picks, or read and held for the go-ahead to apply it.
+    var exportWithNotes by remember { mutableStateOf(false) }
     val exportSettingsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
+        val withNotes = exportWithNotes
         scope.launch {
             val ok = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                runCatching { resolver.openOutputStream(uri, "wt")?.use { editor.exportSettings(it) } != null }.getOrDefault(false)
+                runCatching { resolver.openOutputStream(uri, "wt")?.use { editor.exportSettings(it, withNotes) } != null }.getOrDefault(false)
             }
             editor.message = context.getString(if (ok) R.string.settings_exported else R.string.err_export_settings)
         }
     }
     var pendingBackup by remember { mutableStateOf<Editor.SettingsBackup?>(null) }
+    var pendingBackupUri by remember { mutableStateOf<Uri?>(null) }
     val importSettingsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
+        pendingBackupUri = uri
         scope.launch {
             val backup = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 runCatching { resolver.openInputStream(uri)?.use { editor.readSettingsBackup(it) } }.getOrNull()
@@ -1242,8 +1246,9 @@ private fun EditorScreen(
                 onExitApp = { (context as? android.app.Activity)?.finish() },
                 onImportCodeTheme = { importCodeThemeLauncher.launch(arrayOf("*/*")) },
                 onImportFont = { importFontLauncher.launch(arrayOf("*/*")) },
-                onBackup = { export ->
-                    if (export) exportSettingsLauncher.launch("sponka-settings-${java.time.LocalDate.now()}.zip")
+                onBackup = { export, withNotes ->
+                    exportWithNotes = withNotes
+                    if (export) exportSettingsLauncher.launch("sponka-${if (withNotes) "backup" else "settings"}-${java.time.LocalDate.now()}.zip")
                     else importSettingsLauncher.launch(arrayOf("application/zip", "application/octet-stream"))
                 },
                 onImportPdf = { importPdfLauncher.launch(importMimeTypes) },
@@ -1295,12 +1300,16 @@ private fun EditorScreen(
             // a note is open.
             val focused = editor.active
             if (focused.noteOpen) {
+                editor.prefsVersion // re-read the preferences below whenever they change
+                val backDisabled = focused.preferences.disableBackButton
+                // Composed first so the in-note handlers below still win; it only stops Back leaving the note.
+                BackHandler(enabled = backDisabled) { }
                 // While a text box is open, Back commits-or-dismisses it (and hides the keyboard).
                 BackHandler(enabled = focused.editingField != null) { focused.commitText() }
                 // A live flow caret session ends first (flushing its typing burst).
                 BackHandler(enabled = focused.flowEditingActive) { focused.flowText.endSession() }
                 // Otherwise Back closes that pane (guarded for unsaved edits); the other one stays.
-                BackHandler(enabled = focused.editingField == null && !focused.flowEditingActive) {
+                BackHandler(enabled = focused.editingField == null && !focused.flowEditingActive && !backDisabled) {
                     guarded(focused) { focused.goHome() }
                 }
                 // Reader mode is left before the note is.
@@ -1508,9 +1517,23 @@ private fun EditorScreen(
         com.xnotes.ui.AlertDialog(
             onDismissRequest = { pendingBackup = null },
             title = { androidx.compose.material3.Text(stringResource(R.string.import_settings_title)) },
-            text = { androidx.compose.material3.Text(stringResource(R.string.import_settings_confirm)) },
+            text = {
+                val notes = if (backup.hasNotes) "\n\n" + stringResource(R.string.import_settings_notes) else ""
+                androidx.compose.material3.Text(stringResource(R.string.import_settings_confirm) + notes)
+            },
             confirmButton = {
-                androidx.compose.material3.TextButton(onClick = { pendingBackup = null; editor.applySettingsBackup(backup) }) {
+                androidx.compose.material3.TextButton(onClick = {
+                    pendingBackup = null
+                    editor.applySettingsBackup(backup)
+                    val uri = pendingBackupUri
+                    if (backup.hasNotes && uri != null) scope.launch {
+                        val folder = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                            runCatching { resolver.openInputStream(uri)?.use { editor.restoreNotes(it) } }.getOrNull()
+                        }
+                        editor.relistTree()
+                        editor.message = if (folder != null) context.getString(R.string.notes_restored, folder) else context.getString(R.string.err_restore_notes)
+                    }
+                }) {
                     androidx.compose.material3.Text(stringResource(R.string.replace))
                 }
             },
@@ -1913,6 +1936,7 @@ private fun EditorPane(
                         floatingBar()
                         com.xnotes.ui.SelectionMenu(
                             canvas,
+                            layout = editor.selectionBarLayout,
                             onSaveAudio = { actions.onSaveAudio(editor, it) },
                             onShareAudio = { actions.onShareAudio(editor, it) },
                             onShareImage = actions.onShareImage,
@@ -1971,6 +1995,7 @@ private fun EditorPane(
                             floatingBar()
                             com.xnotes.ui.SelectionMenu(
                                 editor,
+                                layout = editor.selectionBarLayout,
                                 onSaveAudio = { actions.onSaveAudio(editor, it) },
                                 onShareAudio = { actions.onShareAudio(editor, it) },
                                 onShareImage = actions.onShareImage,

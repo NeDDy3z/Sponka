@@ -76,4 +76,43 @@ class MaterialPaletteTest {
         assertEquals(MaterialColors.seeded(seed, true), MaterialColors.seeded(seed, true))
         assertEquals(MaterialColors.seeded(seed, false), MaterialColors.seeded(seed, false))
     }
+
+    @Test fun backgroundBrightnessShiftsChromeButKeepsPaper() {
+        val m = MaterialColors.seeded(seed, dark = true)
+        val base = Palette.material("dark", m)
+        val brighter = Palette.material("dark", m, 1.0)
+        val darker = Palette.material("dark", m, -1.0)
+        assertTrue(luminance(brighter.bg) > luminance(base.bg))
+        assertTrue(luminance(darker.panel) < luminance(base.panel))
+        assertEquals(base.paper, brighter.paper)
+        assertEquals(base, Palette.material("dark", m, 0.0))
+        // The lighter sidebar moves further than the darker background behind the pages.
+        fun value(c: Rgba) = ColorMath.rgbToHsv(c)[2]
+        assertTrue(value(brighter.panel) - value(base.panel) > value(brighter.bg) - value(base.bg))
+        // Darkening a light theme keeps the background apart from the buttons sat on it.
+        val light = MaterialColors.seeded(seed, dark = false)
+        val lightBase = Palette.material("light", light)
+        val lightDarker = Palette.material("light", light, -0.6)
+        assertTrue(luminance(lightDarker.bg) - luminance(lightDarker.surface) >= luminance(lightBase.bg) - luminance(lightBase.surface))
+        // Lifting tints the chrome with the theme's hue instead of washing it toward grey.
+        assertTrue(ColorMath.rgbToHsv(Palette.material("dark", m, 0.8).bg)[1] > ColorMath.rgbToHsv(base.bg)[1])
+        for (level in listOf(-0.6, 0.4, 0.8)) {
+            assertEquals(Palette.material("oled", m), Palette.material("oled", m, level))
+        }
+    }
+
+    @Test fun backgroundPresetsKeepTextReadable() {
+        val seeds = listOf(seed, Rgba(245, 186, 149), Rgba(255, 107, 154), Rgba(33, 150, 243), Rgba(255, 235, 59), Rgba(120, 120, 120))
+        for (sd in seeds) for (dark in listOf(true, false)) for (level in listOf(-0.6, 0.4, 0.8)) for (style in com.xnotes.settings.MaterialStyle.entries) {
+            val m = MaterialColors.seeded(sd, dark, style)
+            val base = Palette.material(if (dark) "dark" else "light", m)
+            val p = Palette.material(if (dark) "dark" else "light", m, level)
+            val pairs = listOf(base.bg to p.bg, base.panel to p.panel, base.menuBg to p.menuBg, base.surface to p.surface, base.surfaceHi to p.surfaceHi)
+            for ((before, after) in pairs) {
+                val floor = minOf(4.5, ColorMath.contrastRatio(base.textDim, before))
+                val ratio = ColorMath.contrastRatio(p.textDim, after)
+                assertTrue("textDim on ${Rgba.toHex(after)} is ${"%.2f".format(ratio)} ($sd dark=$dark $level $style)", ratio >= floor)
+            }
+        }
+    }
 }

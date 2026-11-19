@@ -89,6 +89,9 @@ object FontCatalog {
     }
 
     /** The files of the user's imported fonts, for a settings export to carry. */
+    /** The file of the imported font [face], or null when it is not one. */
+    fun customFile(face: FontFace): File? = custom[face.id]?.file
+
     fun customFontFiles(): List<File> = custom.values.map { it.file }.filter { it.isFile }
 
     fun customFonts(): List<Choice> =
@@ -112,9 +115,10 @@ object FontCatalog {
                 family != null && am != null ->
                     runCatching { loadBundled(family, bold, italic, am) }.getOrElse { fallback() }
                 else -> custom[face.id]?.let { c ->
-                    // Single-file families: the framework synthesizes bold/italic.
+                    // Single-file families: the paint fakes bold/italic, as the framework does not do it everywhere.
                     runCatching {
-                        Resolved(Typeface.create(Typeface.createFromFile(c.file), style(bold, italic)), false, false)
+                        val tf = Typeface.createFromFile(c.file)
+                        Resolved(tf, fakeBold = bold && !tf.isBold, fakeItalic = italic && !tf.isItalic)
                     }.getOrElse { fallback() }
                 } ?: fallback()
             }

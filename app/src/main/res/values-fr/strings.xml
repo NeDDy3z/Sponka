@@ -406,6 +406,11 @@
     <string name="theme_dark">Sombre</string>
     <string name="theme_light">Clair</string>
     <string name="theme_oled">OLED</string>
+    <string name="pref_background_brightness">Fond</string>
+    <string name="background_darker">Plus sombre</string>
+    <string name="background_default">Par défaut</string>
+    <string name="background_dim">Atténué</string>
+    <string name="background_soft">Doux</string>
     <string name="pref_accent_colour">Couleur d\'accentuation</string>
     <string name="pref_start_fullscreen">Démarrer en plein écran</string>
     <string name="pref_input">Saisie</string>
@@ -457,6 +462,11 @@
     <string name="remove">Supprimer</string>
     <string name="pref_toolbar">Barre d\'outils</string>
     <string name="pref_toolbar_help">Touchez un outil pour l\'afficher ou le masquer. Appuyez longuement pour le déplacer au sein d\'une section ou vers une autre. Appuyez longuement sur le haut d\'une section pour la déplacer entièrement.</string>
+    <string name="audio_rename">Renommer l\'audio</string>
+    <string name="pref_selection_bar">Barre de sélection</string>
+    <string name="pref_selection_bar_help">Touchez une action pour l\'afficher ou la masquer. Appuyez longuement pour la déplacer entre la barre et le menu à trois points.</string>
+    <string name="selection_bar_main">Barre</string>
+    <string name="selection_bar_more">Menu à trois points</string>
     <string name="toggle_pan">Activer/désactiver le défilement</string>
     <string name="toggle_eraser">Activer/désactiver la gomme</string>
     <string name="toggle_lasso">Activer/désactiver le lasso</string>
@@ -467,6 +477,8 @@
     <string name="pref_max_cache_px">"Résolution max. du cache  %1$d px"</string>
     <string name="pref_hidden_shapes">Formes et connecteurs de l\'outil de formes</string>
     <string name="pref_hidden_shapes_help">Décochez une page pour masquer toutes ses puces, ou touchez une puce pour masquer uniquement celle-ci. Faites glisser une page par sa poignée, ou appuyez longuement sur une puce et faites-la glisser, pour changer l\'ordre.</string>
+    <string name="pref_shapes_heading">Formes</string>
+    <string name="pref_connectors_heading">Connecteurs</string>
     <string name="reset_order">Réinitialiser l\'ordre</string>
     <string name="pref_toolbar_colours_n">"Couleurs dans la barre d\'outils  %1$d"</string>
 
@@ -740,6 +752,11 @@
     <string name="pref_backup">Sauvegarde</string>
     <string name="pref_backup_help">Vos stylos et outils, barres d\'outils, couleurs, thème, gestes et boutons du stylet, les valeurs par défaut des nouvelles notes, des canevas et des tableaux, les vues de l\'explorateur, les polices importées et le thème du code, dans un seul fichier à emporter sur un autre appareil. Le dossier de notes, les épingles, les éléments récents et les réglages de performances de cet appareil restent en place.</string>
     <string name="export_settings">Exporter les réglages…</string>
+    <string name="export_settings_with_notes">Exporter les réglages et les notes…</string>
+    <string name="import_settings_notes">Les notes de ce fichier sont restaurées dans un nouveau dossier, rien ne change dans votre dossier de notes.</string>
+    <string name="notes_restored">Notes restaurées dans %1$s.</string>
+    <string name="err_restore_notes">Impossible de restaurer toutes les notes.</string>
+    <string name="restored_folder">Restauré %1$s</string>
     <string name="import_settings">Importer les réglages…</string>
     <string name="import_settings_title">Importer les réglages ?</string>
     <string name="import_settings_confirm">Tout ce que contient ce fichier remplace les réglages actuels. Ce qu\'il ne contient pas reste inchangé.</string>
@@ -923,6 +940,7 @@
     <string name="equation">Équation</string>
     <string name="insert_date">Date</string>
     <string name="insert_time">Heure</string>
+    <string name="horizontal_line">Ligne horizontale</string>
     <string name="page_break">Saut de page</string>
     <string name="quote">Citation</string>
     <string name="callout_note">Note</string>
@@ -1373,6 +1391,7 @@
     <string name="canvas_menu_formula">Formule</string>
     <string name="canvas_menu_maths_keys">Touches de maths</string>
     <string name="pref_keep_screen_on">Garder l\'écran allumé tant que l\'application est ouverte</string>
+    <string name="pref_disable_back_button">Désactiver le bouton Retour</string>
     <string name="pref_updates">Mises à jour</string>
     <string name="pref_split_categories">Répartir les paramètres en catégories</string>
     <string name="pref_snap_rotation_90">Aimanter la rotation à 90 degrés</string>

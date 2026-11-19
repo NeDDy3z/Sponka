@@ -128,6 +128,8 @@
     <string name="view_cover">Cover</string>
     <string name="caption_vertical_scrolling">Vertical scrolling</string>
     <string name="caption_free_movement">Free page movement</string>
+    <string name="caption_autoscroll">Autoscroll</string>
+    <string name="caption_autoscroll_speed">Speed</string>
     <string name="caption_pdf_filters">PDF colour filters</string>
     <string name="adjust">Adjust</string>
     <string name="filter_contrast">Contrast</string>
@@ -420,6 +422,11 @@
     <string name="theme_dark">Dark</string>
     <string name="theme_light">Light</string>
     <string name="theme_oled">OLED</string>
+    <string name="pref_background_brightness">Background</string>
+    <string name="background_darker">Darker</string>
+    <string name="background_default">Default</string>
+    <string name="background_dim">Dim</string>
+    <string name="background_soft">Soft</string>
     <string name="pref_accent_colour">Accent colour</string>
     <string name="pref_start_fullscreen">Start in fullscreen</string>
     <string name="pref_input">Input</string>
@@ -477,6 +484,11 @@
     <string name="remove">Remove</string>
     <string name="pref_toolbar">Toolbar</string>
     <string name="pref_toolbar_help">Tap a tool to show or hide it. Long-press to drag it within or across sections. Long-press a section\'s top to move the whole section.</string>
+    <string name="audio_rename">Rename audio</string>
+    <string name="pref_selection_bar">Selection toolbar</string>
+    <string name="pref_selection_bar_help">Tap an action to show or hide it. Long-press to drag it between the bar and the 3-dot menu.</string>
+    <string name="selection_bar_main">Bar</string>
+    <string name="selection_bar_more">3-dot menu</string>
     <string name="toggle_pan">Toggle pan</string>
     <string name="toggle_eraser">Toggle eraser</string>
     <string name="toggle_lasso">Toggle lasso</string>
@@ -487,6 +499,8 @@
     <string name="pref_max_cache_px">"Max cache resolution  %1$d px"</string>
     <string name="pref_hidden_shapes">Shapes and connectors in the shape tool</string>
     <string name="pref_hidden_shapes_help">Untick a page to hide all of its chips, or tap a chip to hide just that one. Drag a page by its handle, or long-press a chip and drag it, to change the order.</string>
+    <string name="pref_shapes_heading">Shapes</string>
+    <string name="pref_connectors_heading">Connectors</string>
     <string name="reset_order">Reset order</string>
     <string name="pref_toolbar_colours_n">"Colours on the toolbar  %1$d"</string>
 
@@ -767,6 +781,11 @@
     <string name="pref_backup">Backup</string>
     <string name="pref_backup_help">Your pens and tools, toolbars, colours, theme, gestures and stylus buttons, the defaults for new notes, canvases and tables, explorer views, imported fonts and code theme, in one file to carry to another device. The notes folder, pins, recents and this device’s performance settings stay behind.</string>
     <string name="export_settings">Export settings…</string>
+    <string name="export_settings_with_notes">Export settings and notes…</string>
+    <string name="import_settings_notes">Notes in this file are restored into a new folder, so nothing in your notes folder is changed.</string>
+    <string name="notes_restored">Notes restored to %1$s.</string>
+    <string name="err_restore_notes">Couldn’t restore all the notes.</string>
+    <string name="restored_folder">Restored %1$s</string>
     <string name="import_settings">Import settings…</string>
     <string name="import_settings_title">Import settings?</string>
     <string name="import_settings_confirm">Everything this file holds replaces what is set now. Anything it leaves out stays as it is.</string>
@@ -954,6 +973,7 @@
     <string name="equation">Equation</string>
     <string name="insert_date">Date</string>
     <string name="insert_time">Time</string>
+    <string name="horizontal_line">Horizontal line</string>
     <string name="page_break">Page break</string>
     <string name="quote">Quote</string>
     <string name="callout_note">Note</string>
@@ -1402,6 +1422,7 @@
     <string name="canvas_menu_formula">Formula</string>
     <string name="canvas_menu_maths_keys">Maths keys</string>
     <string name="pref_keep_screen_on">Keep screen on while the app is open</string>
+    <string name="pref_disable_back_button">Disable back button</string>
     <string name="pref_updates">Updates</string>
     <string name="pref_split_categories">Split settings into categories</string>
     <string name="pref_snap_rotation_90">Snap rotation to 90 degrees</string>

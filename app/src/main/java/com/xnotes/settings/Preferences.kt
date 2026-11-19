@@ -24,6 +24,8 @@ data class Preferences(
     val materialStyle: MaterialStyle = MaterialStyle.TONAL_SPOT,
     /** Material contrast level, -1 (reduced) .. 0 (standard) .. 1 (high). */
     val materialContrast: Double = 0.0,
+    /** Shift of the chrome surfaces behind the pages, -1 (darker) .. 0 (theme) .. 1 (brighter). */
+    val backgroundBrightness: Double = 0.0,
     val materialSurfaceSeed: Rgba = DEFAULT_MATERIAL_SURFACE,
     val cornerStyle: CornerStyle = CornerStyle.ROUNDED,
     val toolbarLook: ToolbarLook = ToolbarLook(),
@@ -80,6 +82,8 @@ data class Preferences(
     val volumeKeysTurnPages: Boolean = false,
     /** Keep the screen from sleeping while the app is open. */
     val keepScreenOn: Boolean = false,
+    /** While a note or canvas is open, the Back button does nothing, so a stray press can't leave it. */
+    val disableBackButton: Boolean = false,
     /** Look for a newer release on GitHub each time the app starts. */
     val checkUpdatesOnStartup: Boolean = true,
     /** Preferences open on a list of categories; off shows every setting in one long list. */
@@ -170,6 +174,8 @@ data class Preferences(
     val hiddenShapes: Set<String> = emptySet(),
     /** Shape and connector pages and chips, by key, in the order the shape popup shows them; empty keeps the built-in order. */
     val shapeOrder: List<String> = emptyList(),
+    /** The View menu's autoscroll speed in tenths of a paper millimetre per second; autoscroll itself always starts off. */
+    val autoScrollSpeed: Int = AUTOSCROLL_DEFAULT,
 ) {
     /**
      * A new note's page size in document pixels. A named size is laid out under
@@ -213,6 +219,7 @@ data class Preferences(
         .put("stylus_button_2_tap", stylusButton2Tap)
         .put("volume_keys_turn_pages", volumeKeysTurnPages)
         .put("keep_screen_on", keepScreenOn)
+        .put("disable_back_button", disableBackButton)
         .put("check_updates_on_startup", checkUpdatesOnStartup)
         .put("prefs_categories", prefsCategories)
         .put("side_margin", sideMargin)
@@ -239,6 +246,7 @@ data class Preferences(
             }
             if (materialStyle != MaterialStyle.TONAL_SPOT) put("material_style", materialStyle.id)
             if (materialContrast != 0.0) put("material_contrast", materialContrast)
+            if (backgroundBrightness != 0.0) put("background_brightness", backgroundBrightness)
             if (materialMode == MaterialColourMode.DUAL || materialSurfaceSeed != DEFAULT_MATERIAL_SURFACE) {
                 put("material_surface_seed", Rgba.toHex(materialSurfaceSeed))
             }
@@ -289,6 +297,7 @@ data class Preferences(
         .put("pdf_heading_bookmarks", pdfHeadingBookmarks)
         .apply { if (hiddenShapes.isNotEmpty()) put("hidden_shapes", org.json.JSONArray(hiddenShapes.sorted())) }
         .apply { if (shapeOrder.isNotEmpty()) put("shape_order", org.json.JSONArray(shapeOrder)) }
+        .put("autoscroll_speed", autoScrollSpeed)
 
     companion object {
         /** The accent a two-tone setting saved without a seed of its own has always loaded as. */
@@ -304,6 +313,11 @@ data class Preferences(
 
         /** [trashDays] for keeping deleted items until Trash is emptied by hand. */
         const val TRASH_FOREVER = -1
+
+        /** [autoScrollSpeed] bounds and default, in tenths of a mm per second. */
+        const val AUTOSCROLL_MIN = 1
+        const val AUTOSCROLL_MAX = 100
+        const val AUTOSCROLL_DEFAULT = 20
 
         /** Settable range of the min/max zoom limits, in percent (within the hard zoom bounds). */
         const val ZOOM_LIMIT_MIN_PCT = 20
@@ -342,6 +356,7 @@ data class Preferences(
                 materialDualSeed = dualSeed,
                 materialStyle = MaterialStyle.fromId(o.optString("material_style")),
                 materialContrast = o.optDouble("material_contrast", 0.0).takeIf { it in -1.0..1.0 } ?: 0.0,
+                backgroundBrightness = o.optDouble("background_brightness", 0.0).takeIf { it in -1.0..1.0 } ?: 0.0,
                 materialSurfaceSeed = surfaceSeed,
                 cornerStyle = CornerStyle.fromId(o.optString("corner_style")),
                 toolbarLook = ToolbarLook(
@@ -381,6 +396,7 @@ data class Preferences(
                 stylusButton2Tap = tapAction("stylus_button_2_tap"),
                 volumeKeysTurnPages = o.optBoolean("volume_keys_turn_pages", false),
                 keepScreenOn = o.optBoolean("keep_screen_on", false),
+                disableBackButton = o.optBoolean("disable_back_button", false),
                 checkUpdatesOnStartup = o.optBoolean("check_updates_on_startup", true),
                 prefsCategories = o.optBoolean("prefs_categories", true),
                 sideMargin = o.optDouble("side_margin", 16.0).coerceIn(0.0, 80.0),
@@ -443,6 +459,7 @@ data class Preferences(
                 pdfHeadingBookmarks = o.optBoolean("pdf_heading_bookmarks", true),
                 hiddenShapes = o.optJSONArray("hidden_shapes")?.let { a -> (0 until a.length()).mapNotNull { a.optString(it).ifEmpty { null } }.toSet() }.orEmpty(),
                 shapeOrder = o.optJSONArray("shape_order")?.let { a -> (0 until a.length()).mapNotNull { a.optString(it).ifEmpty { null } } }.orEmpty(),
+                autoScrollSpeed = o.optInt("autoscroll_speed", AUTOSCROLL_DEFAULT).coerceIn(AUTOSCROLL_MIN, AUTOSCROLL_MAX),
             )
         }
     }

@@ -174,10 +174,12 @@ fun PreferencesPane(
     onImportFont: () -> Unit = {},
     focusSync: Boolean = false,
     onSyncFocused: () -> Unit = {},
-    onBackup: (export: Boolean) -> Unit = {},
+    onBackup: (export: Boolean, withNotes: Boolean) -> Unit = { _, _ -> },
     syncLogOpen: Boolean = false,
     onSyncLog: (Boolean) -> Unit = {},
     onOpenAbout: () -> Unit = {},
+    /** Told whether the wide-screen settings sidebar is showing, so Home can fold its own away. */
+    onOwnSidebar: (Boolean) -> Unit = {},
 ) {
     val palette = LocalPalette.current
     val focusManager = LocalFocusManager.current
@@ -227,12 +229,17 @@ fun PreferencesPane(
     }
     LaunchedEffect(category) { scrollState.scrollTo(0) }
     BackHandler(enabled = categorized && category != null) { category = null }
+    // Wide screens open on the category list beside Home's sidebar; a picked category swaps in the settings sidebar.
+    val ownSidebar = !compact && (!categorized || category != null)
+    var mathPracticeOpen by remember { mutableStateOf(false) }
+    // Full-pane pages draw no settings sidebar, so Home keeps its own while they are up.
+    val showsOwnSidebar = ownSidebar && !syncLogOpen && !mathPracticeOpen
+    LaunchedEffect(showsOwnSidebar) { onOwnSidebar(showsOwnSidebar) }
     BackHandler(enabled = syncLogOpen) { onSyncLog(false) }
     if (syncLogOpen) {
         SyncLogPage(onBack = { onSyncLog(false) })
         return
     }
-    var mathPracticeOpen by remember { mutableStateOf(false) }
     var confirmOnboarding by remember { mutableStateOf(false) }
     if (mathPracticeOpen) {
         MathPractice(prefs.mathModel, onBack = { mathPracticeOpen = false })
@@ -249,12 +256,60 @@ fun PreferencesPane(
             .pointerInput(Unit) { detectTapGestures { focusManager.clearFocus() } }
             .onGloballyPositioned { paneTopLeft = it.boundsInRoot().topLeft },
     ) {
-    Column(Modifier.fillMaxSize()) {
+    val currentSection by remember {
+        derivedStateOf {
+            val line = sectionLine(scrollState.value, scrollState.maxValue, viewport.height, 24f * search.density)
+            search.sections.entries.filter { it.value <= line }.maxByOrNull { it.value }?.key
+        }
+    }
+    val sectionsPanel = @Composable {
+        if (categorized) {
+            val titles = PrefCategory.entries.map { stringResource(it.title) }
+            PrefSectionsPanel(titles, category?.let { titles[it.ordinal] }) { title ->
+                category = PrefCategory.entries[titles.indexOf(title)]
+                if (compact) sectionsOpen = false
+            }
+        } else {
+            PrefSectionsPanel(search.sections.entries.sortedBy { it.value }.map { it.key }, currentSection) { title ->
+                search.sections[title]?.let { y ->
+                    val to = scrollForSection(y, scrollState.maxValue, viewport.height, 24f * search.density)
+                    searchScope.launch { scrollState.animateScrollTo(to) }
+                }
+                if (compact) sectionsOpen = false
+            }
+        }
+    }
+    val searchBar = @Composable { modifier: Modifier ->
+        val hits = search.hits()
+        FindBar(
+            search.query,
+            { search.query = it; search.current = 0; showHit(0) },
+            if (search.query.isBlank()) "" else if (hits.isEmpty()) "0 / 0" else "${search.current + 1} / ${hits.size}",
+            { showHit(search.current - 1) },
+            { showHit(search.current + 1) },
+            { search.open = false; search.query = "" },
+            modifier,
+            inset = true,
+        )
+    }
+    Row(Modifier.fillMaxSize()) {
+    if (ownSidebar) {
+        Column(Modifier.width(224.dp).fillMaxHeight().background(palette.panel.toComposeColor())) {
+            Row(
+                Modifier.fillMaxWidth().heightIn(min = 52.dp).clickable { if (categorized) category = null else onBackToHome() }.padding(horizontal = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(XnotesIcons.prev, stringResource(if (categorized) R.string.preferences else R.string.back_to_home), tint = palette.text.toComposeColor(), modifier = Modifier.size(24.dp))
+            }
+            Box(Modifier.weight(1f)) { sectionsPanel() }
+        }
+    }
+    Column(Modifier.weight(1f).fillMaxHeight().then(if (ownSidebar) Modifier.padding(start = 16.dp, top = 4.dp, bottom = 12.dp) else Modifier)) {
         // Leading button inline with the title, at a constant row height so toggling the sidebar never
         // shifts the settings below: a back arrow to Home on compact, else a hamburger when hidden.
         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
             val open = if (categorized) category else null
-            if (open != null) {
+            if (open != null && compact) {
                 IconButton(onClick = { category = null }) {
                     Icon(XnotesIcons.prev, stringResource(R.string.preferences), tint = palette.text.toComposeColor(), modifier = Modifier.size(24.dp))
                 }
@@ -272,62 +327,33 @@ fun PreferencesPane(
                     }
                 }
             }
-            if (!categorized || (compact && open != null)) {
+            if (compact && (!categorized || open != null)) {
                 IconButton(onClick = { sectionsOpen = !sectionsOpen }) {
                     Icon(XnotesIcons.sidebar, stringResource(R.string.side_panel), tint = (if (sectionsOpen) palette.accent else palette.text).toComposeColor(), modifier = Modifier.size(22.dp))
                 }
             }
             Spacer(Modifier.width(4.dp))
             Text(open?.let { stringResource(it.title) } ?: stringResource(R.string.preferences), color = palette.text.toComposeColor(), fontWeight = FontWeight.Bold, fontSize = 20.sp)
-            Spacer(Modifier.weight(1f))
+            // Wide screens fit the search in the title row, beside its icon; phones drop it below.
+            if (search.open && !compact) {
+                Spacer(Modifier.width(16.dp))
+                searchBar(Modifier.weight(1f))
+            } else {
+                Spacer(Modifier.weight(1f))
+            }
             IconButton(onClick = { search.open = !search.open; if (!search.open) search.query = "" }) {
                 Icon(XnotesIcons.search, stringResource(R.string.search_settings), tint = palette.text.toComposeColor(), modifier = Modifier.size(22.dp))
             }
         }
-        if (search.open) {
-            val hits = search.hits()
-            FindBar(
-                search.query,
-                { search.query = it; search.current = 0; showHit(0) },
-                if (search.query.isBlank()) "" else if (hits.isEmpty()) "0 / 0" else "${search.current + 1} / ${hits.size}",
-                { showHit(search.current - 1) },
-                { showHit(search.current + 1) },
-                { search.open = false; search.query = "" },
-            )
+        if (search.open && compact) {
+            Spacer(Modifier.height(4.dp))
+            searchBar(Modifier.fillMaxWidth())
         }
         Spacer(Modifier.height(12.dp))
         search.toContentY = { rootY -> rootY - viewport.top + scrollState.value }
         search.density = androidx.compose.ui.platform.LocalDensity.current.density
-        val currentSection by remember {
-            derivedStateOf {
-                val line = sectionLine(scrollState.value, scrollState.maxValue, viewport.height, 24f * search.density)
-                search.sections.entries.filter { it.value <= line }.maxByOrNull { it.value }?.key
-            }
-        }
-        val sectionsPanel = @Composable {
-            if (categorized) {
-                val titles = PrefCategory.entries.map { stringResource(it.title) }
-                PrefSectionsPanel(titles, category?.let { titles[it.ordinal] }) { title ->
-                    category = PrefCategory.entries[titles.indexOf(title)]
-                    if (compact) sectionsOpen = false
-                }
-            } else {
-                PrefSectionsPanel(search.sections.entries.sortedBy { it.value }.map { it.key }, currentSection) { title ->
-                    search.sections[title]?.let { y ->
-                        val to = scrollForSection(y, scrollState.maxValue, viewport.height, 24f * search.density)
-                        searchScope.launch { scrollState.animateScrollTo(to) }
-                    }
-                    if (compact) sectionsOpen = false
-                }
-            }
-        }
-        val panelBeside = if (categorized) category != null && !compact else sectionsOpen && !compact
         val panelOver = sectionsOpen && compact && (!categorized || category != null)
         Row(Modifier.fillMaxSize()) {
-        if (panelBeside) {
-            sectionsPanel()
-            Spacer(Modifier.width(16.dp))
-        }
         Box(Modifier.weight(1f)) {
         CompositionLocalProvider(LocalPrefSearch provides search) {
         Column(
@@ -348,6 +374,7 @@ fun PreferencesPane(
                 SectionTitle(stringResource(R.string.pref_general))
                 CheckRow(stringResource(R.string.pref_start_fullscreen), editor.fullscreen) { editor.setFullscreenPref(it) }
                 CheckRow(stringResource(R.string.pref_keep_screen_on), prefs.keepScreenOn) { updateHome(prefs.copy(keepScreenOn = it)) }
+                CheckRow(stringResource(R.string.pref_disable_back_button), prefs.disableBackButton) { updateHome(prefs.copy(disableBackButton = it)) }
                 TextButton(onClick = { confirmOnboarding = true }) { Text(stringResource(R.string.onboarding_restart), fontSize = 13.sp) }
                 TextButton(onClick = onOpenAbout) { Text(stringResource(R.string.about), fontSize = 13.sp) }
                 if (all) HorizontalDivider(color = palette.border.toComposeColor())
@@ -571,9 +598,10 @@ fun PreferencesPane(
                 if (all) HorizontalDivider(color = palette.border.toComposeColor())
                 SectionTitle(stringResource(R.string.pref_backup))
                 Text(stringResource(R.string.pref_backup_help), color = palette.textDim.toComposeColor(), fontSize = 12.sp)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(onClick = { onBackup(true) }) { Text(stringResource(R.string.export_settings), fontSize = 13.sp) }
-                    TextButton(onClick = { onBackup(false) }) { Text(stringResource(R.string.import_settings), fontSize = 13.sp) }
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = { onBackup(true, false) }) { Text(stringResource(R.string.export_settings), fontSize = 13.sp) }
+                    TextButton(onClick = { onBackup(true, true) }) { Text(stringResource(R.string.export_settings_with_notes), fontSize = 13.sp) }
+                    TextButton(onClick = { onBackup(false, false) }) { Text(stringResource(R.string.import_settings), fontSize = 13.sp) }
                 }
             }
             if (shown(PrefCategory.CLOUD_SYNC)) {
@@ -590,6 +618,7 @@ fun PreferencesPane(
         }
         }
         }
+    }
     }
         // The dragged chip/section's floating copy: a pane-root sibling so the scroll never clips it.
         toolbarDrag.Ghost(paneTopLeft)
@@ -1232,6 +1261,15 @@ internal fun ThemeControls(prefs: Preferences, update: (Preferences) -> Unit, up
         Chip(stringResource(R.string.theme_light), prefs.uiAppearance == "light") { update(prefs.copy(uiAppearance = "light")) }
         Chip(stringResource(R.string.theme_oled), prefs.uiAppearance == "oled") { update(prefs.copy(uiAppearance = "oled")) }
     }
+    // OLED is always pure black, so it has no background presets.
+    if (prefs.uiAppearance != "oled") {
+        FieldLabel(stringResource(R.string.pref_background_brightness))
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            for ((level, label) in listOf(-0.6 to R.string.background_darker, 0.0 to R.string.background_default, 0.4 to R.string.background_dim, 0.8 to R.string.background_soft)) {
+                Chip(stringResource(label), prefs.backgroundBrightness == level) { update(prefs.copy(backgroundBrightness = level)) }
+            }
+        }
+    }
     val systemColours = prefs.materialMode == MaterialColourMode.SYSTEM
     FieldLabel(stringResource(R.string.material_tone))
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1359,18 +1397,28 @@ internal fun ToolbarSettings(editor: Editor, prefs: Preferences, updateHome: (Pr
             if (reorder.slotIn(pageKeys) == pageKeys.size) PageDropLine()
         }
     }
+    FieldLabel(stringResource(R.string.pref_shapes_heading))
     val shapePages = ShapePresets.ordered(prefs.shapeOrder)
     ShapePageRows(shapePages.map { it.key }, { stringResource(pageLabel(shapePages[it])) }) { i ->
         shapePages[i].presets.map { p ->
             p.key to @Composable { KindChip(ShapeIcons.of(p), chipLabel(p), selected = p.key !in prefs.hiddenShapes, latex = chipLatex(p)) { toggleHidden(p.key) } }
         }
     }
+    HorizontalDivider(color = palette.border.toComposeColor())
+    FieldLabel(stringResource(R.string.pref_connectors_heading))
     val connectorPages = ConnectorPresets.ordered(prefs.shapeOrder)
     ShapePageRows(connectorPages.map { it.key }, { stringResource(connectorPageLabel(connectorPages[it])) }) { i ->
         connectorPages[i].presets.map { p ->
             p.key to @Composable { KindChip(ShapeIcons.connector(p), stringResource(connectorLabel(p.key)), selected = p.key !in prefs.hiddenShapes) { toggleHidden(p.key) } }
         }
     }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        FieldLabel(stringResource(R.string.pref_selection_bar))
+        Spacer(Modifier.weight(1f))
+        TextButton(onClick = { editor.applySelectionBarLayout(com.xnotes.core.tools.SelectionBarLayout.DEFAULT) }) { Text(stringResource(R.string.reset), fontSize = 13.sp) }
+    }
+    Text(stringResource(R.string.pref_selection_bar_help), color = palette.textDim.toComposeColor(), fontSize = 12.sp)
+    drag.SelectionBody()
 }
 
 @Composable
@@ -1448,7 +1496,7 @@ private fun PrefSectionsPanel(titles: List<String>, current: String?, onPick: (S
             Text(
                 title,
                 color = (if (selected) palette.selectionForeground else palette.text).toComposeColor(),
-                fontSize = 12.sp,
+                fontSize = 15.sp,
                 fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
@@ -1456,7 +1504,7 @@ private fun PrefSectionsPanel(titles: List<String>, current: String?, onPick: (S
                     .fillMaxWidth()
                     .then(if (selected) Modifier.background(palette.selectionBackground.toComposeColor()) else Modifier)
                     .clickable { onPick(title) }
-                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
             )
         }
     }

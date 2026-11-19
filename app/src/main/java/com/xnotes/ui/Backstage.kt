@@ -215,7 +215,7 @@ fun Backstage(
     /** Preferences asked to import a font file. */
     onImportFont: () -> Unit = {},
     /** Preferences asked to export the settings ([export]) or import them. */
-    onBackup: (export: Boolean) -> Unit = {},
+    onBackup: (export: Boolean, withNotes: Boolean) -> Unit = { _, _ -> },
     /** Two picked files are to be opened together, one per pane of a split view. */
     onOpenSplit: (String, String) -> Unit = { _, _ -> },
     /** Several files are to be shared at once, as they are. */
@@ -308,11 +308,12 @@ private fun BackstageContent(
     onExitApp: () -> Unit,
     onImportCodeTheme: () -> Unit,
     onImportFont: () -> Unit,
-    onBackup: (Boolean) -> Unit,
+    onBackup: (Boolean, Boolean) -> Unit,
 ) {
     val palette = LocalPalette.current
     var createMode by remember { mutableStateOf(CreateMode.NONE) }
     var drawerOpen by remember { mutableStateOf(false) }
+    var prefsSidebar by remember { mutableStateOf(false) }
     val railed = editor.backstageRail
     val prefs = remember(editor.prefsVersion) { editor.preferences }
     // Close animates only on a true dismiss (scrim, back); a command swaps the pane already composed
@@ -323,6 +324,7 @@ private fun BackstageContent(
 
     val selectView: (BackstageView) -> Unit = { v ->
         if (v == BackstageView.HOME) createMode = CreateMode.NONE
+        prefsSidebar = false
         onSelectView(v)
         animateClose = false
         drawerOpen = false
@@ -409,7 +411,7 @@ private fun BackstageContent(
             BackstageMain(
                 Modifier.fillMaxSize(), editor, view, compact, drawerOpen, { animateClose = true; drawerOpen = true }, dismissDrawer, { selectView(BackstageView.HOME) },
                 calls, createMode, { createMode = it }, onImportCodeTheme, onImportFont, onBackup, link, { selectView(BackstageView.PREFERENCES) }, { selectView(BackstageView.ABOUT) },
-                focusSync, { focusSync = false }, syncLogOpen, { syncLogOpen = it },
+                focusSync, { focusSync = false }, syncLogOpen, { syncLogOpen = it }, prefsSidebar, { prefsSidebar = it },
             )
             AnimatedVisibility(
                 visible = drawerOpen,
@@ -431,19 +433,21 @@ private fun BackstageContent(
         // Expanding pushes the explorer along with the panel; collapsing hands it the room at once and the panel
         // folds away over it, as the old sidebar did, since resizing the grid on every frame is what a fold costs.
         // The width is read only in layout, so neither direction recomposes anything.
-        val width = animateDpAsState(if (railed) RAIL_WIDTH else SIDEBAR_WIDTH, tween(SIDEBAR_ANIM_MS), label = "sidebarWidth")
+        // Preferences brings its own sidebar, so the Home one folds away rather than standing beside it.
+        val navHidden = view == BackstageView.PREFERENCES && prefsSidebar
+        val width = animateDpAsState(if (navHidden) 0.dp else if (railed) RAIL_WIDTH else SIDEBAR_WIDTH, tween(SIDEBAR_ANIM_MS), label = "sidebarWidth")
         Box(Modifier.fillMaxSize().background(palette.bg.toComposeColor())) {
             // A navigation surface is always on screen here, so the panes never need their own menu button.
             BackstageMain(
                 Modifier.fillMaxSize().layout { measurable, constraints ->
-                    val inset = (if (railed) RAIL_WIDTH else width.value).roundToPx().coerceIn(0, constraints.maxWidth)
+                    val inset = (if (navHidden) 0.dp else if (railed) RAIL_WIDTH else width.value).roundToPx().coerceIn(0, constraints.maxWidth)
                     val w = constraints.maxWidth - inset
                     val placeable = measurable.measure(constraints.copy(minWidth = w, maxWidth = w))
                     layout(constraints.maxWidth, placeable.height) { placeable.place(inset, 0) }
                 },
                 editor, view, compact, true, { setRailed(false) }, { setRailed(true) }, { selectView(BackstageView.HOME) },
                 calls, createMode, { createMode = it }, onImportCodeTheme, onImportFont, onBackup, link, { selectView(BackstageView.PREFERENCES) }, { selectView(BackstageView.ABOUT) },
-                focusSync, { focusSync = false }, syncLogOpen, { syncLogOpen = it },
+                focusSync, { focusSync = false }, syncLogOpen, { syncLogOpen = it }, prefsSidebar, { prefsSidebar = it },
             )
             // Both stay composed so a fold never pays to build one; only the current one is measured and placed.
             Layout(
@@ -462,7 +466,8 @@ private fun BackstageContent(
                     .clipToBounds(),
             ) { measurables, constraints ->
                 val shown = measurables[if (railed) 0 else 1].measure(Constraints(maxHeight = constraints.maxHeight, minHeight = constraints.maxHeight))
-                layout(constraints.maxWidth, constraints.maxHeight) { shown.place(0, 0) }
+                // Fully folded, the panel is left unplaced so keyboard focus can't land on buttons nobody can see.
+                layout(constraints.maxWidth, constraints.maxHeight) { if (constraints.maxWidth > 0) shown.place(0, 0) }
             }
         }
     }
@@ -621,7 +626,7 @@ private fun BackstageMain(
     onCreateMode: (CreateMode) -> Unit,
     onImportCodeTheme: () -> Unit,
     onImportFont: () -> Unit,
-    onBackup: (Boolean) -> Unit,
+    onBackup: (Boolean, Boolean) -> Unit,
     link: ExplorerLink,
     onOpenPreferences: () -> Unit,
     onOpenAbout: () -> Unit,
@@ -629,6 +634,8 @@ private fun BackstageMain(
     onSyncFocused: () -> Unit,
     syncLogOpen: Boolean,
     onSyncLog: (Boolean) -> Unit,
+    prefsSidebar: Boolean,
+    onPrefsSidebar: (Boolean) -> Unit,
 ) {
     val palette = LocalPalette.current
     Column(modifier) {
@@ -654,10 +661,12 @@ private fun BackstageMain(
                 }
             }
         }
-        Box(Modifier.weight(1f).fillMaxWidth().padding(start = PANE_GUTTER, end = PANE_GUTTER, top = 4.dp, bottom = 12.dp)) {
+        // Wide Preferences runs its sidebar flush to the edges and pads its own content.
+        val flush = view == BackstageView.PREFERENCES && !compact && prefsSidebar
+        Box(Modifier.weight(1f).fillMaxWidth().padding(start = if (flush) 0.dp else PANE_GUTTER, end = PANE_GUTTER, top = if (flush) 0.dp else 4.dp, bottom = if (flush) 0.dp else 12.dp)) {
             when (view) {
                 BackstageView.HOME -> HomePane(editor, calls, createMode, onCreateMode, sidebarOpen, onShowSidebar, onHideSidebar, link)
-                BackstageView.PREFERENCES -> PreferencesPane(editor, compact, sidebarOpen, onShowSidebar, onBackToHome, onImportCodeTheme, onImportFont, focusSync, onSyncFocused, onBackup, syncLogOpen, onSyncLog, onOpenAbout)
+                BackstageView.PREFERENCES -> PreferencesPane(editor, compact, sidebarOpen, onShowSidebar, onBackToHome, onImportCodeTheme, onImportFont, focusSync, onSyncFocused, onBackup, syncLogOpen, onSyncLog, onOpenAbout, onPrefsSidebar)
                 BackstageView.TRASH -> TrashPane(editor, sidebarOpen, onShowSidebar, onOpenPreferences)
                 BackstageView.ABOUT -> AboutPane()
             }

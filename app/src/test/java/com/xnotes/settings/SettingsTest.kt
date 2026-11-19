@@ -220,6 +220,13 @@ class SettingsTest {
         assertFalse(back.pdfHeadingBookmarks)
     }
 
+    @Test fun autoScrollSpeedRoundTripsAndStaysInRange() {
+        assertEquals(Preferences.AUTOSCROLL_DEFAULT, Settings.fromJson(JSONObject()).prefs.autoScrollSpeed)
+        assertEquals(37, Settings.fromJson(Settings(prefs = Preferences(autoScrollSpeed = 37)).toJson()).prefs.autoScrollSpeed)
+        val wild = Settings(prefs = Preferences(autoScrollSpeed = 5000)).toJson()
+        assertEquals(Preferences.AUTOSCROLL_MAX, Settings.fromJson(wild).prefs.autoScrollSpeed)
+    }
+
     @Test fun customPageSizeRoundTripsAndSizesANewPage() {
         val prefs = Preferences(
             defaultPageSize = PageSize.CUSTOM,
@@ -600,6 +607,14 @@ class SettingsTest {
             assertEquals(p, Preferences.fromJson(p.toJson()))
         }
         assertEquals(0.0, Preferences.fromJson(JSONObject().put("material_contrast", 1.5)).materialContrast, 0.0)
+    }
+
+    @Test fun backgroundBrightnessRoundTripsAndRejectsOutOfRange() {
+        for (level in listOf(-1.0, -0.3, 0.5, 1.0)) {
+            val p = Preferences(backgroundBrightness = level)
+            assertEquals(p, Preferences.fromJson(p.toJson()))
+        }
+        assertEquals(0.0, Preferences.fromJson(JSONObject().put("background_brightness", 1.5)).backgroundBrightness, 0.0)
     }
 
     @Test fun cornerStyleRoundTripsAndDefaultsToRounded() {

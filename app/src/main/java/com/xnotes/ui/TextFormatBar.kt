@@ -248,7 +248,7 @@ private fun HeadingButton(editor: Editor, level: Int, enabled: Boolean) {
 /** The "/" menu's entries the bar has no own button for. */
 private val INSERT_KINDS = setOf(
     SlashCommands.Kind.QUOTE, SlashCommands.Kind.CALLOUT,
-    SlashCommands.Kind.PAGE_BREAK, SlashCommands.Kind.DATE, SlashCommands.Kind.TIME,
+    SlashCommands.Kind.RULE, SlashCommands.Kind.PAGE_BREAK, SlashCommands.Kind.DATE, SlashCommands.Kind.TIME,
 )
 
 @Composable

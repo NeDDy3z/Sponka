@@ -67,7 +67,9 @@ internal fun FontFace.toComposeFamily(): FontFamily = when (this) {
     FontFace.MONO -> FontFamily.Monospace
     FontFace.HAND -> FontFamily.Cursive
     else -> composeFamilies.getOrPut(id) {
-        FontFamily(FontCatalog.resolve(this, bold = false, italic = false).typeface)
+        // An imported font is one file: as a Font, Compose synthesizes its bold and italic.
+        FontCatalog.customFile(this)?.let { runCatching { FontFamily(androidx.compose.ui.text.font.Font(it)) }.getOrNull() }
+            ?: FontFamily(FontCatalog.resolve(this, bold = false, italic = false).typeface)
     }
 }
 

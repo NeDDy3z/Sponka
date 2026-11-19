@@ -12,6 +12,17 @@ object SettingsBackup {
     const val FORMAT = "xnotes-settings"
     const val VERSION = 1
 
+    /** Where a full backup keeps the notes folder's files. */
+    const val NOTES_DIR = "notes/"
+
+    /** Where the backup entry [entryName] is restored under [folder], or null when it is no note file or would climb out. */
+    fun restoredPath(entryName: String, folder: String): String? {
+        if (!entryName.startsWith(NOTES_DIR)) return null
+        val segments = entryName.removePrefix(NOTES_DIR).split('/')
+        if (segments.any { it.isEmpty() || it == "." || it == ".." }) return null
+        return "$folder/" + segments.joinToString("/")
+    }
+
     /** Settings about this device or its folders: the notes folder, pins, recents, per-folder views, window state. */
     private val DEVICE_SETTINGS = setOf(
         "browse_root", "sidebar_visible", "backstage_rail", "pinned_folders", "folder_views", "recent_docs",

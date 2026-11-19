@@ -921,6 +921,12 @@ fun ViewMenuPopup(editor: Editor, onDismiss: () -> Unit) {
             )
 
             ToggleRow(stringResource(R.string.caption_scrollbar), vs.scrollbar) { setScrollbar(it) }
+            // Autoscroll lives outside the View settings, so it never stirs the "Default for all notes" row.
+            ToggleRow(stringResource(R.string.caption_autoscroll), editor.autoScrollOn, enabled = vs.verticalScroll) { editor.setAutoScroll(it) }
+            if (editor.autoScrollOn) SliderRow(
+                stringResource(R.string.caption_autoscroll_speed), editor.autoScrollSpeed / 10f,
+                Preferences.AUTOSCROLL_MIN / 10f..Preferences.AUTOSCROLL_MAX / 10f, step = 0.1f, suffix = " mm/s",
+            ) { editor.pickAutoScrollSpeed((it * 10f).roundToInt()) }
 
             Spacer(Modifier.size(8.dp))
             if (showDefaultRow && overrides != ViewOverrides()) {
@@ -1106,7 +1112,7 @@ private fun ZoomSavedSection(owner: Editor, zoomPercent: Int, locked: Boolean, o
         ModeChip(stringResource(if (locked) R.string.unlock_zoom else R.string.lock_zoom), locked, onToggleLock)
         ModeChip(stringResource(R.string.zoom_save, zoomPercent), favorites.any { isSameZoom(it, current) }) { owner.toggleFavoriteZoom(current) }
     }
-    ToggleRow(stringResource(R.string.zoom_show_bar), owner.showZoomBar, owner::setShowZoomBar)
+    ToggleRow(stringResource(R.string.zoom_show_bar), owner.showZoomBar, onChange = owner::setShowZoomBar)
     if (favorites.isEmpty()) return
     StyleCaption(stringResource(R.string.caption_saved_zooms))
     SavedZoomChips(favorites, current, locked, onPick, owner::toggleFavoriteZoom)
@@ -1542,11 +1548,12 @@ private fun PopupBackLink(text: String, onBack: () -> Unit) {
 }
 
 @Composable
-internal fun ToggleRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+internal fun ToggleRow(label: String, checked: Boolean, enabled: Boolean = true, onChange: (Boolean) -> Unit) {
     // The checkbox's 48dp touch frame insets the drawn box; pull the row back to align it.
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.widthIn(min = 220.dp).fillMaxWidth().offset(x = (-14).dp)) {
-        Checkbox(checked = checked, onCheckedChange = onChange)
-        Text(label, color = LocalPalette.current.text.toComposeColor(), fontSize = 12.sp)
+        val palette = LocalPalette.current
+        Checkbox(checked = checked, onCheckedChange = onChange, enabled = enabled)
+        Text(label, color = (if (enabled) palette.text else palette.textDim).toComposeColor(), fontSize = 12.sp)
     }
 }
 

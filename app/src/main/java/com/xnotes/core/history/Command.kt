@@ -21,6 +21,7 @@ import com.xnotes.core.model.TapePattern
 import com.xnotes.core.model.TextItem
 import com.xnotes.core.model.TextMarkup
 import com.xnotes.core.model.TextStyle
+import kotlin.math.roundToInt
 
 /**
  * A reversible edit (spec 07). A command is pushed onto the history **after**
@@ -330,6 +331,65 @@ class RefillShapes(private val entries: List<Entry>) : Command {
             if (color == null && s.isFill) return@mapNotNull null
             val next = (color ?: s.strokeRgba).copy(a = f.a)
             if (next == f) null else Entry(s, f, next)
+        }
+    }
+}
+
+/** Which of dashed, neon and filled the selection can take (null: none of it can) and whether all of it is. */
+data class Effects(val dashed: Boolean?, val neon: Boolean?, val filled: Boolean?)
+
+/** Turn dashes, glow and fill on or off on shapes and connectors: one step for the whole selection. */
+class RestyleEffects(private val entries: List<Entry>) : Command {
+    class Entry(val item: CanvasItem, val before: State, val after: State)
+
+    data class State(val dashed: Boolean, val neon: Boolean, val fill: Rgba?) {
+        fun applyTo(item: CanvasItem) {
+            when (item) {
+                is ShapeItem -> { item.dashed = dashed; item.neon = neon; item.fillRgba = fill }
+                is com.xnotes.core.model.ConnectorItem -> { item.dashed = dashed; item.neon = neon }
+                else -> {}
+            }
+        }
+    }
+
+    override fun redo() {
+        for (e in entries) e.after.applyTo(e.item)
+    }
+
+    override fun undo() {
+        for (e in entries) e.before.applyTo(e.item)
+    }
+
+    override fun touched(locate: (CanvasItem) -> Page?) = pagedItems(entries.map { it.item }, locate)
+
+    companion object {
+        private fun state(item: CanvasItem): State? = when (item) {
+            is ShapeItem -> if (item.isFill || item.shape == com.xnotes.core.shapes.ShapeKind.GLYPHS) null else State(item.dashed, item.neon, item.fillRgba)
+            is com.xnotes.core.model.ConnectorItem -> State(item.dashed, item.neon, null)
+            else -> null
+        }
+
+        fun effects(items: List<CanvasItem>): Effects {
+            val styled = items.filter { !it.locked && state(it) != null }
+            val fillable = styled.filterIsInstance<ShapeItem>().filter { it.canFill }
+            return Effects(
+                dashed = styled.takeIf { it.isNotEmpty() }?.all { state(it)!!.dashed },
+                neon = styled.takeIf { it.isNotEmpty() }?.all { state(it)!!.neon },
+                filled = fillable.takeIf { it.isNotEmpty() }?.all { it.fillRgba != null },
+            )
+        }
+
+        /** The entries that set the non-null of [dashed], [neon] and [filled] on [items]; a new fill takes the outline's colour at the shape tool's opacity. */
+        fun of(items: List<CanvasItem>, dashed: Boolean?, neon: Boolean?, filled: Boolean?): List<Entry> = items.mapNotNull { item ->
+            if (item.locked) return@mapNotNull null
+            val before = state(item) ?: return@mapNotNull null
+            val fill = when {
+                item !is ShapeItem || !item.canFill || filled == null -> before.fill
+                !filled -> null
+                else -> before.fill ?: item.strokeRgba.copy(a = (com.xnotes.core.tools.ShapeConfig.FILL_ALPHA * 255).roundToInt())
+            }
+            val after = State(dashed ?: before.dashed, neon ?: before.neon, fill)
+            if (after == before) null else Entry(item, before, after)
         }
     }
 }

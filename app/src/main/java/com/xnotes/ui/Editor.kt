@@ -683,6 +683,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     var toolbarColorCount by mutableStateOf(5)
         private set
     var toolbarLayout by mutableStateOf(ToolbarLayout.DEFAULT)
+    var selectionBarLayout by mutableStateOf(com.xnotes.core.tools.SelectionBarLayout.DEFAULT)
+        private set
 
     /** The infinite canvas's own bar. Its own layout: the two surfaces hold different items. */
     var canvasToolbarLayout by mutableStateOf(ToolbarLayout.CANVAS_DEFAULT)
@@ -750,6 +752,23 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      *  This is what the canvas, caches and thumbnails all consume. */
     var viewSettings by mutableStateOf(settings.viewDefaults)
         private set
+
+    /** The View menu's autoscroll. Never a View setting: it starts off in every note, and only its speed is remembered. */
+    var autoScrollOn by mutableStateOf(false)
+        private set
+
+    /** Autoscroll speed in tenths of a paper millimetre per second. */
+    var autoScrollSpeed by mutableStateOf(settings.prefs.autoScrollSpeed)
+        private set
+
+    private val autoScroll by lazy {
+        com.xnotes.canvas.AutoScroll(
+            state,
+            held = { canvasTouched || controller.isFlinging },
+            onMoved = { refreshView(); onRender() },
+            onEnded = { setAutoScroll(false) },
+        )
+    }
     var rulerVisible by mutableStateOf(false)
         private set
     var wandEnabled by mutableStateOf(false)
@@ -1071,6 +1090,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         // matching how a note opened from outside the root behaves.
         canvasAutosaveUri = if (uri != null && browseRoot?.let { isUnderTree(uri, it) } == true) uri else null
         canvasAutosaveUri?.let { rememberStamp(it) }
+        setAutoScroll(false)
         canvasOpen = true
         noteOpen = true
         canvas.recoverRecordings(fromSession)
@@ -1935,8 +1955,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         controller.frontInk = com.xnotes.canvas.FrontInk(state, view, pad)
         pad.onSurfaceLost = { controller.frontInk?.surfaceLost() }
         view.debugOverlay.frontHud = { controller.frontInk?.hud }
-        view.debugOverlay.steadyHud = { controller.steadyReadout.lines() }
-        controller.measureSteadying = { view.debugOverlay.enabled }
+        view.debugOverlay.autoScrollHud = { if (autoScrollOn) autoScroll.secondsToEnd() else null }
         view.afterLayout = { refreshView() }
         view.onScrollbarScrolled = { refreshView() }
         // The canvas starts at built-in defaults; push any non-default global View settings
@@ -3107,6 +3126,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         toolbarColorCount = settings.toolbarColorCount
         toolbarLayout = settings.toolbarLayout
         canvasToolbarLayout = settings.canvasToolbarLayout
+        selectionBarLayout = settings.selectionBarLayout
         activeColorIndex = settings.activeColor.coerceIn(0, toolbarColorCount - 1)
         // Render always at 1x (the DPI/supersampling control was removed).
         renderScale = 1.0
@@ -3135,7 +3155,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             MaterialColourMode.SYSTEM -> dynamicMaterialColors(appContext, dark = dark)
                 ?: MaterialColors.seeded(Preferences.DEFAULT_MATERIAL_DUAL, dark, surfaceSeed = Preferences.DEFAULT_MATERIAL_SURFACE)
         }
-        return Palette.material(appearance, m)
+        return Palette.material(appearance, m, p.backgroundBrightness)
     }
 
     /** The app's theme in its light or dark variant, for the reader; the current mode (OLED included) when it already matches. */
@@ -3295,6 +3315,12 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     fun applyToolbarLayout(layout: ToolbarLayout) {
         toolbarLayout = layout
         settings = settings.copy(toolbarLayout = layout)
+        settingsRepo.save(settings)
+    }
+
+    fun applySelectionBarLayout(layout: com.xnotes.core.tools.SelectionBarLayout) {
+        selectionBarLayout = layout
+        settings = settings.copy(selectionBarLayout = layout)
         settingsRepo.save(settings)
     }
 
@@ -3473,6 +3499,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         warmVisibleLinks(pageIndex)
         if (controller.isEditingText) editingField = controller.editingField()
         refreshTextBar()
+        controller.followSelectionMenu()
     }
 
     /** Proactively parse the current page's PDF links off-thread (coalesce + cancel-stale) so a tap
@@ -4495,6 +4522,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      */
     fun leftApp() {
         secondary?.leftApp()
+        setAutoScroll(false)
         val uri = state.document.path ?: return
         if (!noteOpen || canvasOpen || !openIsPdf) return
         releaseOpenPdf(com.xnotes.platform.PdfExports.LEAVE_HOLD_MS)
@@ -7174,6 +7202,29 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         applyResolvedViewSettings()
     }
 
+    /** Start or stop autoscroll; it only runs in vertical scrolling, and keeps the screen awake while it does. */
+    fun setAutoScroll(on: Boolean) {
+        val run = on && viewSettings.verticalScroll
+        if (run == autoScrollOn) return
+        autoScrollOn = run
+        view.keepScreenOn = run
+        if (run) {
+            autoScroll.mmPerSec = autoScrollSpeed / 10.0
+            autoScroll.start()
+        } else {
+            autoScroll.stop()
+        }
+    }
+
+    fun pickAutoScrollSpeed(tenths: Int) {
+        val v = tenths.coerceIn(Preferences.AUTOSCROLL_MIN, Preferences.AUTOSCROLL_MAX)
+        if (v == autoScrollSpeed) return
+        autoScrollSpeed = v
+        autoScroll.mmPerSec = v / 10.0
+        settings = settings.copy(prefs = settings.prefs.copy(autoScrollSpeed = v))
+        saveSettingsSoon()
+    }
+
     /** Re-resolve the effective settings and react to whatever actually changed. */
     private fun applyResolvedViewSettings() {
         val prev = viewSettings
@@ -7239,6 +7290,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             if (evictPdfPageThumbnails()) pdfThumbTick++
             currentUri?.let { invalidateThumb(it) } // the recents tile re-renders with the new filter
         }
+        if (!new.verticalScroll && autoScrollOn) setAutoScroll(false)
         view.scrollbarEnabled = new.scrollbar
         view.requestRender()
     }
@@ -7274,6 +7326,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      * note's View-menu settings ride along (folder notes remember them; anything else resets).
      */
     private fun installInitialView(path: String?) {
+        setAutoScroll(false)
         val saved = viewKey(path)?.let { viewStates.get(it) }
         installViewOverrides(saved?.overrides ?: com.xnotes.canvas.ViewOverrides())
         state.pendingInitialView =
@@ -9473,6 +9526,10 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     override fun selectionTapePattern() = controller.selectionTapePattern()
 
+    override fun selectionEffects() = controller.selectionEffects()
+
+    override fun setSelectionEffects(dashed: Boolean?, neon: Boolean?, filled: Boolean?) = controller.setSelectionEffects(dashed, neon, filled)
+
     override fun setSelectionTapePattern(pattern: com.xnotes.core.model.TapePattern) = controller.setSelectionTapePattern(pattern)
 
     override fun refillSelection(color: Rgba?, preview: Boolean) {
@@ -10041,6 +10098,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             SlashCommands.Kind.CALLOUT -> flowStartQuote(com.xnotes.core.text.CalloutKind.entries[entry.level])
             SlashCommands.Kind.CODE -> flowSetCodeLanguage(slashCodeLanguage(arg))
             SlashCommands.Kind.TABLE -> slashInsertTable(arg)
+            SlashCommands.Kind.RULE -> flowInsertRule()
             SlashCommands.Kind.PAGE_BREAK -> flowInsertPageBreak()
             SlashCommands.Kind.SIZE -> flowSetChar { it.copy(sizePt = size.coerceIn(6.0, 96.0)) }
             SlashCommands.Kind.COLOR -> flowSetCharColor(color)
@@ -10063,6 +10121,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         when (entry.kind) {
             SlashCommands.Kind.QUOTE -> flowStartQuote(null)
             SlashCommands.Kind.CALLOUT -> flowStartQuote(com.xnotes.core.text.CalloutKind.entries[entry.level])
+            SlashCommands.Kind.RULE -> flowInsertRule()
             SlashCommands.Kind.PAGE_BREAK -> flowInsertPageBreak()
             SlashCommands.Kind.DATE, SlashCommands.Kind.TIME -> {
                 val stamp = if (entry.kind == SlashCommands.Kind.DATE) {
@@ -10119,6 +10178,27 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val (split, caret) = ed.replaceRange(sel, "\n")
         val mark = ed.setParaStyle(FlowRange.caret(caret)) { it.breakBefore = true }
         flowText.commitEdit(ed.combined(listOfNotNull(split, mark)), caret)
+    }
+
+    /** A horizontal rule on its own line at the caret, which then sits on the line after it. */
+    fun flowInsertRule() {
+        if (!flowText.active) return
+        val flow = state.document.flow
+        val sel = flowText.selection.normalized()
+        if (flow.paragraphs.getOrNull(sel.start.para)?.table != null) return
+        flowText.flushBurst()
+        flowText.mirrorStale = true
+        val ed = FlowEditor(flow)
+        val (cut, at) = ed.replaceRange(sel, if (sel.start.offset == 0) "" else "\n")
+        val (split, caret) = ed.insertText(at, "\n")
+        val mark = ed.setParaStyle(FlowRange.caret(at)) {
+            it.rule = true
+            it.list = ListKind.NONE
+            it.checked = false
+            it.headingLevel = 0
+            it.codeLang = null
+        }
+        flowText.commitEdit(ed.combined(listOfNotNull(cut, split, mark)), caret)
     }
 
     /** "/table 3x4" sizes the grid; anything unparsed falls back to the saved default. */
@@ -10431,6 +10511,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         internal val fonts: List<Pair<String, ByteArray>>,
         internal val codeTheme: Pair<String?, ByteArray>?,
         internal val keepsBuiltInCodeTheme: Boolean,
+        /** It also holds the notes folder's files, restored into a folder of their own. */
+        val hasNotes: Boolean,
         /** The math models' training, merged into this device's on import. */
         internal val mathTraining: org.json.JSONObject? = null,
     )
@@ -10440,7 +10522,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      * recents, per-folder views or this device's performance switches, then the imported fonts and
      * the code theme as files. IO.
      */
-    fun exportSettings(out: OutputStream) {
+    fun exportSettings(out: OutputStream, withNotes: Boolean = false) {
         val json = com.xnotes.settings.SettingsBackup.portable(settings.toJson())
         val theme = settings.prefs.codeThemePath?.let { java.io.File(it) }?.takeIf { it.isFile }
         val root = org.json.JSONObject()
@@ -10468,7 +10550,40 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                 zip.write(com.xnotes.platform.MathTraining.json(appContext).toString().toByteArray(Charsets.UTF_8))
                 zip.closeEntry()
             }
+            val root = browseRoot
+            if (withNotes && root != null) {
+                for (file in com.xnotes.sync.LocalNoteStore.listTree(appContext, root).files) {
+                    zip.putNextEntry(java.util.zip.ZipEntry(com.xnotes.settings.SettingsBackup.NOTES_DIR + file.relativePath))
+                    appContext.contentResolver.openInputStream(android.net.Uri.parse(file.documentUri))?.use { it.copyTo(zip) }
+                    zip.closeEntry()
+                }
+            }
         }
+    }
+
+    /** Write the notes in the backup [input] into a new folder in the notes folder; its name, or null when nothing could be restored. IO. */
+    fun restoreNotes(input: InputStream): String? {
+        val root = browseRoot ?: return null
+        val folder = appContext.getString(
+            R.string.restored_folder,
+            java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH-mm")),
+        )
+        val temp = java.io.File.createTempFile("restore", null, appContext.cacheDir)
+        var failed = false
+        try {
+            java.util.zip.ZipInputStream(input).use { zis ->
+                while (true) {
+                    val entry = zis.nextEntry ?: break
+                    if (entry.isDirectory) continue
+                    val path = com.xnotes.settings.SettingsBackup.restoredPath(entry.name, folder) ?: continue
+                    temp.outputStream().use { zis.copyTo(it) }
+                    runCatching { com.xnotes.sync.LocalNoteStore.writeNote(appContext, root, path, temp) }.onFailure { failed = true }
+                }
+            }
+        } finally {
+            temp.delete()
+        }
+        return folder.takeIf { !failed }
     }
 
     /** The settings backup in [input], or null when it is not one. IO. */
@@ -10477,10 +10592,12 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val fonts = ArrayList<Pair<String, ByteArray>>()
         var theme: ByteArray? = null
         var training: org.json.JSONObject? = null
+        var hasNotes = false
         java.util.zip.ZipInputStream(input).use { zis ->
             while (true) {
                 val entry = zis.nextEntry ?: break
                 val name = entry.name
+                if (name.startsWith(com.xnotes.settings.SettingsBackup.NOTES_DIR)) { hasNotes = true; continue }
                 val wanted = name == "settings.json" || name == "code-theme.toml" || name == MATH_TRAINING_ENTRY ||
                     (name.startsWith("fonts/") && name.count { it == '/' } == 1 && name.length > 6)
                 if (!wanted || entry.isDirectory) continue
@@ -10495,7 +10612,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         }
         val r = root?.takeIf { it.optString("format") == com.xnotes.settings.SettingsBackup.FORMAT } ?: return@runCatching null
         val json = r.optJSONObject("settings") ?: return@runCatching null
-        SettingsBackup(json, fonts, theme?.let { r.optString("code_theme_name").ifEmpty { null } to it }, !r.optBoolean("code_theme", true), training)
+        SettingsBackup(json, fonts, theme?.let { r.optString("code_theme_name").ifEmpty { null } to it }, !r.optBoolean("code_theme", true), hasNotes, training)
     }.getOrNull()
 
     /** Up to [max] bytes of the zip entry [zis] stands at, or null when it holds more. */
@@ -11421,6 +11538,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     fun goHome() {
         if (!noteOpen) return
         exitReader()
+        setAutoScroll(false)
         // Closing the note places a recording still going, before the note is saved.
         AudioRecording.stopFor(this)
         infiniteOrNull?.let { AudioRecording.stopFor(it) }

@@ -406,6 +406,11 @@
     <string name="theme_dark">Tmavý</string>
     <string name="theme_light">Světlý</string>
     <string name="theme_oled">OLED</string>
+    <string name="pref_background_brightness">Pozadí</string>
+    <string name="background_darker">Tmavší</string>
+    <string name="background_default">Výchozí</string>
+    <string name="background_dim">Tlumené</string>
+    <string name="background_soft">Jemné</string>
     <string name="pref_accent_colour">Barva zvýraznění</string>
     <string name="pref_start_fullscreen">Spouštět na celou obrazovku</string>
     <string name="pref_input">Vstup</string>
@@ -457,6 +462,11 @@
     <string name="remove">Odebrat</string>
     <string name="pref_toolbar">Panel nástrojů</string>
     <string name="pref_toolbar_help">Klepnutím nástroj zobrazíš nebo skryješ. Dlouhým stisknutím ho přetáhneš v rámci sekce nebo mezi sekcemi. Dlouhým stisknutím horní části sekce přesuneš celou sekci.</string>
+    <string name="audio_rename">Přejmenovat audio</string>
+    <string name="pref_selection_bar">Panel výběru</string>
+    <string name="pref_selection_bar_help">Klepnutím akci zobrazíš nebo skryješ. Dlouhým stisknutím ji přetáhneš mezi panelem a menu se třemi tečkami.</string>
+    <string name="selection_bar_main">Panel</string>
+    <string name="selection_bar_more">Menu se třemi tečkami</string>
     <string name="toggle_pan">Přepnout posun</string>
     <string name="toggle_eraser">Přepnout gumu</string>
     <string name="toggle_lasso">Přepnout laso</string>
@@ -467,6 +477,8 @@
     <string name="pref_max_cache_px">"Max. rozlišení mezipaměti  %1$d px"</string>
     <string name="pref_hidden_shapes">Tvary a spojnice v nástroji Tvar</string>
     <string name="pref_hidden_shapes_help">Odškrtnutím stránky skryješ všechny její čipy, klepnutím na čip skryješ jen ten jeden. Pořadí změníš přetažením stránky za úchyt nebo dlouhým stisknutím a přetažením čipu.</string>
+    <string name="pref_shapes_heading">Tvary</string>
+    <string name="pref_connectors_heading">Spojnice</string>
     <string name="reset_order">Obnovit pořadí</string>
     <string name="pref_toolbar_colours_n">"Barvy na panelu nástrojů  %1$d"</string>
 
@@ -758,6 +770,11 @@
     <string name="pref_backup">Záloha</string>
     <string name="pref_backup_help">Tvoje pera a nástroje, panely nástrojů, barvy, motiv, gesta a tlačítka stylusu, výchozí nastavení nových poznámek, pláten a tabulek, zobrazení průzkumníka, importovaná písma a motiv kódu v jednom souboru, který přeneseš do jiného zařízení. Složka s poznámkami, připnuté a nedávné položky a nastavení výkonu tohoto zařízení zůstanou tady.</string>
     <string name="export_settings">Exportovat nastavení…</string>
+    <string name="export_settings_with_notes">Exportovat nastavení a poznámky…</string>
+    <string name="import_settings_notes">Poznámky z tohoto souboru se obnoví do nové složky, takže ve tvé složce s poznámkami se nic nezmění.</string>
+    <string name="notes_restored">Poznámky obnoveny do %1$s.</string>
+    <string name="err_restore_notes">Nepodařilo se obnovit všechny poznámky.</string>
+    <string name="restored_folder">Obnoveno %1$s</string>
     <string name="import_settings">Importovat nastavení…</string>
     <string name="import_settings_title">Importovat nastavení?</string>
     <string name="import_settings_confirm">Vše, co tento soubor obsahuje, nahradí aktuální nastavení. Co v něm chybí, zůstane beze změny.</string>
@@ -951,6 +968,7 @@
     <string name="equation">Rovnice</string>
     <string name="insert_date">Datum</string>
     <string name="insert_time">Čas</string>
+    <string name="horizontal_line">Vodorovná čára</string>
     <string name="page_break">Konec stránky</string>
     <string name="quote">Citace</string>
     <string name="callout_note">Poznámka</string>
@@ -1416,6 +1434,7 @@
     <string name="canvas_menu_formula">Vzorec</string>
     <string name="canvas_menu_maths_keys">Matematické klávesy</string>
     <string name="pref_keep_screen_on">Nechat obrazovku zapnutou, dokud je aplikace otevřená</string>
+    <string name="pref_disable_back_button">Vypnout tlačítko Zpět</string>
     <string name="pref_updates">Aktualizace</string>
     <string name="pref_split_categories">Rozdělit nastavení do kategorií</string>
     <string name="pref_snap_rotation_90">Přichytávat otočení po 90 stupních</string>

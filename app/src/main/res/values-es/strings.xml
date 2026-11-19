@@ -406,6 +406,11 @@
     <string name="theme_dark">Oscuro</string>
     <string name="theme_light">Claro</string>
     <string name="theme_oled">OLED</string>
+    <string name="pref_background_brightness">Fondo</string>
+    <string name="background_darker">Más oscuro</string>
+    <string name="background_default">Predeterminado</string>
+    <string name="background_dim">Atenuado</string>
+    <string name="background_soft">Suave</string>
     <string name="pref_accent_colour">Color de énfasis</string>
     <string name="pref_start_fullscreen">Iniciar en pantalla completa</string>
     <string name="pref_input">Entrada</string>
@@ -457,6 +462,11 @@
     <string name="remove">Quitar</string>
     <string name="pref_toolbar">Barra de herramientas</string>
     <string name="pref_toolbar_help">Toca una herramienta para mostrarla u ocultarla. Mantén pulsado para arrastrarla dentro de una sección o entre secciones. Mantén pulsada la parte superior de una sección para moverla entera.</string>
+    <string name="audio_rename">Renombrar audio</string>
+    <string name="pref_selection_bar">Barra de selección</string>
+    <string name="pref_selection_bar_help">Toca una acción para mostrarla u ocultarla. Mantén pulsado para arrastrarla entre la barra y el menú de tres puntos.</string>
+    <string name="selection_bar_main">Barra</string>
+    <string name="selection_bar_more">Menú de tres puntos</string>
     <string name="toggle_pan">Alternar desplazamiento</string>
     <string name="toggle_eraser">Alternar borrador</string>
     <string name="toggle_lasso">Alternar lazo</string>
@@ -467,6 +477,8 @@
     <string name="pref_max_cache_px">"Resolución máxima de caché  %1$d px"</string>
     <string name="pref_hidden_shapes">Formas y conectores de la herramienta de formas</string>
     <string name="pref_hidden_shapes_help">Desmarca una página para ocultar todos sus chips, o toca un chip para ocultar solo ese. Arrastra una página por su asa, o mantén pulsado un chip y arrástralo, para cambiar el orden.</string>
+    <string name="pref_shapes_heading">Formas</string>
+    <string name="pref_connectors_heading">Conectores</string>
     <string name="reset_order">Restablecer orden</string>
     <string name="pref_toolbar_colours_n">"Colores en la barra de herramientas  %1$d"</string>
 
@@ -749,6 +761,11 @@
     <string name="pref_backup">Copia de seguridad</string>
     <string name="pref_backup_help">Tus plumas y herramientas, barras de herramientas, colores, tema, gestos y botones del lápiz, los valores predeterminados para notas, lienzos y tablas nuevos, las vistas del explorador, las fuentes importadas y el tema de código, en un solo archivo para llevar a otro dispositivo. La carpeta de notas, los anclados, los recientes y los ajustes de rendimiento de este dispositivo no se incluyen.</string>
     <string name="export_settings">Exportar ajustes…</string>
+    <string name="export_settings_with_notes">Exportar ajustes y notas…</string>
+    <string name="import_settings_notes">Las notas de este archivo se restauran en una carpeta nueva, así que no cambia nada en tu carpeta de notas.</string>
+    <string name="notes_restored">Notas restauradas en %1$s.</string>
+    <string name="err_restore_notes">No se pudieron restaurar todas las notas.</string>
+    <string name="restored_folder">Restaurado %1$s</string>
     <string name="import_settings">Importar ajustes…</string>
     <string name="import_settings_title">¿Importar ajustes?</string>
     <string name="import_settings_confirm">Todo lo que contiene este archivo reemplaza la configuración actual. Lo que no incluya se queda como está.</string>
@@ -937,6 +954,7 @@
     <string name="equation">Ecuación</string>
     <string name="insert_date">Fecha</string>
     <string name="insert_time">Hora</string>
+    <string name="horizontal_line">Línea horizontal</string>
     <string name="page_break">Salto de página</string>
     <string name="quote">Cita</string>
     <string name="callout_note">Nota</string>
@@ -1394,6 +1412,7 @@
     <string name="canvas_menu_formula">Fórmula</string>
     <string name="canvas_menu_maths_keys">Teclas matemáticas</string>
     <string name="pref_keep_screen_on">Mantener la pantalla encendida mientras la app está abierta</string>
+    <string name="pref_disable_back_button">Desactivar el botón Atrás</string>
     <string name="pref_updates">Actualizaciones</string>
     <string name="pref_split_categories">Dividir los ajustes en categorías</string>
     <string name="pref_snap_rotation_90">Ajustar la rotación a 90 grados</string>

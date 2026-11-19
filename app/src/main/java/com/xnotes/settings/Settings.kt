@@ -22,6 +22,7 @@ import com.xnotes.core.shapes.ShapeKind
 import com.xnotes.core.tools.Tool
 import com.xnotes.core.tools.ToolConfig
 import com.xnotes.core.tools.ToolDefaults
+import com.xnotes.core.tools.SelectionBarLayout
 import com.xnotes.core.tools.ToolbarLayout
 import org.json.JSONArray
 import org.json.JSONObject
@@ -67,6 +68,7 @@ data class Settings(
     val toolbarLayout: ToolbarLayout = ToolbarLayout.DEFAULT,
     /** The infinite canvas's own bar. A separate layout because the two hold different items. */
     val canvasToolbarLayout: ToolbarLayout = ToolbarLayout.CANVAS_DEFAULT,
+    val selectionBarLayout: SelectionBarLayout = SelectionBarLayout.DEFAULT,
     val activeColor: Int = 0,
     /** The tool armed when the app was last paused, re-armed on the next launch. */
     val lastTool: Tool = Tool.DEFAULT,
@@ -148,6 +150,7 @@ data class Settings(
             .put("toolbar_color_count", toolbarColorCount)
             .put("toolbar_layout", toolbarLayoutJson(toolbarLayout))
             .put("canvas_toolbar_layout", toolbarLayoutJson(canvasToolbarLayout))
+            .put("selection_bar_layout", JSONArray(selectionBarLayout.sections.map { s -> JSONArray(s.map { JSONObject().put("id", it.action.id).put("visible", it.visible) }) }))
             .put("active_color", activeColor)
             .put("last_tool", lastTool.id)
             .put("last_canvas_tool", lastCanvasTool.id)
@@ -210,6 +213,7 @@ data class Settings(
                     ToolbarLayout.CANVAS_ITEMS,
                     ToolbarLayout.CANVAS_DEFAULT,
                 ),
+                selectionBarLayout = selectionBarLayout(o.optJSONArray("selection_bar_layout")),
                 activeColor = o.optInt("active_color", 0).coerceIn(0, InkPalette.MAX_SWATCHES - 1),
                 // Only tools the toolbar can arm come back; a transient one (e.g. TEXT_BOX) would
                 // leave the bar showing a tool the user never picked.
@@ -563,6 +567,15 @@ data class Settings(
                 secArr.put(entryArr)
             }
             return JSONObject().put("sections", secArr)
+        }
+
+        private fun selectionBarLayout(arr: JSONArray?): SelectionBarLayout {
+            if (arr == null) return SelectionBarLayout.DEFAULT
+            val raw = (0 until arr.length()).map { i ->
+                val list = arr.optJSONArray(i) ?: JSONArray()
+                (0 until list.length()).mapNotNull { j -> list.optJSONObject(j)?.let { it.optString("id") to it.optBoolean("visible", true) } }
+            }
+            return SelectionBarLayout.fromRaw(raw)
         }
 
         private fun toolbarLayout(

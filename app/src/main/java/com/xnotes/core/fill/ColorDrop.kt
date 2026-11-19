@@ -161,8 +161,7 @@ object ColorDrop {
         return DropAction.AddFill(ShapeItem.fill(area.rings, color.withAlpha(255)), above, replaced)
     }
 
-    /** A closed shape that can carry a fill of its own. */
-    private fun fillable(s: ShapeItem) = s.shape.isClosed && !s.isFill && s.shape != ShapeKind.GLYPHS
+    private fun fillable(s: ShapeItem) = s.canFill
 
     /** The topmost fill at [at] that a drop may recolour. */
     fun fillAt(items: List<CanvasItem>, at: Pt): ShapeItem? {
