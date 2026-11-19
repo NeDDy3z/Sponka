@@ -78,18 +78,18 @@ object MathTraining {
         val app = context.applicationContext
         worker.launch {
             val raw = runCatching { MathOcr.recognize(app, model, strokes, bounds).firstOrNull() }.getOrNull()
-            if (!raw.isNullOrBlank()) record(app, model, session, latex, strokes, bounds, raw)
+            record(app, model, session, latex, strokes, bounds, raw?.takeIf { it.isNotBlank() })
         }
     }
 
-    /** In training run [session], the user wrote [latex] as [strokes] and model [model] read it as [raw]. */
+    /** In training run [session], the user wrote [latex] as [strokes]; model [model] read it as [raw], or failed (kept for later). */
     @Synchronized
-    fun record(context: Context, model: String, session: String, latex: String, strokes: List<Stroke>, bounds: Rect, raw: String) {
+    fun record(context: Context, model: String, session: String, latex: String, strokes: List<Stroke>, bounds: Rect, raw: String?) {
         val id = UUID.randomUUID().toString()
         val xy = strokes.map { s -> DoubleArray(s.sampleCount * 2) { i -> if (i % 2 == 0) s.xAt(i / 2) else s.yAt(i / 2) } }
         val d = data(context)
         d.add(MathTrainingData.Sample(id, session, System.currentTimeMillis(), latex, xy, doubleArrayOf(bounds.x, bounds.y, bounds.w, bounds.h)))
-        d.learned(model, id, raw)
+        if (raw != null) d.learned(model, id, raw)
         save(context)
     }
 

@@ -94,6 +94,9 @@ object MathOcr {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var download: Job? = null
+
+    /** The last cancelled download, which the next one waits out before touching the same files. */
+    private var cancelled: Job? = null
     private var downloading: String? = null
 
     private fun root(context: Context) = File(context.filesDir, "addons/math-ocr")
@@ -207,7 +210,8 @@ object MathOcr {
         if (download?.isActive == true) return
         val app = context.applicationContext
         val runtime = runtimeFile ?: return
-        val previous = download
+        val previous = download ?: cancelled
+        cancelled = null
         downloading = model.id
         downloadName = "${model.name} ${model.version}"
         lastProgress = null
@@ -401,6 +405,7 @@ object MathOcr {
 
     fun cancelDownload(context: Context) {
         download?.cancel()
+        cancelled = download
         download = null
         val id = downloading
         downloading = null
@@ -417,7 +422,9 @@ object MathOcr {
         val app = context.applicationContext
         _states.value = _states.value - id
         // Off the main thread: a recognition in progress holds the model until it finishes.
+        val stopping = cancelled
         scope.launch {
+            stopping?.join()
             synchronized(lock) { release() }
             modelDir(app, id).deleteRecursively()
             if (root(app).resolve("models").listFiles().isNullOrEmpty()) runtimeDir(app).deleteRecursively()
@@ -536,8 +543,10 @@ object MathOcr {
                             }
                         }
                         val grown = ArrayList<Beam>()
-                        for ((k, token, score) in next) {
-                            if (token == m.decode.eos) done += Beam(alive[k].ids, score)
+                        // Only an end token among the step's top picks finishes a reading, as in standard beam search.
+                        for ((rank, c) in next.withIndex()) {
+                            val (k, token, score) = c
+                            if (token == m.decode.eos) { if (rank < width) done += Beam(alive[k].ids, score) }
                             else if (grown.size < width) grown += Beam(alive[k].ids + token, score)
                         }
                         alive = grown
@@ -546,7 +555,9 @@ object MathOcr {
                     tiled?.second?.close()
                 }
                 // Longer readings gather more negative log-probability; dividing by length keeps them in the race.
-                (done + alive).sortedByDescending { it.score / it.ids.size }.take(width).map { it.ids.drop(1) }
+                // Unfinished readings only fill in when too few ended.
+                val byScore = compareByDescending<Beam> { it.score / it.ids.size }
+                (done.sortedWith(byScore) + alive.sortedWith(byScore)).take(width).map { it.ids.drop(1) }
             }
         }
     }

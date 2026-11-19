@@ -10636,11 +10636,11 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      */
     fun applySettingsBackup(backup: SettingsBackup) {
         val merged = com.xnotes.settings.SettingsBackup.merged(settings.toJson(), backup.settings)
-        backup.mathTraining?.let { runCatching { com.xnotes.platform.MathTraining.merge(appContext, it) } }
         val next = runCatching { Settings.fromJson(merged) }.getOrNull() ?: run {
             message = appContext.getString(R.string.err_import_settings)
             return
         }
+        backup.mathTraining?.let { runCatching { com.xnotes.platform.MathTraining.merge(appContext, it) } }
         settings = next
         settingsRepo.save(next)
         for (editor in listOfNotNull(this, sibling)) {

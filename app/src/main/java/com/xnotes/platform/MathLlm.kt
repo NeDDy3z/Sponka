@@ -107,8 +107,9 @@ object MathLlm {
         val u = url.trim().lowercase()
         if (!u.startsWith("http://")) return false
         val host = u.removePrefix("http://").substringBefore('/').substringBefore(':')
-        val private = host == "localhost" || host.endsWith(".local") || host.startsWith("127.") || host.startsWith("10.") ||
-            host.startsWith("192.168.") || Regex("""^172\.(1[6-9]|2\d|3[01])\.""").containsMatchIn(host)
+        val ip = Regex("""^\d{1,3}(\.\d{1,3}){3}$""").matches(host)
+        val private = host == "localhost" || host.endsWith(".local") || ip && (host.startsWith("127.") || host.startsWith("10.") ||
+            host.startsWith("192.168.") || Regex("""^172\.(1[6-9]|2\d|3[01])\.""").containsMatchIn(host))
         return !private
     }
 
