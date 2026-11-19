@@ -35,6 +35,11 @@ data class FrameState(
     /** What a floating toolbar covers of the right and bottom edges, which the minimap keeps clear of. */
     val insetRight: Double = 0.0,
     val insetBottom: Double = 0.0,
+    /** The minimap panel's offset from its default bottom-right corner, in device pixels. */
+    val minimapOffsetX: Double = 0.0,
+    val minimapOffsetY: Double = 0.0,
+    /** True while the panel is being dragged, so it draws with a stronger border. */
+    val minimapMoving: Boolean = false,
 ) {
     companion object {
         val EMPTY = FrameState(1.0, 0.0, 0.0, 0, 0, CanvasBackground(), Rgba(255, 255, 255, 255))

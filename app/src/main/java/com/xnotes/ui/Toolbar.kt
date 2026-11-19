@@ -219,8 +219,9 @@ private fun ToolbarItemView(
     onRecordAudio: () -> Unit,
 ) {
     when (item) {
-        // Canvas-only items; a stored paged layout can never hold one, so nothing is drawn.
-        ToolbarItem.WAYPOINTS, ToolbarItem.MINIMAP -> Unit
+        // Canvas-only item; a stored paged layout can never hold one, so nothing is drawn.
+        ToolbarItem.WAYPOINTS -> Unit
+        ToolbarItem.MINIMAP -> ToolbarIcon(XnotesIcons.map, stringResource(R.string.toolbar_minimap), active = editor.minimapVisible) { editor.toggleMinimap() }
 
         ToolbarItem.HOME -> ToolbarIcon(XnotesIcons.prev, stringResource(R.string.toolbar_home)) { onOpenBackstage() }
         // A name has no room down a side rail.

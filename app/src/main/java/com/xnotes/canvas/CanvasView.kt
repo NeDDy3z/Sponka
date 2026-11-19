@@ -14,10 +14,13 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import com.xnotes.core.geometry.Pt
 import com.xnotes.core.geometry.Rect
+import com.xnotes.core.infinite.Minimap
 import com.xnotes.core.model.Page
+import com.xnotes.core.model.Rgba
 import com.xnotes.core.model.Stroke
 import com.xnotes.core.model.TapeItem
 import com.xnotes.core.pal.BlendMode
+import com.xnotes.core.pal.Pen
 import com.xnotes.platform.AndroidRenderer
 import com.xnotes.platform.MathRendering
 import kotlin.math.ceil
@@ -100,6 +103,12 @@ class CanvasView @JvmOverloads constructor(
 
     /** Whether the canvas scrollbar is shown (the View menu's per-note toggle). */
     var scrollbarEnabled = false
+
+    /** Whether the page minimap is shown (the View menu's per-note toggle). */
+    var minimapVisible = false
+
+    /** Set while the minimap panel is being dragged (long-press move), so it can highlight. */
+    var minimapMoving = false
 
     /** Invoked after a scrollbar drag moved the view, so the host can refresh (page indicator). */
     var onScrollbarScrolled: (() -> Unit)? = null
@@ -268,6 +277,42 @@ class CanvasView @JvmOverloads constructor(
             val left = st.insetLeft.toFloat() + (st.clearW.toFloat() - thumb) * frac
             canvas.drawRect(left, bottom - barW, left + thumb, bottom, scrollbarPaint)
         }
+    }
+
+    /**
+     * The page minimap: a small panel mapping the whole note — every page, with a dot per item and
+     * the viewport outlined — so a tap or a drag on it moves the viewport square across pages, not
+     * just within the current row. Like the infinite canvas's minimap it is drawn from item bounds
+     * rather than re-rendering the scene, which at this scale costs a handful of fillRects. Purely
+     * viewport space, so the interaction layer hit-tests the same panel geometry (see [Minimap]).
+     */
+    private fun drawMinimap(st: CanvasState, r: AndroidRenderer) {
+        if (st.pageRects.isEmpty()) return
+        val panel = Minimap.panel(st.viewportW, st.viewportH, st.insetRight, st.insetBottom,
+            st.minimapPanelOffset.x, st.minimapPanelOffset.y)
+        // Map everything drawn, unioned with the viewport, so the square can travel the whole note.
+        var allBounds: Rect? = null
+        for (pr in st.pageRects) allBounds = allBounds?.union(pr) ?: pr
+        val extent = Minimap.mappedExtent(allBounds, st.visibleContentRect())
+        val paper = st.palette.paper
+        r.fillRect(panel, Rgba(paper.r, paper.g, paper.b, 210))
+        // A stronger border while the panel is being dragged, so it reads as picked up.
+        r.strokeRect(panel, Pen(st.palette.accent.withAlpha(if (minimapMoving) 220 else 90), 1.0, cosmetic = true))
+
+        // A dot per item, never smaller than ~1.5dp, so one thin stroke stays visible zoomed out.
+        val dot = st.palette.accent.withAlpha(150)
+        val minDot = 1.5 * st.devicePxPerDp
+        for (i in st.document.pages.indices) {
+            val page = st.document.pages.getOrNull(i) ?: continue
+            for (item in page.items) {
+                val m = Minimap.toPanel(st.fromPageSpaceRect(i, item.paintBounds()), extent, panel)
+                r.fillRect(Rect(m.x, m.y, m.w.coerceAtLeast(minDot), m.h.coerceAtLeast(minDot)), dot)
+            }
+        }
+        r.strokeRect(
+            Minimap.toPanel(st.visibleContentRect(), extent, panel),
+            Pen(st.palette.accent, 1.5, cosmetic = true),
+        )
     }
 
     /**
@@ -586,6 +631,9 @@ class CanvasView @JvmOverloads constructor(
         }
 
         drawScrollbar(canvas, st)
+
+        // The page minimap, viewport space, on top of the finished pages like the scrollbar.
+        if (minimapVisible) drawMinimap(st, r)
 
         st.prefetchAndPrune()
 

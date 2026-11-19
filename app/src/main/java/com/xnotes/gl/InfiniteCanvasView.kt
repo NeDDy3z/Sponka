@@ -121,6 +121,15 @@ class InfiniteCanvasView @JvmOverloads constructor(
             publish()
         }
 
+    /** The minimap panel's offset from its default bottom-right corner, in device pixels. */
+    var minimapOffsetX: Double = 0.0
+
+    /** The minimap panel's offset from its default bottom-right corner, in device pixels. */
+    var minimapOffsetY: Double = 0.0
+
+    /** True while the panel is being dragged, so it draws with a stronger border. */
+    var minimapMoving: Boolean = false
+
     /** Accent colour for the minimap's markers. */
     var accent: Rgba = Rgba(0, 230, 118, 255)
         set(value) {
@@ -165,6 +174,9 @@ class InfiniteCanvasView @JvmOverloads constructor(
             accent = accent,
             insetRight = viewport.insetRight,
             insetBottom = viewport.insetBottom,
+            minimapOffsetX = minimapOffsetX,
+            minimapOffsetY = minimapOffsetY,
+            minimapMoving = minimapMoving,
         )
         // In continuous mode the render thread is already drawing every refresh; otherwise ask for
         // a frame now. GLSurfaceView collapses a burst of requests into one draw by itself.

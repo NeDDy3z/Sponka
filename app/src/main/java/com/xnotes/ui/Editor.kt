@@ -28,6 +28,7 @@ import com.xnotes.core.fill.DropAction
 import com.xnotes.core.fill.FillGrid
 import com.xnotes.core.geometry.Pt
 import com.xnotes.core.geometry.Rect
+import com.xnotes.core.infinite.Minimap
 import com.xnotes.core.history.AddItem
 import com.xnotes.core.history.AddPage
 import com.xnotes.core.history.Command
@@ -495,6 +496,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         AndroidSurfaceFactory(),
         buildPalette(settings.prefs),
     )
+    // The minimap's saved floating position (0,0 = its default corner), restored once state exists.
+    init { state.minimapPanelOffset = Pt(settings.prefs.minimapX?.toDouble() ?: 0.0, settings.prefs.minimapY?.toDouble() ?: 0.0) }
     val history = History()
     val view = CanvasView(context).also { it.state = state }
 
@@ -757,6 +760,15 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     /** Autoscroll speed in tenths of a paper millimetre per second. */
     var autoScrollSpeed by mutableStateOf(settings.prefs.autoScrollSpeed)
         private set
+
+    /** The View menu's page minimap. Never a View setting: it starts off in every note, like autoscroll. */
+    var minimapVisible by mutableStateOf(false)
+        private set
+
+    fun toggleMinimap() {
+        minimapVisible = !minimapVisible
+        view.minimapVisible = minimapVisible
+    }
 
     private val autoScroll by lazy {
         com.xnotes.canvas.AutoScroll(
@@ -1908,6 +1920,31 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         }
         controller.onAudioTap = { pageIndex, local -> tapAudio(pageIndex, local) }
         controller.onUserMovedView = { AudioPlayback.userMoved(this) }
+        // A press on the minimap panel: the controller drives the whole gesture (tap-jump, square
+        // drag, long-press panel move); this hook is just the visibility + hit-test gate.
+        controller.onMinimapPress = onMinimapPress@{ vx, vy ->
+            if (!minimapVisible) return@onMinimapPress false
+            if (state.pageRects.isEmpty()) return@onMinimapPress false
+            val panel = Minimap.panel(state.viewportW, state.viewportH, state.insetRight, state.insetBottom,
+                state.minimapPanelOffset.x, state.minimapPanelOffset.y)
+            panel.contains(Pt(vx, vy))
+        }
+        // The panel was picked up for a move: highlight it and confirm with a haptic.
+        controller.onMinimapLongPress = {
+            view.minimapMoving = true
+            view.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+            view.requestRender()
+        }
+        // A minimap gesture ended: persist the panel's new offset and redraw.
+        controller.onMinimapGestureEnd = {
+            view.minimapMoving = false
+            settings = settings.copy(prefs = settings.prefs.copy(
+                minimapX = state.minimapPanelOffset.x.roundToInt(),
+                minimapY = state.minimapPanelOffset.y.roundToInt(),
+            ))
+            settingsRepo.save(settings)
+            refreshView()
+        }
         // Whatever is added while this note records takes the recording's moment.
         history.onPush = { command -> AudioRecording.stamp(this, command.added()) }
         controller.onLinkTap = onLinkTap@{ pageIndex, pageLocal ->

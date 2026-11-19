@@ -23,13 +23,30 @@ object Minimap {
     /** Space left inside the panel around the mapped extent. */
     const val PAD_PX = 8.0
 
-    /** The panel's own rectangle in device pixels: bottom-right of the viewport, clear of a floating bar. */
-    fun panel(viewportW: Int, viewportH: Int, insetRight: Double = 0.0, insetBottom: Double = 0.0): Rect = Rect(
-        viewportW - insetRight - WIDTH_PX - MARGIN_PX,
-        viewportH - insetBottom - HEIGHT_PX - MARGIN_PX,
-        WIDTH_PX,
-        HEIGHT_PX,
-    )
+    /**
+     * The panel's own rectangle in device pixels: the bottom-right of the viewport by default, clear
+     * of a floating bar. [offsetX]/[offsetY] move it from that corner (the user's saved position),
+     * clamped so the panel always stays fully on screen, clear of the scrollbar insets.
+     */
+    fun panel(
+        viewportW: Int,
+        viewportH: Int,
+        insetRight: Double = 0.0,
+        insetBottom: Double = 0.0,
+        offsetX: Double = 0.0,
+        offsetY: Double = 0.0,
+    ): Rect {
+        val baseX = viewportW - insetRight - WIDTH_PX - MARGIN_PX
+        val baseY = viewportH - insetBottom - HEIGHT_PX - MARGIN_PX
+        val maxX = (viewportW - insetRight - WIDTH_PX).coerceAtLeast(0.0)
+        val maxY = (viewportH - insetBottom - HEIGHT_PX).coerceAtLeast(0.0)
+        return Rect(
+            (baseX + offsetX).coerceIn(0.0, maxX),
+            (baseY + offsetY).coerceIn(0.0, maxY),
+            WIDTH_PX,
+            HEIGHT_PX,
+        )
+    }
 
     /**
      * The content region the panel maps: everything drawn, plus wherever the view is now, so the

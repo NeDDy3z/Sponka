@@ -921,6 +921,8 @@ fun ViewMenuPopup(editor: Editor, onDismiss: () -> Unit) {
             )
 
             ToggleRow(stringResource(R.string.caption_scrollbar), vs.scrollbar) { setScrollbar(it) }
+            // The minimap is a per-note view toggle like the scrollbar, outside ViewOverrides.
+            ToggleRow(stringResource(R.string.toolbar_minimap), editor.minimapVisible) { editor.toggleMinimap() }
             // Autoscroll lives outside the View settings, so it never stirs the "Default for all notes" row.
             ToggleRow(stringResource(R.string.caption_autoscroll), editor.autoScrollOn, enabled = vs.verticalScroll) { editor.setAutoScroll(it) }
             if (editor.autoScrollOn) SliderRow(

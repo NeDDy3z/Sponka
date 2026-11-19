@@ -28,6 +28,8 @@ import com.xnotes.core.history.MoveItems
 import com.xnotes.core.history.RefillShapes
 import com.xnotes.core.history.ReorderItems
 import com.xnotes.core.history.Regroup
+import com.xnotes.core.infinite.Minimap
+import com.xnotes.core.infinite.MinimapGesture
 import com.xnotes.core.infinite.sameOrder
 import com.xnotes.core.model.Arrange
 import com.xnotes.core.model.arrangeOrder
@@ -211,6 +213,17 @@ class InteractionController(
      *  once it is ready. */
     var onLinkTap: ((pageIndex: Int, pageLocal: Pt) -> Boolean)? = null
 
+    /** A press on the minimap panel at viewport (x, y); true when the point is inside the panel and
+     *  the gesture is the minimap's. The controller then drives the whole gesture itself: a tap
+     *  jumps, a drag slides the viewport square, a long-press-then-drag moves the panel. */
+    var onMinimapPress: ((Double, Double) -> Boolean)? = null
+
+    /** The minimap panel was held still past [MINIMAP_LONG_PRESS_MS] and is now being dragged. */
+    var onMinimapLongPress: (() -> Unit)? = null
+
+    /** A minimap gesture ended (tap, square drag, or panel move); the host persists the panel offset. */
+    var onMinimapGestureEnd: (() -> Unit)? = null
+
     /** Host hook for a finger tap on a canvas item's or the flow text's own hyperlink, tried before
      *  selecting, markups and PDF links since those sit on top. True when it opened one. */
     var onItemLinkTap: ((pageIndex: Int, pageLocal: Pt) -> Boolean)? = null
@@ -284,6 +297,26 @@ class InteractionController(
         Tool.entries.associateWith { ToolDefaults.configFor(it) }.toMutableMap()
 
     private var mode = PointerMode.IDLE
+
+    // MINIMAP (the paged canvas's page navigator): the shared [MinimapGesture] drives the whole
+    // thing — a press becomes a tap-jump, a square drag, or a long-press panel move. Its own [state]
+    // (via [MinimapGesture.active]) is the only flag; these just bind it to this canvas and [state].
+    private val minimapGesture by lazy {
+        MinimapGesture(object : MinimapGesture.Host {
+            override val longPressMs: Long get() = MINIMAP_LONG_PRESS_MS
+            override val tapSlopPx: Double get() = TAP_SLOP
+            override fun panelAt(offsetX: Double, offsetY: Double): Rect =
+                Minimap.panel(state.viewportW, state.viewportH, state.insetRight, state.insetBottom, offsetX, offsetY)
+            override fun extent(): Rect =
+                Minimap.mappedExtent(allContentBounds(), state.visibleContentRect())
+            override fun currentOffset(): Pt = state.minimapPanelOffset
+            override fun setOffset(offset: Pt) { state.minimapPanelOffset = offset }
+            override fun centerOnContent(p: Pt) = navigateMinimapToContent(p)
+            override fun onPickUp() { onMinimapLongPress?.invoke() }
+            override fun onFinish() { onMinimapGestureEnd?.invoke() }
+            override fun render() { requestRender() }
+        })
+    }
 
     // DRAW
     private var liveStrokeField: Stroke? = null
@@ -852,6 +885,13 @@ class InteractionController(
         lockedPressAt = null
         dismissPressAt = null
         markupPressAt = null
+        // The minimap sits over the canvas, so a press on it drives the minimap gesture rather than
+        // drawing. A tap jumps, a drag slides the viewport square, a long-press-then-drag moves it.
+        if (onMinimapPress?.invoke(e.getX(0).toDouble(), e.getY(0).toDouble()) == true) {
+            tapCandidate = false // the press never became a canvas tap
+            minimapGesture.onDown(e.getX(0).toDouble(), e.getY(0).toDouble())
+            return
+        }
         val toolType = e.getToolType(0)
         val vx = e.getX(0).toDouble()
         val vy = e.getY(0).toDouble()
@@ -1063,8 +1103,41 @@ class InteractionController(
         text.beginToolDrag(page, local, mark = configFor(Tool.MARKUP).markupMode != MarkupMode.SELECT)
     }
 
+    /** The union of every page's rect (content space): what the minimap maps, so the viewport
+     *  square can travel the whole note rather than being pinned to the current row. */
+    private fun allContentBounds(): Rect {
+        var acc: Rect? = null
+        for (r in state.pageRects) acc = acc?.union(r) ?: r
+        return acc ?: state.visibleContentRect()
+    }
+
+    /** Centre the view on content point [p], crossing rows as needed: a tap-jump and a square drag
+     *  both land the tapped point in the clear area. */
+    private fun navigateMinimapToContent(p: Pt) {
+        if (state.verticalScroll) {
+            // Continuous: the content point goes to the centre, as on the infinite canvas.
+            state.scrollX = p.x * state.zoom - state.clearCenter().x
+            state.scrollY = p.y * state.zoom - state.clearCenter().y
+            state.clampScroll()
+        } else {
+            // Paginated: a jump that crosses into another row turns to that row first. Search every
+            // page rect, not just the drawable range, so a jump to a not-yet-shown page still lands.
+            val page = state.pageRects.indexOfFirst { it.contains(p) }.takeIf { it >= 0 }
+            if (page != null && state.rowIndexOf(page) != state.currentRow) {
+                state.goToPage(page)
+            } else {
+                state.scrollX = p.x * state.zoom - state.clearCenter().x
+                state.scrollY = p.y * state.zoom - state.clearCenter().y
+                state.clampScroll()
+            }
+        }
+        requestRender()
+    }
+
     private fun handlePointerDown(e: MotionEvent) {
         cancelLongPress()
+        // A second finger ends any minimap gesture: the press was the first of a pinch, not a move.
+        if (minimapGesture.active) minimapGesture.onCancel()
         // A second finger turns a PDF text drag into a pinch; the selection stays, a mark in the making goes.
         if (mode == PointerMode.PDF_TEXT) {
             pdfText?.interrupt()
@@ -1104,6 +1177,10 @@ class InteractionController(
         val idx = e.findPointerIndex(drawingPointerId).coerceAtLeast(0)
         val vx = e.getX(idx).toDouble()
         val vy = e.getY(idx).toDouble()
+        if (minimapGesture.active) {
+            minimapGesture.onMove(vx, vy)
+            return
+        }
         val content = state.viewportToContent(Pt(vx, vy))
         maybeCancelLongPress(Pt(vx, vy))
         when (mode) {
@@ -1165,6 +1242,10 @@ class InteractionController(
 
     private fun handleUp(e: MotionEvent) {
         cancelLongPress()
+        if (minimapGesture.active) {
+            minimapGesture.onUp()
+            return
+        }
         val idx = e.findPointerIndex(drawingPointerId).coerceAtLeast(0)
         val content = state.viewportToContent(Pt(e.getX(idx).toDouble(), e.getY(idx).toDouble()))
         when (mode) {
@@ -1256,7 +1337,6 @@ class InteractionController(
             PointerMode.RULER_MOVE -> { mode = PointerMode.IDLE; requestRender() }
             PointerMode.RULER_TRANSFORM -> { mode = PointerMode.IDLE; requestRender() }
             PointerMode.RULER_ROTATE -> { mode = PointerMode.IDLE; requestRender() }
-            else -> Unit
         }
     }
 
@@ -5364,6 +5444,7 @@ class InteractionController(
 
     private fun abortGesture() {
         cancelLongPress()
+        if (minimapGesture.active) minimapGesture.onCancel()
         cancelDwell()
         dwellEligible = false
         snappedSelectionPendingMenu = false
@@ -5896,6 +5977,9 @@ class InteractionController(
 
         /** Max finger drift (viewport px) from touch-down still counted as a tap (e.g. tap-to-dismiss). */
         const val TAP_SLOP = 12.0
+
+        /** How long a still press on the minimap panel holds before it starts moving the panel. */
+        const val MINIMAP_LONG_PRESS_MS = 1000L
 
         /** How far outside a tape's edge a tap still peels it, in dp. */
         const val TAPE_TAP_REACH = 4.0

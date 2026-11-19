@@ -606,6 +606,13 @@ class CanvasState(
 
     var pageRects: List<Rect> = emptyList()
         private set
+
+    /**
+     * The minimap panel's offset from its default corner, in viewport pixels — the user's saved
+     * floating position (0,0 = the corner). Read by the renderer and written by the interaction
+     * layer while the panel is dragged; persisted by the editor.
+     */
+    var minimapPanelOffset: Pt = Pt(0.0, 0.0)
     var contentW: Double = 2 * MARGIN
         private set
     var contentH: Double = 2 * MARGIN
@@ -701,6 +708,17 @@ class CanvasState(
     fun rowIndexOf(pageIndex: Int): Int {
         val first = rowOf(pageIndex).first
         return rowRanges().indexOfFirst { it.first == first }.coerceAtLeast(0)
+    }
+
+    /**
+     * The layout row the viewport is currently over. [currentPageIndex] reads the page under the
+     * viewport centre in vertical scroll, and the current row's page in paginated mode, so its
+     * row is the view's row either way — unlike [currentRow], which tracks nothing in vertical
+     * scroll and would leave the view reporting the first row after a scroll.
+     */
+    fun currentViewRow(): IntRange {
+        if (pageRects.isEmpty()) return 0..0
+        return rowOf(currentPageIndex())
     }
 
     /** The union of a row's page rects (content space). */

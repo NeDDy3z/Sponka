@@ -196,7 +196,7 @@ class ToolbarLayoutTest {
 
     @Test fun theTwoBarsDoNotShareTheirOwnItems() {
         assertTrue(ToolbarItem.WAYPOINTS !in ToolbarLayout.NOTE_ITEMS)
-        assertTrue(ToolbarItem.MINIMAP !in ToolbarLayout.NOTE_ITEMS)
+        // MINIMAP belongs to both bars by design: the canvas overview and the paged page minimap.
         assertTrue(ToolbarItem.PAGE_NAV !in ToolbarLayout.CANVAS_ITEMS)
         assertTrue(ToolbarItem.TEXT !in ToolbarLayout.CANVAS_ITEMS)
     }

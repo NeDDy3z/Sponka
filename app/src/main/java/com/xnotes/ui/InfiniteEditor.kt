@@ -32,6 +32,7 @@ import com.xnotes.core.infinite.InsertCanvasItem
 import com.xnotes.core.infinite.MeshPart
 import com.xnotes.core.infinite.MeshedItem
 import com.xnotes.core.infinite.Minimap
+import com.xnotes.core.infinite.MinimapGesture
 import com.xnotes.core.infinite.OnCanvas
 import com.xnotes.core.infinite.OverlayTessellator
 import com.xnotes.core.infinite.ReplaceCanvasItems
@@ -134,7 +135,10 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         onCommitSelection = { commitSelection(it) },
         onLiftSelection = { items, at -> scene.setLift(items, at) },
         devicePxPerDp = { devicePxPerDp },
-        onMinimapPress = { vx, vy -> minimapTap(vx, vy) },
+        onMinimapPress = { vx, vy -> minimapPress(vx, vy) },
+        onMinimapMove = { vx, vy -> minimapGesture.onMove(vx, vy) },
+        onMinimapUp = { minimapGesture.onUp() },
+        onMinimapCancel = { minimapGesture.onCancel() },
         onContextMenu = { vp, content, locked -> contextMenu = ContextMenuTarget(vp.x, vp.y, content, locked) },
         hasPasteContent = { hasClipboardItems || clipboardHasImage },
         onToolChanged = { adoptTool(it) },
@@ -148,6 +152,43 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
 
     private val devicePxPerDp = appContext.resources.displayMetrics.density.toDouble()
     private val imageCodec = com.xnotes.platform.AndroidImageCodec()
+
+    /** The minimap panel's offset from its default bottom-right corner, in device pixels. */
+    private var minimapOffset = Pt(0.0, 0.0)
+
+    /**
+     * The minimap gesture, the same one the paged canvas drives: a tap jumps, a drag slides the
+     * viewport square, a long-press-then-drag moves the panel. It maps through [viewport]/[document]
+     * and redraws through [view], so both canvases behave identically.
+     */
+    private val minimapGesture = MinimapGesture(object : MinimapGesture.Host {
+        override val longPressMs: Long get() = InteractionController.MINIMAP_LONG_PRESS_MS
+        override val tapSlopPx: Double get() = InteractionController.TAP_SLOP
+        override fun panelAt(offsetX: Double, offsetY: Double): Rect =
+            Minimap.panel(viewport.widthPx, viewport.heightPx, viewport.insetRight, viewport.insetBottom, offsetX, offsetY)
+        override fun extent(): Rect =
+            Minimap.mappedExtent(document.contentBounds(), viewport.visibleContentRect())
+        override fun currentOffset(): Pt = minimapOffset
+        override fun setOffset(offset: Pt) {
+            minimapOffset = offset
+            view.minimapOffsetX = offset.x
+            view.minimapOffsetY = offset.y
+        }
+        override fun centerOnContent(p: Pt) {
+            viewport.centerOn(p.x, p.y)
+            onViewChanged()
+        }
+        override fun onPickUp() {
+            view.minimapMoving = true
+            view.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+            view.publish()
+        }
+        override fun onFinish() {
+            view.minimapMoving = false
+            view.publish()
+        }
+        override fun render() = view.publish()
+    })
 
     /** Per-tool style, with the toolbar's active ink colour folded in at draw time. */
     private val toolConfigs = HashMap<Tool, ToolConfig>()
@@ -2464,16 +2505,13 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         markDirty()
     }
 
-    /** A tap on the minimap: centre the view on whatever was tapped. */
-    fun minimapTap(vx: Double, vy: Double): Boolean {
+    /** A press on the minimap: true when it landed on the panel and started the gesture. */
+    private fun minimapPress(vx: Double, vy: Double): Boolean {
         if (!minimapVisible) return false
-        val panel = Minimap.panel(viewport.widthPx, viewport.heightPx, viewport.insetRight, viewport.insetBottom)
+        val panel = Minimap.panel(viewport.widthPx, viewport.heightPx, viewport.insetRight, viewport.insetBottom,
+            minimapOffset.x, minimapOffset.y)
         if (!panel.contains(Pt(vx, vy))) return false
-        val extent = Minimap.mappedExtent(document.contentBounds(), viewport.visibleContentRect())
-        val target = Minimap.toContent(Pt(vx, vy), extent, panel)
-        viewport.centerOn(target.x, target.y)
-        onViewChanged()
-        view.publish()
+        minimapGesture.onDown(vx, vy)
         return true
     }
 

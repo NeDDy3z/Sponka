@@ -192,6 +192,37 @@ class CanvasViewportTest {
         assertEquals(plain.y - 40.0, covered.y, 1e-9)
     }
 
+    @Test fun aSavedMinimapOffsetMovesThePanelFromItsCorner() {
+        val base = Minimap.panel(1000, 800)
+        // Drag up/left to pull the panel off its bottom-right corner; an in-bounds move applies fully.
+        val moved = Minimap.panel(1000, 800, offsetX = -50.0, offsetY = -50.0)
+        assertEquals(base.x - 50.0, moved.x, 1e-9)
+        assertEquals(base.y - 50.0, moved.y, 1e-9)
+    }
+
+    @Test fun aMinimapOffsetPastTheEdgeClampsSoThePanelStaysOnScreen() {
+        // Pushing the panel far right/down must stop with its right/bottom edge on the viewport edge.
+        val panel = Minimap.panel(1000, 800, offsetX = 5_000.0, offsetY = 5_000.0)
+        assertEquals(1000.0, panel.right, 1e-9)
+        assertEquals(800.0, panel.bottom, 1e-9)
+        assertTrue(panel.x >= 0.0)
+        assertTrue(panel.y >= 0.0)
+    }
+
+    @Test fun aNegativeMinimapOffsetClampsAtTheTopLeft() {
+        // Pulling the panel past the left/top edge must stop it flush at 0, never off screen.
+        val panel = Minimap.panel(1000, 800, offsetX = -5_000.0, offsetY = -5_000.0)
+        assertEquals(0.0, panel.x, 1e-9)
+        assertEquals(0.0, panel.y, 1e-9)
+    }
+
+    @Test fun aMovedMinimapPanelNeverCoversTheFloatingBarInsets() {
+        // However far the user drags it, the panel keeps clear of the reserved right/bottom strips.
+        val covered = Minimap.panel(1000, 800, insetRight = 60.0, insetBottom = 40.0, offsetX = 5_000.0, offsetY = 5_000.0)
+        assertEquals(1000.0 - 60.0, covered.right, 1e-9)
+        assertEquals(800.0 - 40.0, covered.bottom, 1e-9)
+    }
+
     @Test fun canvasRunsInEveryDirection() {
         val v = viewport()
         v.panByViewport(1e6, 1e6)

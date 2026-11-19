@@ -107,6 +107,12 @@ class InfiniteInteraction(
     private val devicePxPerDp: () -> Double = { 1.0 },
     /** A press that landed on the minimap; returns true when it was consumed as navigation. */
     private val onMinimapPress: (Double, Double) -> Boolean = { _, _ -> false },
+    /** A drag in progress on the minimap: slide the viewport square or move the panel. */
+    private val onMinimapMove: (Double, Double) -> Unit = { _, _ -> },
+    /** The minimap gesture ended: persist the panel's offset and redraw. */
+    private val onMinimapUp: () -> Unit = {},
+    /** The minimap gesture was cut short by a second finger or a cancelled touch. */
+    private val onMinimapCancel: () -> Unit = {},
     /**
      * A finger held still: open the paste menu at this viewport and content point, or offer to
      * release the locked item it landed on, which arrives as the third argument.
@@ -323,6 +329,9 @@ class InfiniteInteraction(
     // Android took back a finger of this touch, so the rest of it is ignored.
     private var touchTakenBack = false
 
+    // A touch that began on the minimap panel: its moves and lift drive the minimap gesture.
+    private var minimapActive = false
+
     fun onTouch(e: MotionEvent): Boolean {
         if (touchTakenBack && e.actionMasked != MotionEvent.ACTION_DOWN) return true
         when (e.actionMasked) {
@@ -366,6 +375,10 @@ class InfiniteInteraction(
      *  gesture, and put back a view it scrolled or zoomed, as the paged canvas does. */
     private fun takeBackTouch() {
         tapCandidate = false
+        if (minimapActive) {
+            minimapActive = false
+            onMinimapCancel()
+        }
         val movedView = movingView()
         abortGesture()
         if (movedView) {
@@ -465,8 +478,11 @@ class InfiniteInteraction(
         stopFling() // a new touch halts any in-progress glide
         panMayCommit = false
         dismissPressAt = null
-        // The minimap sits over the canvas, so a press on it navigates rather than draws.
+        // The minimap sits over the canvas, so a press on it drives the minimap gesture rather than
+        // drawing. A tap jumps, a drag slides the square, a long-press-then-drag moves the panel.
         if (onMinimapPress(e.getX(0).toDouble(), e.getY(0).toDouble())) {
+            minimapActive = true
+            tapCandidate = false // a minimap tap is navigation, never a double-tap-to-label
             mode = CanvasPointerMode.IDLE
             return
         }
@@ -634,6 +650,11 @@ class InfiniteInteraction(
 
     private fun handlePointerDown(e: MotionEvent) {
         cancelLongPress() // a second finger is a pinch, never a held press
+        if (minimapActive) {
+            // A second finger ends any minimap gesture: the press was the first of a pinch.
+            minimapActive = false
+            onMinimapCancel()
+        }
         // A stylus stroke ignores an incidental palm or second finger; a finger stroke yields to a
         // pinch, since two fingers can only mean a zoom.
         if (mode == CanvasPointerMode.DRAW && drawingIsStylus) return
@@ -649,6 +670,10 @@ class InfiniteInteraction(
     }
 
     private fun handleMove(e: MotionEvent) {
+        if (minimapActive) {
+            onMinimapMove(e.getX(0).toDouble(), e.getY(0).toDouble())
+            return
+        }
         // A finger that wanders is panning or drawing, not holding still for the menu.
         if (longPressRunnable != null) {
             val moved = Pt(e.getX(0).toDouble(), e.getY(0).toDouble()).distanceTo(longPressAt)
@@ -688,6 +713,11 @@ class InfiniteInteraction(
     }
 
     private fun handleUp(e: MotionEvent) {
+        if (minimapActive) {
+            minimapActive = false
+            onMinimapUp()
+            return
+        }
         cancelLongPress()
         val wasMoving = (mode == CanvasPointerMode.PAN && singleFingerPanAllowed() && !panFromPenButton) ||
             (mode == CanvasPointerMode.PINCH && pinchPanAllowed())

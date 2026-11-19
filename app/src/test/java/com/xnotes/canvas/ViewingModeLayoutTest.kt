@@ -60,6 +60,23 @@ class ViewingModeLayoutTest {
         }
     }
 
+    /** The minimap maps the row the view is over: in vertical scroll that is the page under the
+     *  viewport centre, not [currentRow] (which tracks nothing there and would stay on row 0). */
+    @Test fun currentViewRowFollowsTheViewNotCurrentRow() {
+        val st = state(4, ViewingMode.SINGLE)
+        st.zoom = 1.0
+        // Scroll so the third page sits under the viewport centre.
+        val page = st.pageRects[2]
+        st.scrollY = page.centerY - st.viewportH / 2.0
+        st.clampScroll()
+        assertEquals(2..2, st.currentViewRow())
+        // A paginated view reads the row from currentRow.
+        st.verticalScroll = false
+        st.relayout()
+        st.goToPage(3)
+        assertEquals(3..3, st.currentViewRow())
+    }
+
     @Test fun pageNavStepsByRow() {
         val st = state(6, ViewingMode.DOUBLE)
         assertEquals(2, st.nextPageIndex(0))

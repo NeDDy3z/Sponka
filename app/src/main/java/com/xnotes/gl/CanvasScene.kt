@@ -449,12 +449,15 @@ class CanvasScene(private val store: GeometryStore = GeometryStore()) : GlScene 
      */
     private fun drawMinimap(frame: FrameState) {
         val shader = minimapShader ?: return
-        val panel = Minimap.panel(frame.widthPx, frame.heightPx, frame.insetRight, frame.insetBottom)
+        val panel = Minimap.panel(frame.widthPx, frame.heightPx, frame.insetRight, frame.insetBottom,
+            frame.minimapOffsetX, frame.minimapOffsetY)
         val visible = Rect(frame.scrollX, frame.scrollY, frame.widthPx / frame.zoom, frame.heightPx / frame.zoom)
         val extent = Minimap.mappedExtent(frame.contentBounds, visible)
         val paperDim = Rgba(frame.paper.r, frame.paper.g, frame.paper.b, 210)
         shader.fill(panel, paperDim, frame.widthPx, frame.heightPx)
-        shader.outline(panel, 1.0, frame.accent.withAlpha(90), frame.widthPx, frame.heightPx)
+        // A stronger border while the panel is being dragged, so it reads as picked up.
+        val edgeAlpha = if (frame.minimapMoving) 220 else 90
+        shader.outline(panel, 1.0, frame.accent.withAlpha(edgeAlpha), frame.widthPx, frame.heightPx)
 
         val dot = frame.accent.withAlpha(150)
         for (record in records.values) {

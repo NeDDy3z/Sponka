@@ -168,6 +168,7 @@ data class ToolbarLayout(val sections: List<ToolbarSection>) {
             ToolbarItem.MARKUP to ToolbarItem.TEXT_BOX,
             ToolbarItem.READER to ToolbarItem.PAN,
             ToolbarItem.ADD_PAGE to ToolbarItem.VIEW,
+            ToolbarItem.MINIMAP to ToolbarItem.VIEW,
         )
 
         /** Items that join the bar hidden, both in [DEFAULT] and when added to a stored layout. */
@@ -189,9 +190,10 @@ data class ToolbarLayout(val sections: List<ToolbarSection>) {
             ToolbarItem.ZOOM, ToolbarItem.FIT, ToolbarItem.ZOOM_LOCK,
         )
 
-        /** Everything the paged bar can hold: the whole enum bar the two canvas-only additions. Insert space is the note bar's alone. */
+        /** Everything the paged bar can hold: the whole enum minus the canvas-only waypoints.
+         *  Insert space is the note bar's alone. */
         val NOTE_ITEMS: Set<ToolbarItem> =
-            ToolbarItem.entries.toSet() - setOf(ToolbarItem.WAYPOINTS, ToolbarItem.MINIMAP)
+            ToolbarItem.entries.toSet() - setOf(ToolbarItem.WAYPOINTS)
 
         /** Mirrors the hardcoded bar exactly (see Toolbar.kt) so existing users see no change. */
         val DEFAULT: ToolbarLayout = of(
@@ -203,7 +205,7 @@ data class ToolbarLayout(val sections: List<ToolbarSection>) {
             listOf(ToolbarItem.IMAGE, ToolbarItem.TABLE),
             listOf(ToolbarItem.COLORS),
             listOf(ToolbarItem.UNDO, ToolbarItem.REDO),
-            listOf(ToolbarItem.PAGE_NAV, ToolbarItem.SEARCH, ToolbarItem.STYLES, ToolbarItem.MARGINS, ToolbarItem.VIEW, ToolbarItem.ADD_PAGE),
+            listOf(ToolbarItem.PAGE_NAV, ToolbarItem.SEARCH, ToolbarItem.STYLES, ToolbarItem.MARGINS, ToolbarItem.VIEW, ToolbarItem.MINIMAP, ToolbarItem.ADD_PAGE),
             listOf(ToolbarItem.ZOOM, ToolbarItem.FIT, ToolbarItem.ZOOM_LOCK),
             listOf(ToolbarItem.FULLSCREEN),
         )

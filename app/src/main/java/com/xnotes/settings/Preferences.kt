@@ -166,6 +166,10 @@ data class Preferences(
     val shapeOrder: List<String> = emptyList(),
     /** The View menu's autoscroll speed in tenths of a paper millimetre per second; autoscroll itself always starts off. */
     val autoScrollSpeed: Int = AUTOSCROLL_DEFAULT,
+    /** The page minimap's floating position, an offset in viewport px from its default bottom-right
+     *  corner; null keeps the corner. */
+    val minimapX: Int? = null,
+    val minimapY: Int? = null,
 ) {
     /**
      * A new note's page size in document pixels. A named size is laid out under
@@ -282,6 +286,8 @@ data class Preferences(
         .apply { if (hiddenShapes.isNotEmpty()) put("hidden_shapes", org.json.JSONArray(hiddenShapes.sorted())) }
         .apply { if (shapeOrder.isNotEmpty()) put("shape_order", org.json.JSONArray(shapeOrder)) }
         .put("autoscroll_speed", autoScrollSpeed)
+        .apply { minimapX?.let { put("minimap_x", it) } }
+        .apply { minimapY?.let { put("minimap_y", it) } }
 
     companion object {
         /** The accent a two-tone setting saved without a seed of its own has always loaded as. */
@@ -438,6 +444,8 @@ data class Preferences(
                 hiddenShapes = o.optJSONArray("hidden_shapes")?.let { a -> (0 until a.length()).mapNotNull { a.optString(it).ifEmpty { null } }.toSet() }.orEmpty(),
                 shapeOrder = o.optJSONArray("shape_order")?.let { a -> (0 until a.length()).mapNotNull { a.optString(it).ifEmpty { null } } }.orEmpty(),
                 autoScrollSpeed = o.optInt("autoscroll_speed", AUTOSCROLL_DEFAULT).coerceIn(AUTOSCROLL_MIN, AUTOSCROLL_MAX),
+                minimapX = if (o.isNull("minimap_x")) null else o.optInt("minimap_x"),
+                minimapY = if (o.isNull("minimap_y")) null else o.optInt("minimap_y"),
             )
         }
     }
