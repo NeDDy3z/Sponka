@@ -9,7 +9,7 @@ Your new notebook, infinite canvas, e-reader, and sketchbook — *built into a s
 
 Built on [xnotes](https://github.com/shardulvs/xnotes-android) — free and open, forever.
 
-*App icon by [@failure-404](https://github.com/failure-404).*
+App icon by [@failure-404](https://github.com/failure-404).
 
 <p>
 <a href="https://github.com/NeDDy3z/Sponka/releases/latest"><img src="https://img.shields.io/github/v/release/NeDDy3z/Sponka?style=flat-square&label=release&color=blue" alt="Release" /></a>
@@ -29,7 +29,7 @@ Built on [xnotes](https://github.com/shardulvs/xnotes-android) — free and open
 
 </div>
 
-## Why sponka
+## Why *sponka*?
 
 [xnotes](https://github.com/shardulvs/xnotes-android) is a thoughtfully built app and we're grateful to Shardul Vikram Singh for creating and sharing it openly. **sponka** (formerly `n-notes`) started as a personal fork to add day-to-day essentials like cloud sync and file change management, and has since grown into its own project.
 
