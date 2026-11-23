@@ -5,7 +5,7 @@
 
 ### **Born from xnotes, ready for so much more.**
 
-Your new notebook, infinite canvas, e-reader, and sketchbook — *built into one living, modular thinking space*. Take what you need and let the rest stay out of your way.
+Your new notebook, infinite canvas, e-reader, and sketchbook — *built into a single living, modular and expandable thinking space*. Take what you need and let the rest stay out of your way.
 
 Built on [xnotes](https://github.com/shardulvs/xnotes-android) — free and open, forever.
 
