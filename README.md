@@ -65,6 +65,8 @@ Releases follow `{xnotes version}-{sponka version}` (for example, `0.9.7-0.48`):
 git clone [https://github.com/NeDDy3z/Sponka.git](https://github.com/NeDDy3z/Sponka.git)
 cd Sponka
 JAVA_HOME=/path/to/jdk-17 ./gradlew assembleDebug
+```
+<details>
 
 ## Reporting issues
 
