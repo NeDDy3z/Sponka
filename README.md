@@ -3,8 +3,9 @@
 <!-- Swap to assets/icon.png if you prefer the standalone app icon -->
 <img src="docs/banner.png" height="96" alt="sponka" />
 
-### **xnotes, ready for more.**
-A vector-based handwriting-first notebook, e-reader, infinite canvas, pixel-based sketch *(soon)*, and notes management app for Android.  
+### **Born from xnotes, ready for so much more.**
+Your new notebook, infinite canvas, e-reader, and sketchbook — *built into one living, modular thinking space*. Take what you need and let the rest stay out of your way.
+
 Built on [xnotes](https://github.com/shardulvs/xnotes-android) — free and open, forever.
 
 *App icon by [@failure-404](https://github.com/failure-404).*
@@ -31,9 +32,9 @@ Built on [xnotes](https://github.com/shardulvs/xnotes-android) — free and open
 
 ## Why sponka
 
-[xnotes](https://github.com/shardulvs/xnotes-android) is a thoughtfully built app, and we're grateful to Shardul Vikram Singh for creating and sharing it openly. **sponka** (formerly `n-notes`) started as a personal fork to add day-to-day essentials like cloud sync and file change management, and has since grown into its own project.
+[xnotes](https://github.com/shardulvs/xnotes-android) is a thoughtfully built app and we're grateful to Shardul Vikram Singh for creating and sharing it openly. **sponka** (formerly `n-notes`) started as a personal fork to add day-to-day essentials like cloud sync and file change management, and has since grown into its own project.
 
-- **50+ additions** on top of upstream xnotes — see the full list in **[ADDITIONS.md](ADDITIONS.md)** *(10+ of these were later adopted upstream as of 2026.11.01)*.
+- **50+ additions** on top of upstream xnotes — see the full list in **[ADDITIONS.md](ADDITIONS.md)**.
 - **In sync & backwards-compatible** with upstream xnotes whenever possible.
 - **Free & open-source** — committed to [long-term support](https://github.com/NeDDy3z/Sponka/issues/13) with no accounts, ads, or lock-in.
 
