@@ -1,50 +1,66 @@
 <div align="center">
 
-<!-- Replace the src path below with the actual path to your app icon in the repo -->
-<img src="assets/icon.png" alt="sponka icon" width="120" />
+<!-- Swap to assets/icon.png if you prefer the standalone app icon -->
+<img src="docs/banner.png" height="96" alt="sponka" />
 
-# sponka
-### **Introducing sponka…**
-**a vector-based handwriting-first notebook, e-reader, infinite canvas, pixel-based sketch *(soon)*, and notes management app for Android.**  
-Built on [xnotes](https://github.com/shardulvs/xnotes-android), ready for so much more.
+### **xnotes, ready for more.**
+A vector-based handwriting-first notebook, e-reader, infinite canvas, pixel-based sketch *(soon)*, and notes management app for Android.  
+Built on [xnotes](https://github.com/shardulvs/xnotes-android) — free and open, forever.
 
 *App icon by [@failure-404](https://github.com/failure-404).*
 
-[![Release](https://img.shields.io/github/v/release/NeDDy3z/n-notes?style=flat-square&color=blue)](https://github.com/NeDDy3z/n-notes/releases)
-[![License: MIT](https://img.shields.io/badge/License-MIT-orange.svg?style=flat-square)](LICENSE)
-[![Platform: Android 8.0+](https://img.shields.io/badge/Android-8.0%2B-brightgreen.svg?style=flat-square)](#installation)
+<p>
+  <a href="https://github.com/NeDDy3z/Sponka/releases/latest"><img src="https://img.shields.io/github/v/release/NeDDy3z/Sponka?style=flat-square&label=release&color=blue" alt="Release" /></a>
+  <a href="https://github.com/NeDDy3z/Sponka/releases"><img src="https://img.shields.io/github/downloads/NeDDy3z/Sponka/total?style=flat-square&label=downloads&color=2ea44f" alt="Downloads" /></a>
+  <a href="https://github.com/NeDDy3z/Sponka/commits"><img src="https://img.shields.io/github/last-commit/NeDDy3z/Sponka?style=flat-square&color=555555" alt="Last Commit" /></a>
+  <img src="https://img.shields.io/badge/Android-8.0%2B-3ddc84?style=flat-square&logo=android&logoColor=white" alt="Android 8.0+" />
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-orange?style=flat-square" alt="License: MIT" /></a>
+</p>
+
+<p>
+  <a href="#install">Install</a> •
+  <a href="ADDITIONS.md">Additions (50+)</a> •
+  <a href="#roadmap">Roadmap</a> •
+  <a href="#build-it-yourself">Build</a> •
+  <a href="#reporting-issues">Issues</a>
+</p>
 
 </div>
 
 ---
 
-## What makes sponka different?
-**sponka** aims to become the most complete handwriting-first notes app, ready for anything.  
-**FREE** the community and fully **OPEN, FOREVER**.
+## Why sponka
 
-## Why did we create sponka?
-[xnotes](https://github.com/shardulvs/xnotes-android) is an amazing and very thoughtfully developed app, and the sponka team is extremely grateful for all the work the developer, Shardul Vikram Singh, has put into it. After using it extensively, our developer, Neddy, created the original fork (`n-notes`) to add missing features for themselves, such as cloud sync and file change management. The team does their best to keep sponka up to date with the original repository, and the app will always be backwards compatible.
+[xnotes](https://github.com/shardulvs/xnotes-android) is a thoughtfully built app, and we're grateful to Shardul Vikram Singh for creating and sharing it openly. **sponka** (formerly `n-notes`) started as a personal fork to add day-to-day essentials like cloud sync and file change management, and has since grown into its own project.
 
-## Long-term support
-The sponka team is dedicated to maintaining sponka to the best of their ability and to always keep it fully free and open source for the community.
+- **50+ additions** on top of upstream xnotes — see the full list in **[ADDITIONS.md](ADDITIONS.md)** *(10+ of these were later adopted upstream as of 2026.11.01)*.
+- **In sync & backwards-compatible** with upstream xnotes whenever possible.
+- **Free & open-source** — committed to [long-term support](https://github.com/NeDDy3z/Sponka/issues/13) with no accounts, ads, or lock-in.
 
-## Additions to the original xnotes
-sponka adds **50+ features** on top of xnotes, while **10+** *(as of 2026.11.01)* of them were later implemented in xnotes.  
-See the full list in **[ADDITIONS.md](ADDITIONS.md)** — many more features are on their way!
+## Roadmap
 
-## Versioning
-Releases are named `{xnotes version}-{sponka version}`, for example `0.9.7-0.48`: the upstream xnotes release the build is based on, then sponka's version, bumped on every published build.
+Our roadmap lives outside this README so it stays up to date automatically as work progresses:
 
-## Installation
+<p>
+  <a href="https://github.com/NeDDy3z/Sponka/projects"><img src="https://img.shields.io/badge/GitHub%20Projects-Roadmap%20Board-1f6feb?style=flat-square&logo=github" alt="Roadmap Board" /></a>
+  <a href="https://github.com/NeDDy3z/Sponka/issues?q=is%3Aopen+label%3Aroadmap"><img src="https://img.shields.io/github/issues/NeDDy3z/Sponka/roadmap?style=flat-square&label=planned%20items&color=8957e5" alt="Planned Items" /></a>
+  <a href="https://github.com/NeDDy3z/Sponka/milestones"><img src="https://img.shields.io/github/milestones/progress-percent/NeDDy3z/Sponka/1?style=flat-square&label=next%20milestone&color=2ea44f" alt="Next Milestone" /></a>
+</p>
 
-| Channel | Format |
-| :--- | :--- |
-| [GitHub Releases](https://github.com/NeDDy3z/n-notes/releases) | Signed APK |
+## Install
 
-## Build it yourself
-Requires **JDK 17** (the project pins Java 17):
+| Channel | Format | Notes |
+| :--- | :--- | :--- |
+| [GitHub Releases](https://github.com/NeDDy3z/Sponka/releases/latest) | Signed APK | Direct download or track via [Obtainium](https://obtainium.imranr.dev/) |
+
+### Versioning
+
+Releases follow `{xnotes version}-{sponka version}` (for example, `0.9.7-0.48`): the upstream xnotes base version followed by sponka's build revision.
+
+<details>
+<summary><strong>Build it yourself</strong> (requires JDK 17)</summary>
 
 ```bash
-git clone [https://github.com/NeDDy3z/n-notes.git](https://github.com/NeDDy3z/n-notes.git)
-cd n-notes
+git clone [https://github.com/NeDDy3z/Sponka.git](https://github.com/NeDDy3z/Sponka.git)
+cd Sponka
 JAVA_HOME=/path/to/jdk-17 ./gradlew assembleDebug
