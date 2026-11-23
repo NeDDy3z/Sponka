@@ -36,7 +36,7 @@ Built on [xnotes](https://github.com/shardulvs/xnotes-android) — free and open
 
 - **50+ additions** on top of upstream xnotes — see the full list in **[ADDITIONS.md](ADDITIONS.md)**.
 - **In sync & backwards-compatible** with upstream xnotes whenever possible.
-- **Free & open-source** — committed to [long-term support](https://github.com/NeDDy3z/Sponka/issues/13) with no accounts, ads, or lock-in.
+- **Free & open-source** — committed to [long-term support](https://github.com/NeDDy3z/Sponka/discussions/128) with no accounts, ads, or lock-in... EVER.
 
 ## Roadmap
 
