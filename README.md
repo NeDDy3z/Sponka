@@ -5,9 +5,9 @@
 
 ### **Born from xnotes, ready for so much more.**
 
-Your new notebook, infinite canvas, e-reader, and sketchbook — *built into a single living, modular and expandable thinking space*. Take what you need and let the rest stay out of your way.
+Your new notebook, infinite canvas, e-reader, and sketchbook - *built into a single living, modular and expandable thinking space*. Take what you need and let the rest stay out of your way.
 
-Built on [xnotes](https://github.com/shardulvs/xnotes-android) — free and open, forever.
+Built on [xnotes](https://github.com/shardulvs/xnotes-android) - free and open, forever.
 
 App icon by [@failure-404](https://github.com/failure-404).
 
@@ -37,7 +37,7 @@ App icon by [@failure-404](https://github.com/failure-404).
 
 * **In sync & backwards-compatible** with upstream xnotes whenever possible.
 
-* **Free & open-source** — committed to [long-term support](https://github.com/NeDDy3z/Sponka/discussions/128) with no accounts, ads, or lock-in... EVER.
+* **Free & open-source** - committed to [long-term support](https://github.com/NeDDy3z/Sponka/discussions/128) with no accounts, ads, or lock-in... EVER.
 
 ## Roadmap
 
@@ -53,7 +53,10 @@ Our roadmap lives outside this README so it stays up to date automatically as wo
 
 | Channel | Format | Notes | 
 | ----- | ----- | ----- | 
-| [GitHub Releases](https://github.com/NeDDy3z/Sponka/releases/latest) | Signed APK | Direct download or track via [Obtainium](https://obtainium.imranr.dev/) | 
+| [GitHub Releases](https://github.com/NeDDy3z/Sponka/releases/latest) | Signed APK | Direct download| 
+| [F-Droid]() | Signed APK | Currently unavailable |
+| [Obtainium]() | Signed APK | Currently unavailable |
+| [Play Store]() | Signed APK | Currently unavailable |
 
 ### Versioning
 
