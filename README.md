@@ -66,7 +66,6 @@ git clone [https://github.com/NeDDy3z/Sponka.git](https://github.com/NeDDy3z/Spo
 cd Sponka
 JAVA_HOME=/path/to/jdk-17 ./gradlew assembleDebug
 ```
-<details>
 
 ## Reporting issues
 
