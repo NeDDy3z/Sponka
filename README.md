@@ -20,10 +20,10 @@ Built on [xnotes](https://github.com/shardulvs/xnotes-android) — free and open
 </p>
 
 <p>
-<a href="#install">Install</a> •
-<a href="ADDITIONS.md">Additions (50+)</a> •
-<a href="#roadmap">Roadmap</a> •
-<a href="#build-it-yourself">Build</a> •
+<a href="#install">Install</a> |
+<a href="ADDITIONS.md">Additions (50+)</a> |
+<a href="#roadmap">Roadmap</a> |
+<a href="#build-it-yourself">Build</a> |
 <a href="#reporting-issues">Issues</a>
 </p>
 
