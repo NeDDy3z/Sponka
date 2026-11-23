@@ -65,3 +65,19 @@ Releases follow `{xnotes version}-{sponka version}` (for example, `0.9.7-0.48`):
 git clone [https://github.com/NeDDy3z/Sponka.git](https://github.com/NeDDy3z/Sponka.git)
 cd Sponka
 JAVA_HOME=/path/to/jdk-17 ./gradlew assembleDebug
+
+## Reporting issues
+
+Please open a separate [issue](https://github.com/NeDDy3z/Sponka/issues/new/choose) for each bug or idea instead of bundling them together — it helps us track and resolve everything more efficiently.
+
+## Disclaimer
+
+The sponka team uses LLMs as a tool—primarily for research, code review, and translations. Every AI-assisted change is manually reviewed and tested before release, because AI should assist human work under supervision, never replace it.
+
+Translations are currently fully LLM-generated (due to lack of translators) and will improve over time based on user reports. If you spot a translation issue or wish to contribute, please report it [here](https://github.com/NeDDy3z/Sponka/issues/new?title=Incorrect%20Translation&labels=translation&assignees=NeDDy3z&body=Language:%0ALocation:%0AIncorrect:%0AFix:).
+
+## License
+
+Released under the MIT License, the same as upstream. See [LICENSE](LICENSE).
+
+sponka (formerly n-notes) is built on [xnotes](https://github.com/shardulvs/xnotes-android) by Shardul Vikram Singh.
