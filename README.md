@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="[docs/banner.png](https://github.com/NeDDy3z/Sponka/blob/master/docs/banner.png)" height="96" alt="sponka" />
+<img src="docs/banner.png" height="96" alt="sponka" />
 
 ### **Created using xnotes, ready for so much more.**
 
@@ -78,7 +78,7 @@ Please open a separate [issue](https://github.com/NeDDy3z/Sponka/issues/new/choo
 
 ## Disclaimer
 
-The sponka team uses LLMs as a tool—primarily for research, code review, and translations. Every AI-assisted change is manually reviewed and tested before release, because AI should assist human work under supervision, never replace it.
+The sponka team uses LLMs as a tool - primarily for research, code review, and translations. Every AI-assisted change is manually reviewed and tested before release, because AI should assist human work under supervision, never replace it.
 
 Translations are currently fully LLM-generated (due to lack of translators) and will improve over time based on user reports. If you spot a translation issue or wish to contribute, please report it [here](https://www.google.com/search?q=https://github.com/NeDDy3z/Sponka/issues/new%3Ftitle%3DIncorrect%2520Translation%26labels%3Dtranslation%26assignees%3DNeDDy3z%26body%3DLanguage:%250ALocation:%250AIncorrect:%250AFix:).
 
