@@ -54,14 +54,14 @@ Our roadmap lives outside this README so it stays up to date automatically as wo
 
 | Channel | Format | Notes | 
 | ----- | ----- | ----- | 
-| [GitHub Releases](https://github.com/NeDDy3z/Sponka/releases/latest) | Signed APK | Direct download| 
-| [F-Droid]() | Signed APK | Currently unavailable |
-| [Obtainium]() | Signed APK | Currently unavailable |
-| [Play Store]() | Signed APK | Currently unavailable |
+| [GitHub Releases](https://github.com/NeDDy3z/Sponka/releases/latest) | Signed APK | Direct download | 
+
+More channels are coming.
+
 
 ### Versioning
 
-Releases follow `{xnotes version}-{sponka version}` (for example, `0.9.7-0.48`): the upstream xnotes base version followed by sponka's build revision.
+Releases follow `{xnotes version}-{sponka version}` (for example, `0.9.10-1.12.1`): the upstream xnotes base version followed by sponka's build revision.
 
 ### Build it yourself
 
@@ -82,10 +82,10 @@ Please open a separate [issue](https://github.com/NeDDy3z/Sponka/issues/new/choo
 
 The sponka team uses LLMs as a tool - primarily for research, code review, and translations. Every AI-assisted change is manually reviewed and tested before release, because AI should assist human work under supervision, never replace it.
 
-Translations are currently fully LLM-generated (due to lack of translators) and will improve over time based on user reports. If you spot a translation issue or wish to contribute, please report it [here](https://www.google.com/search?q=https://github.com/NeDDy3z/Sponka/issues/new%3Ftitle%3DIncorrect%2520Translation%26labels%3Dtranslation%26assignees%3DNeDDy3z%26body%3DLanguage:%250ALocation:%250AIncorrect:%250AFix:).
+Translations are currently fully LLM-generated (due to lack of translators) and will improve over time based on user reports. If you spot a translation issue or wish to contribute, please report it [here](https://github.com/NeDDy3z/Sponka/issues/new?title=Incorrect+Translation&labels=translation&assignees=NeDDy3z&body=Language%3A%0ALocation%3A%0AIncorrect%3A%0AFix%3A).
 
 ## License
 
-Released under the MIT License, the same as upstream. See [LICENSE](https://www.google.com/search?q=LICENSE).
+Released under the MIT License, the same as upstream. See [LICENSE](LICENSE).
 
 sponka (formerly n-notes) is built on [xnotes](https://github.com/shardulvs/xnotes-android) by Shardul Vikram Singh.
