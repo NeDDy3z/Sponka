@@ -55,6 +55,7 @@ Our roadmap lives outside this README so it stays up to date automatically as wo
 | Channel | Format | Notes | 
 | ----- | ----- | ----- | 
 | [GitHub Releases](https://github.com/NeDDy3z/Sponka/releases/latest) | Signed APK | Direct download | 
+| [Obtainium](https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/NeDDy3z/Sponka) | Signed APK | Auto-updates from GitHub Releases | 
 
 More channels are coming.
 
