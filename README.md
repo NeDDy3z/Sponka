@@ -2,7 +2,7 @@
 
 <img src="docs/banner.png" height="96" alt="sponka" />
 
-### **Created using xnotes, ready for so much more.**
+### **Created from xnotes, ready for so much more.**
 
 Your new notebook, infinite canvas, e-reader, and sketchbook - *built into a single natural, modular and expandable thinking space*. Take what you need and let the rest stay out of your way.
 
