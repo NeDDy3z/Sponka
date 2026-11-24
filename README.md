@@ -1,13 +1,12 @@
 <div align="center">
 
-<!-- Swap to assets/icon.png if you prefer the standalone app icon -->
-<img src="docs/banner.png" height="96" alt="sponka" />
+<img src="[docs/banner.png](https://github.com/NeDDy3z/Sponka/blob/master/docs/banner.png)" height="96" alt="sponka" />
 
-### **Born from xnotes, ready for so much more.**
+### **Created using xnotes, ready for so much more.**
 
-Your new notebook, infinite canvas, e-reader, and sketchbook - *built into a single living, modular and expandable thinking space*. Take what you need and let the rest stay out of your way.
+Your new notebook, infinite canvas, e-reader, and sketchbook - *built into a single natural, modular and expandable thinking space*. Take what you need and let the rest stay out of your way.
 
-Built on [xnotes](https://github.com/shardulvs/xnotes-android) - free and open, forever.
+Created using [xnotes](https://github.com/shardulvs/xnotes-android) - free and open, forever.
 
 App icon by [@failure-404](https://github.com/failure-404).
 
@@ -29,7 +28,7 @@ App icon by [@failure-404](https://github.com/failure-404).
 
 </div>
 
-## Why *sponka*?
+## Why **sponka**?
 
 [xnotes](https://github.com/shardulvs/xnotes-android) is a thoughtfully built app and we're grateful to Shardul Vikram Singh for creating and sharing it openly. **sponka** (formerly `n-notes`) started as a personal fork to add day-to-day essentials like cloud sync and file change management, and has since grown into its own project.
 
