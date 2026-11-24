@@ -76,7 +76,7 @@ JAVA_HOME=/path/to/jdk-17 ./gradlew assembleDebug
 
 ## Reporting issues
 
-Please open a separate [issue](https://github.com/NeDDy3z/Sponka/issues/new/choose) for each bug or idea instead of bundling them together — it helps us track and resolve everything more efficiently.
+Please open a separate [issue](https://github.com/NeDDy3z/Sponka/issues/new/choose) for each bug or idea instead of bundling them together - it helps us track and resolve everything more efficiently.
 
 ## Disclaimer
 
