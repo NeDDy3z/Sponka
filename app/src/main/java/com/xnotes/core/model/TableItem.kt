@@ -6,7 +6,37 @@ import com.xnotes.core.geometry.Pt
 import com.xnotes.core.geometry.Rect
 import com.xnotes.core.pal.Pen
 import com.xnotes.core.pal.Renderer
+import com.xnotes.core.shapes.PathRole
+import com.xnotes.core.shapes.ShapePainter
+import com.xnotes.core.shapes.ShapePath
 import kotlin.math.max
+
+/** What the table tool and a table's Change style both set, colour aside. */
+data class TableLook(val width: Double, val box: BoxStyle, val lines: TableLines) {
+    fun applyTo(t: TableItem) {
+        t.strokeWidth = width
+        t.box = box
+        t.lines = lines
+    }
+
+    companion object {
+        fun of(t: TableItem) = TableLook(t.strokeWidth, t.box, t.lines)
+    }
+}
+
+/** How a table's lines look beyond colour and thickness: dashes and glow. */
+data class TableLines(
+    val dashed: Boolean = false,
+    val dashLength: Double = 10.0,
+    val dashGap: Double = 8.0,
+    val neon: Boolean = false,
+    val neonStrength: Double = 0.6,
+)
+
+/** A cell's own fill and border, drawn over the table's. */
+data class CellStyle(val fill: Rgba? = null, val border: Rgba? = null, val borderWidth: Double = 0.0) {
+    val isEmpty: Boolean get() = fill == null && border == null
+}
 
 /**
  * A grid table (spec: n-notes addition): an outer [rect] divided into columns and rows. Column
@@ -27,11 +57,26 @@ class TableItem(
     override var locked = false
     override var link: String? = null
 
+    /** The frame around the grid: its fill, an outline of its own and rounded corners. */
+    var box: BoxStyle = BoxStyle.NONE
+
+    /** Dashes and glow on every line, the frame's included. */
+    var lines: TableLines = TableLines()
+
+    /** Cells styled on their own, keyed by (row, column). */
+    val cells: MutableMap<Pair<Int, Int>, CellStyle> = mutableMapOf()
+
     val colFractions: MutableList<Double> = colFractions.toMutableList()
     val rowFractions: MutableList<Double> = rowFractions.toMutableList()
 
     val cols: Int get() = colFractions.size
     val rows: Int get() = rowFractions.size
+
+    fun cellRect(row: Int, col: Int) = Rect(colX(col), rowY(row), colX(col + 1) - colX(col), rowY(row + 1) - rowY(row))
+
+    fun setCell(row: Int, col: Int, style: CellStyle) {
+        if (style.isEmpty) cells.remove(row to col) else cells[row to col] = style
+    }
 
     /** Absolute x of the [i]-th vertical line (0 = left edge, [cols] = right edge). */
     fun colX(i: Int): Double {
@@ -48,13 +93,39 @@ class TableItem(
     }
 
     override fun paint(r: Renderer) {
-        val pen = Pen(color = strokeRgba, width = strokeWidth, cosmetic = false)
-        r.strokeRect(rect, pen)
-        for (i in 1 until cols) r.strokePolyline(listOf(Pt(colX(i), rect.top), Pt(colX(i), rect.bottom)), pen)
-        for (j in 1 until rows) r.strokePolyline(listOf(Pt(rect.left, rowY(j)), Pt(rect.right, rowY(j))), pen)
+        val pen = Pen(color = strokeRgba, width = strokeWidth, cosmetic = false, dashed = lines.dashed, dashOn = lines.dashLength, dashGap = lines.dashGap)
+        val frame = box.border?.takeIf { box.outlined }?.let { pen.copy(color = it, width = box.borderWidth) } ?: pen
+        // No rounder than the outer cells, so no inner line pokes out past a corner.
+        val corner = listOf(box.corner, colFractions.first() * rect.w, colFractions.last() * rect.w, rowFractions.first() * rect.h, rowFractions.last() * rect.h)
+            .min().coerceAtLeast(0.0)
+        val ring = if (corner > 0.0) TextItem.roundedRect(rect, corner) else null
+        box.fill?.let { if (ring != null) r.fillPolygon(ring, it) else r.fillRect(rect, it) }
+        val inner = (1 until cols).map { i -> ShapePath.lines(listOf(Pt(colX(i), rect.top), Pt(colX(i), rect.bottom)), closed = false) } +
+            (1 until rows).map { j -> ShapePath.lines(listOf(Pt(rect.left, rowY(j)), Pt(rect.right, rowY(j))), closed = false) }
+        val edge = ShapePath.lines(ring ?: listOf(Pt(rect.left, rect.top), Pt(rect.right, rect.top), Pt(rect.right, rect.bottom), Pt(rect.left, rect.bottom)), closed = true)
+        val shown = cells.filterKeys { (row, col) -> row < rows && col < cols }
+        shown.forEach { (at, c) -> c.fill?.let { r.fillRect(cellRect(at.first, at.second), it) } }
+        if (inner.isNotEmpty()) strokeLines(r, ShapePath(inner, PathRole.STROKE_ONLY), pen)
+        strokeLines(r, ShapePath(listOf(edge), PathRole.STROKE_ONLY), frame)
+        shown.forEach { (at, c) ->
+            val b = c.border ?: return@forEach
+            val cell = cellRect(at.first, at.second)
+            val outline = ShapePath.lines(listOf(Pt(cell.left, cell.top), Pt(cell.right, cell.top), Pt(cell.right, cell.bottom), Pt(cell.left, cell.bottom)), closed = true)
+            strokeLines(r, ShapePath(listOf(outline), PathRole.STROKE_ONLY), pen.copy(color = b, width = c.borderWidth))
+        }
     }
 
-    override fun bounds(): Rect = rect.outset(strokeWidth / 2.0 + 1.0)
+    private fun strokeLines(r: Renderer, path: ShapePath, pen: Pen) {
+        if (lines.neon) Outline.paintNeon(r, listOf(path), null, pen, lines.neonStrength, paintBounds())
+        else ShapePainter.stroke(r, listOf(path), pen)
+    }
+
+    private val widest: Double get() = maxOf(strokeWidth, if (box.outlined) box.borderWidth else 0.0, cells.values.maxOfOrNull { it.borderWidth } ?: 0.0)
+
+    override fun bounds(): Rect = rect.outset(widest / 2.0 + 1.0)
+
+    override fun paintBounds(): Rect =
+        if (lines.neon) bounds().outset(Outline.glowRadius(widest, lines.neonStrength) * 2.0 + 4.0) else bounds()
 
     override fun translate(dx: Double, dy: Double) { rect = rect.translate(dx, dy) }
 
@@ -79,7 +150,7 @@ class TableItem(
     }
 
     override fun snapshotGeometry(): GeometrySnapshot =
-        TableSnapshot(rect, colFractions.toList(), rowFractions.toList(), strokeWidth)
+        TableSnapshot(rect, colFractions.toList(), rowFractions.toList(), strokeWidth, cells.toMap())
 
     override fun restoreGeometry(snap: GeometrySnapshot) {
         if (snap !is TableSnapshot) return
@@ -87,6 +158,7 @@ class TableItem(
         colFractions.clear(); colFractions.addAll(snap.cols)
         rowFractions.clear(); rowFractions.addAll(snap.rows)
         strokeWidth = snap.strokeWidth
+        cells.clear(); cells.putAll(snap.cells)
     }
 
     /** Scale (and, for a rotation, re-fit upright) the box; fractions are relative, so they follow. */
@@ -134,16 +206,39 @@ class TableItem(
     }
 
     /** Insert a column of average width before column [at] (0..cols), keeping the others' proportions. */
-    fun insertColumn(at: Int) = insertLine(colFractions, at)
+    fun insertColumn(at: Int) {
+        if (cols >= MAX_LINES) return
+        insertLine(colFractions, at)
+        moveCells { (r, c) -> r to if (c >= at) c + 1 else c }
+    }
 
     /** Insert a row of average height before row [at] (0..rows), keeping the others' proportions. */
-    fun insertRow(at: Int) = insertLine(rowFractions, at)
+    fun insertRow(at: Int) {
+        if (rows >= MAX_LINES) return
+        insertLine(rowFractions, at)
+        moveCells { (r, c) -> (if (r >= at) r + 1 else r) to c }
+    }
 
     /** Remove columns [range] (at least one column always stays), renormalizing the rest. */
-    fun removeColumns(range: IntRange) = removeLines(colFractions, range)
+    fun removeColumns(range: IntRange) {
+        val n = cols
+        removeLines(colFractions, range)
+        if (cols != n) moveCells { (r, c) -> if (c in range) null else r to c - range.count { it < c } }
+    }
 
     /** Remove rows [range] (at least one row always stays), renormalizing the rest. */
-    fun removeRows(range: IntRange) = removeLines(rowFractions, range)
+    fun removeRows(range: IntRange) {
+        val n = rows
+        removeLines(rowFractions, range)
+        if (rows != n) moveCells { (r, c) -> if (r in range) null else r - range.count { it < r } to c }
+    }
+
+    /** Re-key every styled cell by [to]; a null key drops it. */
+    private fun moveCells(to: (Pair<Int, Int>) -> Pair<Int, Int>?) {
+        val moved = cells.mapNotNull { (k, v) -> to(k)?.let { it to v } }
+        cells.clear()
+        cells.putAll(moved)
+    }
 
     /**
      * Move the far edge ([atEnd]) or the near edge of columns [first]..[last] to absolute [x]. The
@@ -273,4 +368,5 @@ private data class TableSnapshot(
     val cols: List<Double>,
     val rows: List<Double>,
     val strokeWidth: Double,
+    val cells: Map<Pair<Int, Int>, CellStyle>,
 ) : GeometrySnapshot

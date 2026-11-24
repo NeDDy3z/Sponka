@@ -16,18 +16,18 @@ object RecognizedLatex {
     )
 
     fun clean(raw: String): String {
-        var s = join(raw.trim().split(Regex("\\s+")).filter { it.isNotEmpty() && it != "~" && it != "\\," && it != "\\;" && it != "\\quad" })
+        var s = join(raw.trim().removeSurrounding("\\[", "\\]").removeSurrounding("$$").removeSurrounding("$").split(Regex("\\s+")).filter { it.isNotEmpty() && it != "~" && it != "\\," && it != "\\;" && it != "\\quad" })
         s = Regex("\\\\operatorname\\*?\\{([A-Za-z]+)\\}").replace(s) { m ->
             val name = m.groupValues[1]
             if (name in OPERATORS) "\\$name " else "\\operatorname{$name} "
         }
         for (w in FONT_WRAPPERS) s = unwrap(s, w)
-        s = s.replace(Regex("\\\\(bf|rm)(?![A-Za-z])"), " ")
+        s = s.replace(Regex("\\\\(bf|rm|boldmath)(?![A-Za-z])"), " ")
         return join(tokens(s))
     }
 
     /** Glue tokens back, keeping a space only where a command name would run into letters. */
-    private fun join(toks: List<String>): String {
+    internal fun join(toks: List<String>): String {
         val sb = StringBuilder()
         for (t in toks) {
             if (sb.isNotEmpty() && t[0].isLetter() && Regex("\\\\[A-Za-z]+$").containsMatchIn(sb)) sb.append(' ')
@@ -37,7 +37,7 @@ object RecognizedLatex {
     }
 
     /** Split into command names, single characters and backslash-escaped symbols. */
-    private fun tokens(s: String): List<String> {
+    internal fun tokens(s: String): List<String> {
         val out = ArrayList<String>()
         var i = 0
         while (i < s.length) {

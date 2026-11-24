@@ -3,12 +3,12 @@
 - **Cloud sync**: sync notes and settings to a cloud service picked in Preferences (Filen or Nextcloud) from the sidebar or by pulling down on Home. Trash, colours, pins and recents sync too, the note just closed goes first, and syncs run in the background. Downloads are written safely, so a crash, a cut-off download or a folder without rename support can't damage or lose a note. The sidebar shows a progress bar and when it last synced, a strip inside a note shows a sync in progress, a sync log page lists each run, and the screen can be kept on while syncing.
 - **Sync conflicts**: a note changed on two devices is merged page by page. Only when both changed the same page is the other device's version saved as a "Sync Conflict" copy, marked with an orange triangle, and its 3-dot menu has a "Sync conflict" option that explains what happened, which pages and on which device. A popup on Home lists new conflicts with a link to the sync log.
 - **Handwriting to text**: turn selected handwriting into an editable text box, in a language picked in Preferences whose model is downloaded or deleted there.
-- **Handwriting to math**: an optional on-device add-on turns handwritten formulas into editable LaTeX.
+- **Handwriting to math**: turn handwritten formulas into editable LaTeX, either with an on-device model picked and downloaded in Preferences or with a custom LLM API (any image-reading model in the OpenAI format, public or self-hosted). Conversion runs in the background with suggestions under the formula, a short training teaches each model your handwriting, fixes to converted formulas are learned too, and the training syncs and is backed up.
 - **Plain text to equation**: turn typed maths like `int_0^1 x^2 dx` into a formula.
 - **Maths keyboard**: a dedicated keyboard for equations and the formula editor.
 - **File import**: create notes from images, txt, rtf, html, epub, docx, xlsx and csv, on top of the PDF and Markdown import xnotes has.
 - **Import into a note**: import a file into an existing note, and add images or photos as pages.
-- **Read-only reader**: open md, docx, pptx, xlsx, csv and pdf files as they are, with LaTeX and HTML tags rendered in Markdown, or convert them to notes.
+- **Read-only reader**: open md, docx, pptx, xlsx, csv and image files as they are, with LaTeX and HTML tags rendered in Markdown, or convert them to notes.
 - **Reader mode**: a toolbar button that locks a note for reading, with only navigation, search and zoom left in the bar.
 - **Find**: search text in the reader and Preferences, where checkbox options are found too.
 - **Shape snapping**: held strokes also snap to squares, upright triangles, waves, parabolas, cubics, exponentials and logarithms; toggle it in the pen popup.
@@ -18,6 +18,7 @@
 - **Item links**: add tappable links to canvas items, and add or edit the link on selected text.
 - **Eyedropper**: pick a colour from anywhere on screen; the menu or dialog it was opened from comes back after the pick.
 - **Whole selection**: a switch to select only items lying fully inside the band or lasso.
+- **Lasso eraser**: a lasso mode in the eraser popup that erases whatever the drawn loop takes once the pen lifts.
 - **Finger tap to select**: a finger tap selects, a finger drag still pans.
 - **Move grip**: drag small selections without hitting the resize handles.
 - **Readable selection**: the selection colour darkens on light pages and lightens on dark ones so it always stands out.
@@ -42,6 +43,10 @@
 - **Text toolbar**: the text toolbar is ordered like Google Docs or Word, with a slash button that opens the same menu as typing /.
 - **Automatic text colour**: text colour follows the page background so text stays readable.
 - **General settings**: a General section in Preferences for app-wide options.
+- **Zoom menu**: the toolbar zoom menu has a zoom lock and starred zoom levels, with an optional zoom bar on the canvas that can be turned off.
+- **Pencilcase**: a floating bar for saved tools, shown or hidden from its toolbar button. Plus saves the first tool; after that the arrow slides out buttons that save the pen, highlighter, eraser, tape or shape in use with its settings and colour, reorder items by long-press and drag, rename them, or remove them. A pen hovering over an item shows its name. A tap arms an item again. Drag the handle to move it, or long-press anywhere on it; it snaps back to its corner or docks upright on the left or right edge.
+- **Pan menu**: lock panning to one axis, and set its sensitivity and how long it glides.
+- **Translations**: Czech, Spanish and French.
 - ~~**Create menu**: the new-note button is now a list to create a note, canvas, folder, or import a file.~~
 - ~~**Sort button**: moved sorting out into its own dedicated button.~~
 - ~~**Find in notes**: search the text of a note.~~

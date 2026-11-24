@@ -61,7 +61,7 @@ private fun TreeLevel(
     val children by produceState(editor.cachedChildren(root, docId), root, docId, editor.treeVersion, editor.noteOpen) {
         value = withContext(Dispatchers.IO) { editor.browseChildren(root, docId) }
     }
-    val sorted = remember(children) { children.orEmpty().sortedWith(compareBy<BrowseEntry>({ !it.isDir }, { it.name.lowercase() })) }
+    val sorted = remember(children) { children.orEmpty().sortedWith(compareBy<BrowseEntry> { !it.isDir }.thenBy(naturalOrder) { it.name }) }
     val showExtensions = remember(editor.prefsVersion) { editor.preferences.showExtensions }
     for (e in sorted) {
         key(e.documentUri) {

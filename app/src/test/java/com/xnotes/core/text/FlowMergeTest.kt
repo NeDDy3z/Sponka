@@ -70,4 +70,14 @@ class FlowMergeTest {
         assertSame(cell, dst.paragraphs[2])
         assertFalse(cell.breakBefore)
     }
+
+    @Test fun aSliceKeepsJustTheRangeCutWhereItCuts() {
+        val src = flowOf("one two", "three", "four five").apply { defaultSizePt = 16.0 }
+        src.paragraphs[1].headingLevel = 2
+        val slice = FlowMerge.slice(src, FlowRange(FlowPos(0, 4), FlowPos(2, 4)))
+        assertEquals(listOf("two", "three", "four"), slice.paragraphs.map { it.plainText() })
+        assertEquals(2, slice.paragraphs[1].headingLevel)
+        assertEquals(16.0, slice.defaultSizePt, 0.0)
+        assertEquals(listOf("one two", "three", "four five"), src.paragraphs.map { it.plainText() })
+    }
 }

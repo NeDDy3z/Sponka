@@ -3,6 +3,7 @@ package com.xnotes.core.tools
 import com.xnotes.core.geometry.Flip
 import com.xnotes.core.geometry.Pt
 import com.xnotes.core.history.RefillShapes
+import com.xnotes.core.history.RestyleEffects
 import com.xnotes.core.model.ConnectorEnd
 import com.xnotes.core.model.DrawStyle
 import com.xnotes.core.model.Rgba
@@ -119,6 +120,19 @@ class ShapeConfigTest {
         assertEquals(ink.copy(a = 64), a.fillRgba)
         val matched = RefillShapes.of(listOf(b), null).single()
         assertEquals(ink.copy(a = 200), matched.after)
+    }
+
+    @Test fun effectsToggleDashNeonAndFillAndUndo() {
+        val rect = ShapeItem(ShapeKind.RECTANGLE, Pt.ZERO, Pt(1.0, 1.0), ink, 2.0)
+        val line = ShapeItem(ShapeKind.LINE, Pt.ZERO, Pt(1.0, 1.0), ink, 2.0)
+        assertEquals(com.xnotes.core.history.Effects(dashed = false, neon = false, filled = false), RestyleEffects.effects(listOf(rect, line)))
+        val cmd = RestyleEffects(RestyleEffects.of(listOf(rect, line), dashed = true, neon = null, filled = true))
+        cmd.redo()
+        assertTrue(rect.dashed && line.dashed)
+        assertEquals(ink.copy(a = 64), rect.fillRgba)
+        assertNull("an open line takes no fill", line.fillRgba)
+        cmd.undo()
+        assertTrue(!rect.dashed && rect.fillRgba == null)
     }
 
     @Test fun theConnectorChipsAreTheAgreedTwoPages() {

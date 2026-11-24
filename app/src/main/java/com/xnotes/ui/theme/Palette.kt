@@ -4,6 +4,8 @@ import com.xnotes.core.model.AudioLook
 import com.xnotes.core.model.Rgba
 import com.xnotes.settings.Preferences
 import kotlin.math.abs
+import kotlin.math.exp
+import kotlin.math.ln
 import kotlin.math.pow
 
 /** The design tokens for one appearance (spec 11 §1), built from a Material 3 scheme. */
@@ -48,10 +50,11 @@ data class Palette(
         val DEFAULT: Palette by lazy { materialDark(MaterialColors.seeded(Preferences.DEFAULT_MATERIAL_DUAL, dark = true)) }
 
         /** Build the full chrome from a Material 3 scheme's tonal surfaces. */
-        fun material(appearance: String, m: MaterialColors): Palette = when (appearance) {
-            "light" -> materialLight(m)
+        fun material(appearance: String, m: MaterialColors, backgroundBrightness: Double = 0.0): Palette = when (appearance) {
+            "light" -> materialLight(m).withBackgroundBrightness(backgroundBrightness)
+            // OLED stays pure black, so the background presets leave it alone.
             "oled" -> materialOled(m)
-            else -> materialDark(m)
+            else -> materialDark(m).withBackgroundBrightness(backgroundBrightness)
         }
 
         /** Light sits a few tone steps below white so panels and the backstage keep visible
@@ -100,6 +103,60 @@ data class Palette(
                 menuBg = black,
                 surface = m.surfaceContainerLow,
                 surfaceHi = m.surfaceContainer,
+            )
+        }
+
+        /** Mix toward white or black at full slider for the lightest chrome surface. */
+        private const val MAX_BACKGROUND_SHIFT = 0.35
+
+        /** The darkest chrome surface moves e^-GROWTH (a third) as far as the lightest. */
+        private val BACKGROUND_SHIFT_GROWTH = ln(3.0)
+
+        /** Saturation the lifted surfaces lean toward at full lift: warm and rich on dark, a pastel on light. */
+        private const val DARK_TINT_SATURATION = 0.6
+        private const val LIGHT_TINT_SATURATION = 0.18
+        private const val MIN_TINTABLE_SATURATION = 0.04
+
+        /** WCAG AA for body text, kept for secondary text on every shifted surface. */
+        private const val MIN_TEXT_CONTRAST = 4.5
+
+        /** Lift or sink the chrome, surfaces nearest the target exponentially more so tones spread apart;
+         *  the paper keeps its colour so pages stand out. */
+        private fun Palette.withBackgroundBrightness(level: Double): Palette {
+            if (level == 0.0) return this
+            val target = if (level > 0) Rgba(255, 255, 255, 255) else Rgba(0, 0, 0, 255)
+            val lums = listOf(bg, panel, menuBg, surface, surfaceHi).map(ColorMath::relativeLuminance)
+            val lo = lums.min()
+            val span = (lums.max() - lo).coerceAtLeast(1e-6)
+            fun shift(c: Rgba, strength: Double = 1.0): Rgba {
+                val amount = level.coerceIn(-1.0, 1.0) * strength
+                val lightness = ((ColorMath.relativeLuminance(c) - lo) / span).coerceIn(0.0, 1.0)
+                val rel = if (level > 0) lightness else 1 - lightness
+                val t = abs(amount) * MAX_BACKGROUND_SHIFT * exp(BACKGROUND_SHIFT_GROWTH * (rel - 1))
+                val mixed = ColorMath.mix(c, target.withAlpha(c.a), t)
+                if (level <= 0) return mixed
+                // Lifting toward white washes the theme out, so lean saturation into the surface's own hue.
+                // Near-grey surfaces (grayscale style) have no hue to speak of and stay grey.
+                val (hue, sat) = ColorMath.rgbToHsv(c)
+                if (sat < MIN_TINTABLE_SATURATION) return mixed
+                val goal = if (isDark) DARK_TINT_SATURATION else LIGHT_TINT_SATURATION
+                val s = sat + (goal - sat) * amount
+                return ColorMath.hsvToRgb(hue, s, ColorMath.rgbToHsv(mixed)[2], c.a)
+            }
+            // Ease a surface's shift back until secondary text on it stays readable (or no worse than the theme's own).
+            fun readableShift(c: Rgba): Rgba {
+                val floor = minOf(MIN_TEXT_CONTRAST, ColorMath.contrastRatio(textDim, c))
+                var strength = 1.0
+                while (strength > 0.0) {
+                    val out = shift(c, strength)
+                    if (ColorMath.contrastRatio(textDim, out) >= floor) return out
+                    strength -= 0.1
+                }
+                return c
+            }
+            return copy(
+                bg = readableShift(bg), panel = readableShift(panel), menuBg = readableShift(menuBg),
+                surface = readableShift(surface), surfaceHi = readableShift(surfaceHi), border = shift(border),
             )
         }
 

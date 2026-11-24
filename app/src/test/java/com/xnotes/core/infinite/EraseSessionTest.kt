@@ -48,6 +48,20 @@ class EraseSessionTest {
 
     // --- fills: a touch takes them whole ---
 
+    @Test fun aLassoEraseTakesItemsWholeAsOneUndo() {
+        val a = line(100.0)
+        val b = line(200.0)
+        val doc = docOf(a, b)
+        val session = EraseSession(doc)
+        session.eraseWhole(listOf(a))
+        assertSame(b, doc.items.single())
+        val undo = session.buildCommand()!!
+        undo.undo()
+        assertEquals(2, doc.itemCount)
+        undo.redo()
+        assertSame(b, doc.items.single())
+    }
+
     @Test fun anEraserOverInkOnAFillTakesBoth() {
         for (area in listOf(false, true)) {
             val fill = ShapeItem.fill(listOf(square(-50.0, -50.0, 300.0)), sky)

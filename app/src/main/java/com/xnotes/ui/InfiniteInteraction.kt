@@ -37,8 +37,6 @@ import com.xnotes.core.stroke.Sample
 import com.xnotes.core.stroke.Scribble
 import com.xnotes.core.stroke.ShapeRecognizer
 import com.xnotes.core.stroke.Stabilizer
-import com.xnotes.core.stroke.SteadyReadout
-import com.xnotes.core.stroke.SteadyTrace
 import com.xnotes.core.stroke.StrokeSimplify
 import com.xnotes.core.tape.TapeGeometry
 import com.xnotes.core.tools.EraseMode
@@ -46,8 +44,10 @@ import com.xnotes.core.tools.InkPalette
 import com.xnotes.core.tools.ShapeConfig
 import com.xnotes.core.tools.Tool
 import com.xnotes.core.tools.ToolConfig
-import com.xnotes.core.tools.ToolConversions
+import kotlin.math.atan2
+import kotlin.math.cos
 import kotlin.math.exp
+import kotlin.math.sin
 
 /** What the current gesture is doing. */
 enum class CanvasPointerMode { IDLE, PAN, PINCH, DRAW, ERASE, SHAPE, BAND, LASSO, MOVE, RESIZE, ROTATE, VERTEX, POLYGON, CONNECT, JOINT, SLIDE, TAPE }
@@ -108,8 +108,6 @@ class InfiniteInteraction(
     private val onLiftSelection: (List<CanvasItem>, LiftTransform) -> Unit = { _, _ -> },
     /** Content pixels per dp, so the speed pen judges gesture speed independently of zoom. */
     private val devicePxPerDp: () -> Double = { 1.0 },
-    /** Whether strokes are measured for [steadyReadout]; true only while the debug HUD is up. */
-    private val measureSteadying: () -> Boolean = { false },
     /** A press that landed on the minimap; returns true when it was consumed as navigation. */
     private val onMinimapPress: (Double, Double) -> Boolean = { _, _ -> false },
     /**
@@ -133,6 +131,8 @@ class InfiniteInteraction(
     private val onPeelTape: (TapeItem) -> Unit = {},
     /** The view was panned or pinched by hand, as distinct from moved by the app. */
     private val onUserMovedView: () -> Unit = {},
+    /** A line end or a rotation being dragged, in viewport pixels, or null once let go. */
+    private val onAngleReadout: (AngleReadout?) -> Unit = {},
 ) {
 
     private val choreographer = Choreographer.getInstance()
@@ -222,6 +222,7 @@ class InfiniteInteraction(
     var bandRect: Rect? = null
         private set
     val lassoPoints = ArrayList<Pt>()
+    private var lassoErasing = false
     private var bandAnchor = Pt.ZERO
 
     // The live transform drag.
@@ -305,17 +306,12 @@ class InfiniteInteraction(
     /** The live stroke's stabilization, or null while its pen draws the nib as is. */
     private var steadier: Stabilizer? = null
 
-    /** Debug HUD: what stabilization did to the last stroke. */
-    val steadyReadout = SteadyReadout()
-
-    private val steadyTrace = SteadyTrace()
-    private var tracing = false
-
     // Pan and inertial fling, in viewport px and viewport px/s.
     private var lastPan = Pt.ZERO
     private var lastMoveMs = 0L
     private var panVel = Pt.ZERO
     private var panFromPenButton = false // a side-button pan parks where the pen lifted: no glide
+    private var panFromPinch = false // the last finger of a pinch lifting is never a tap
     private var flinging = false
     private var flingVel = Pt.ZERO
     private var lastFlingMs = 0L
@@ -692,6 +688,7 @@ class InfiniteInteraction(
         if (e.pointerCount == 2) {
             val remaining = if (e.actionIndex == 0) 1 else 0
             beginPan(e.getX(remaining).toDouble(), e.getY(remaining).toDouble())
+            panFromPinch = true
         } else {
             mode = CanvasPointerMode.IDLE
         }
@@ -769,6 +766,7 @@ class InfiniteInteraction(
         if (mode == CanvasPointerMode.JOINT) abandonJoint()
         if (mode == CanvasPointerMode.SLIDE) abandonSlide()
         if (mode == CanvasPointerMode.POLYGON) showPolygonDraft(null)
+        if (mode == CanvasPointerMode.RESIZE || mode == CanvasPointerMode.ROTATE) onAngleReadout(null)
         if ((mode == CanvasPointerMode.ROTATE || mode == CanvasPointerMode.RESIZE) && liftedTransform) {
             selection()?.previewBack()
             if (bakedInLift.isNotEmpty()) selection()?.applyLiveTo(bakedInLift, Affine.IDENTITY)
@@ -818,8 +816,6 @@ class InfiniteInteraction(
         stroke.addSample(Sample(p.x, p.y, pressureOf(e, 0)))
         steadier = Stabilizer.forStroke(config.stabilize && !straight, config.stabilizeTrail, config.stabilizeCrossover, speedScale)
         steadier?.start(p.x, p.y, 0.0)
-        tracing = measureSteadying()
-        if (tracing) steadyTrace.start(p.x, p.y)
         liveStroke = stroke
         mode = CanvasPointerMode.DRAW
         // Only solid pens arm the snap: a highlighter or a straight-line drag never becomes a shape.
@@ -880,7 +876,6 @@ class InfiniteInteraction(
                 Pt(steady.x, steady.y)
             }
         }
-        if (tracing && steady != null) steadyTrace.add(nib.x, nib.y, p.x, p.y)
         val last = stroke.samples.lastOrNull()
         // Decimate by on-screen spacing rather than content spacing, so drawing while zoomed in
         // keeps its detail instead of faceting into chords a zoom factor long.
@@ -912,7 +907,6 @@ class InfiniteInteraction(
             onWetStroke(null)
             return
         }
-        if (tracing && !tapCandidate) recordSteadying(stroke)
         // The pen is up: rebuild with lift-time rules on before the stroke is committed. The wet
         // buffer is deliberately not cleared here: the commit releases it in the same step, so no
         // frame can land between the two and blink.
@@ -920,14 +914,6 @@ class InfiniteInteraction(
         simplifyForCommit(stroke)
         if (scribbleErase(stroke)) return
         onCommitStroke(stroke)
-    }
-
-    /** Debug HUD: log what stabilization did to the stroke just lifted, or that it was off. */
-    private fun recordSteadying(stroke: Stroke) {
-        val cfg = stroke.config
-        val effect = if (steadier != null) steadyTrace.measure(stroke.speedScale * SteadyTrace.MM_PER_DP) else null
-        steadyReadout.last =
-            SteadyReadout.Row(ToolConversions.trailToStrength(cfg.stabilizeTrail), ToolConversions.dpPerSToCrossover(cfg.stabilizeCrossover), effect)
     }
 
     /** Scribble to erase: when [stroke] reads as a scribble over ink, erase that instead of committing it. */
@@ -969,7 +955,7 @@ class InfiniteInteraction(
         val grip = sel.rotateGrip(OverlayTessellator.GRIP_ARM_PX / viewport.zoom, margin)
         if (grip != null && at.distanceTo(grip) <= tolerance) return true
         sel.moveGrip(viewport.zoom, OverlayTessellator.GRIP_ARM_PX / viewport.zoom, margin)?.let { if (at.distanceTo(it) <= tolerance) return true }
-        if (sel.hitHandle(at, tolerance, margin) != null) return true
+        if (sel.hitHandle(at, tolerance, margin, viewport.zoom) != null) return true
         // A dot can sit outside the box: a knob out on a callout's tail, a thin line's middle.
         val reach = OverlayTessellator.DOT_TOUCH_PX / viewport.zoom
         if ((sel.items.singleOrNull() as? ShapeItem)?.dotNear(at, reach) == true) return true
@@ -989,7 +975,8 @@ class InfiniteInteraction(
         val margin = frameMargin()
         val grip = sel.rotateGrip(OverlayTessellator.GRIP_ARM_PX / viewport.zoom, margin)
         if (grip != null && at.distanceTo(grip) <= tolerance) return true
-        if (sel.hitHandle(at, tolerance, margin) != null) return true
+        sel.moveGrip(viewport.zoom, OverlayTessellator.GRIP_ARM_PX / viewport.zoom, margin)?.let { if (at.distanceTo(it) <= tolerance) return true }
+        if (sel.hitHandle(at, tolerance, margin, viewport.zoom) != null) return true
         return shape.dotNear(at, OverlayTessellator.DOT_TOUCH_PX / viewport.zoom) ||
             shape.touches(at, InteractionController.OUTLINE_GRAB / viewport.zoom)
     }
@@ -1053,12 +1040,13 @@ class InfiniteInteraction(
             beginMoveAt(sel, at)
             return true
         }
-        val handle = sel.hitHandle(at, tolerance, margin)
+        val handle = sel.hitHandle(at, tolerance, margin, viewport.zoom)
         if (handle != null) {
             grabHandle = handle
             transformMargin = sel.chromeMargin(margin)
             sel.beginTransform(rigid = true)
-            beginLiftedTransform(sel, at, resize = true)
+            // Moving one end reshapes a line rather than mapping it, so the model carries that drag.
+            if (handle == HandleId.START || handle == HandleId.END) endLift() else beginLiftedTransform(sel, at, resize = true)
             mode = CanvasPointerMode.RESIZE
             return true
         }
@@ -1163,10 +1151,11 @@ class InfiniteInteraction(
      * whether the press really landed on something is the item's own answer.
      */
     private fun itemAt(content: Pt): CanvasItem? {
-        val pad = TAP_SLOP_PX / viewport.zoom
+        val reach = SelectionMath.PICK_REACH_DP * devicePxPerDp() / viewport.zoom
+        val pad = maxOf(TAP_SLOP_PX / viewport.zoom, reach)
         val near = Rect(content.x - pad, content.y - pad, pad * 2, pad * 2)
-        // Last, not first: the index comes back in z-order, so the topmost item is the one hit.
-        return itemsIn(near).lastOrNull { it.contains(content) }
+        // The index comes back in z-order, so the topmost item is the one picked.
+        return SelectionMath.pick(itemsIn(near), content, reach)
     }
 
     /** [itemAt] but skipping anything pinned, which is what a tap or a drag may actually grab. */
@@ -1294,6 +1283,14 @@ class InfiniteInteraction(
         } else {
             sel.resizeLive(handle, at, transformMargin)
         }
+        val line = (sel.items.singleOrNull() as? ShapeItem)?.takeIf { it.shape.isEndpointShape }
+        if (line != null && (handle == HandleId.START || handle == HandleId.END)) {
+            val (held, pen) = if (handle == HandleId.START) line.end to line.start else line.start to line.end
+            val a = viewport.contentToViewport(held)
+            val b = viewport.contentToViewport(pen)
+            val snapped = ResizeMath.onSnapStep(atan2(pen.y - held.y, pen.x - held.x))
+            onAngleReadout(AngleReadout(b, ResizeMath.angleDeg(a, b), if (snapped) snapGuide(a, b) else null))
+        }
         onSelectionChanged()
         requestRender()
     }
@@ -1311,11 +1308,20 @@ class InfiniteInteraction(
         } else {
             sel.rotateLive(at)
         }
+        sel.box?.let { box ->
+            val a = viewport.contentToViewport(box.localToWorld(Pt(-box.halfW, 0.0)))
+            val b = viewport.contentToViewport(box.localToWorld(Pt(box.halfW, 0.0)))
+            val deg = ResizeMath.angleDeg(Pt.ZERO, Pt(cos(box.angle), sin(box.angle)))
+            onAngleReadout(AngleReadout(Pt(vx, vy), deg, if (ResizeMath.onSnapStep(box.angle)) snapGuide(a, b) else null))
+        }
         onSelectionChanged()
         requestRender()
     }
 
+    private fun snapGuide(a: Pt, b: Pt) = ResizeMath.guideThrough(a, b, InteractionController.SNAP_GUIDE_OVERHANG_DP * devicePxPerDp())
+
     private fun endTransform() {
+        onAngleReadout(null)
         val sel = selection() ?: return
         val handle = grabHandle
         val wasResize = handle != null
@@ -1901,6 +1907,8 @@ class InfiniteInteraction(
     private fun beginErase(vx: Double, vy: Double) {
         eraseSession = onEraseBegin() ?: return
         mode = CanvasPointerMode.ERASE
+        lassoErasing = configFor(Tool.ERASER).eraseMode == EraseMode.LASSO
+        if (lassoErasing) lassoPoints.clear()
         eraseAt(vx, vy)
     }
 
@@ -1917,6 +1925,7 @@ class InfiniteInteraction(
 
     private fun eraseAt(vx: Double, vy: Double) {
         val session = eraseSession ?: return
+        if (lassoErasing) return extendLasso(vx, vy)
         onEraserCursor(Pt(vx, vy), eraserRadius() * viewport.zoom)
         val content = viewport.viewportToContent(Pt(vx, vy))
         session.erase(content.x, content.y, eraserRadius(), areaErase(), configFor(Tool.ERASER).erasableKinds)
@@ -1926,6 +1935,15 @@ class InfiniteInteraction(
     private fun endErase() {
         val session = eraseSession ?: return
         eraseSession = null
+        if (lassoErasing && lassoPoints.size >= 3) {
+            val loop = lassoPoints.toList()
+            session.eraseWhole(SelectionMath.lassoMembers(itemsIn(Rect.bounding(loop)), loop, configFor(Tool.LASSO).selectWholeItems, configFor(Tool.ERASER).erasableKinds))
+        }
+        if (lassoErasing) {
+            lassoErasing = false
+            lassoPoints.clear()
+            onSelectionChanged()
+        }
         onEraserCursor(null, 0.0)
         onEraseEnd(session)
         requestRender()
@@ -1966,6 +1984,7 @@ class InfiniteInteraction(
         mode = CanvasPointerMode.PAN
         panDownAt = Pt(vx, vy)
         panFromPenButton = fromPenButton
+        panFromPinch = false
         // Moving the view is paced by the display, so the render thread stays up for it.
         setInteractive(true, true)
         startTrackingVelocity(vx, vy)
@@ -1973,12 +1992,13 @@ class InfiniteInteraction(
 
     /** True when the pan never really moved, so it reads as a tap rather than a scroll. */
     private fun panWasTap(vx: Double, vy: Double): Boolean =
-        Pt(vx, vy).distanceTo(panDownAt) <= TAP_SLOP_PX
+        !panFromPinch && Pt(vx, vy).distanceTo(panDownAt) <= TAP_SLOP_PX
 
     private fun extendPan(vx: Double, vy: Double) {
         trackVelocity(vx, vy)
         onUserMovedView()
-        if (singleFingerPanAllowed()) viewport.panByViewport(vx - lastPan.x, vy - lastPan.y)
+        val pan = panCfg().panDelta(vx - lastPan.x, vy - lastPan.y)
+        if (singleFingerPanAllowed()) viewport.panByViewport(pan.x, pan.y)
         lastPan = Pt(vx, vy)
         onViewChanged()
         requestRender()
@@ -1990,9 +2010,12 @@ class InfiniteInteraction(
 
     private fun pinchPanAllowed(): Boolean = !(zoomLocked && zoomLockPan == "none")
 
+    private fun panCfg() = configFor(Tool.PAN)
+
     // --- pinch ---
 
     private fun beginPinch(e: MotionEvent) {
+        if (mode == CanvasPointerMode.RESIZE || mode == CanvasPointerMode.ROTATE) onAngleReadout(null)
         mode = CanvasPointerMode.PINCH
         setInteractive(true, true)
         val a = Pt(e.getX(0).toDouble(), e.getY(0).toDouble())
@@ -2018,8 +2041,8 @@ class InfiniteInteraction(
         // A locked zoom keeps the zoom it started at, so the pinch is a pan and nothing else.
         viewport.zoom = if (zoomLocked) pinchInitZoom else pinchInitZoom * (dist / pinchInitDist)
         if (pinchPanAllowed()) {
-            viewport.scrollX = pinchAnchorContent.x - mid.x / viewport.zoom
-            viewport.scrollY = pinchAnchorContent.y - mid.y / viewport.zoom
+            if (!panCfg().lockPanX) viewport.scrollX = pinchAnchorContent.x - mid.x / viewport.zoom
+            if (!panCfg().lockPanY) viewport.scrollY = pinchAnchorContent.y - mid.y / viewport.zoom
         }
         lastPan = mid
         onViewChanged()
@@ -2045,9 +2068,10 @@ class InfiniteInteraction(
     }
 
     private fun startFling(fingerVel: Pt) {
-        if (fingerVel.length() < InteractionController.FLING_MIN_START) return
+        val vel = panCfg().panDelta(fingerVel.x, fingerVel.y)
+        if (!panCfg().panGlide || vel.length() < InteractionController.FLING_MIN_START) return
         setInteractive(true, true) // the glide is still motion, so the render thread stays up for it
-        flingVel = fingerVel
+        flingVel = vel
         flinging = true
         lastFlingMs = System.nanoTime() / 1_000_000L
         choreographer.postFrameCallback(flingFrame)

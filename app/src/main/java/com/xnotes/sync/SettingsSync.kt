@@ -27,9 +27,9 @@ object SettingsSync {
     /** Top-level settings keys that stay device-local (never pulled from the cloud). */
     private val LOCAL_TOP_KEYS = listOf("browse_root")
 
-    /** Preference keys that stay device-local: the cloud sync config itself. */
+    /** Preference keys that stay device-local: the cloud sync config itself and what this device hides. */
     private val LOCAL_PREF_KEYS = listOf(
-        "cloud_service", "cloud_folders",
+        "cloud_service", "cloud_folders", "hidden_items", "show_hidden",
         "sync_auto", "sync_wifi_only", "sync_interval_minutes", "sync_on_app_open", "sync_on_app_close",
     )
 

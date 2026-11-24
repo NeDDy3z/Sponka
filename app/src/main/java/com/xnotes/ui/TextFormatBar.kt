@@ -83,9 +83,10 @@ import com.xnotes.ui.theme.toComposeColor
 import kotlin.math.roundToInt
 
 /**
- * The bottom text-format strip, shown while the inline text tool is armed (and no
- * legacy box edit is open). Sits as the last child of the editor column, so the
- * adjustResize window floats it directly above the soft keyboard. Controls, in
+ * The bottom text-format strip, shown while the inline text tool is armed, and for a
+ * text box being typed in or selected with its tool (and no label edit is open). It runs along the bottom as the toolbar does: a
+ * docked strip, or a pill floating over the page, and over the toolbar when that is at the bottom too. The adjustResize window lifts
+ * it over the soft keyboard. Controls, in
  * order, like Google Docs: heading level, font face, size, bold/italic/underline/
  * strikethrough, font colour, highlight, insert menu (the "/" entries without a
  * button of their own), link, code block (tap toggles, long-press picks the language),
@@ -95,23 +96,28 @@ import kotlin.math.roundToInt
  */
 @Composable
 fun TextFormatBar(editor: Editor) {
-    if (editor.tool != Tool.TEXT || editor.editingField != null) return
-    val palette = LocalPalette.current
     editor.flowSelTick // recompose whenever the caret, selection or pending style moves
     editor.contentVersion
+    // A text box gets the same strip, less what a box does not hold.
+    val box = editor.boxBar
+    if ((editor.tool != Tool.TEXT && !box) || editor.editingField != null) return
+    val palette = LocalPalette.current
     val style = editor.flowCaretStyle()
     val para = editor.flowCaretParagraph()
     val inCell = para?.table != null
     var tableDialog by remember { mutableStateOf(false) }
+    // Docked, the strip fills the bottom edge; floating, a pill only as long as its controls.
+    val floating = LocalToolbarLook.current.floating
+    val frame = if (floating) Modifier.barPill() else Modifier.fillMaxWidth().background(palette.panel.toComposeColor())
 
     // The bar rides the bottom edge, so its tips open upward.
     CompositionLocalProvider(LocalTipSide provides TipSide.ABOVE) {
         Row(
             modifier = Modifier
-                .fillMaxWidth()
                 .height(48.dp)
-                .background(palette.panel.toComposeColor())
-                .horizontalScroll(rememberScrollState()),
+                .then(frame)
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = if (floating) 4.dp else 0.dp),
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -126,14 +132,16 @@ fun TextFormatBar(editor: Editor) {
             FontColorButton(editor, style.color)
             HighlightButton(editor, style.highlight)
             BarDivider()
-            InsertButton(editor, enabled = editor.flowEditingActive && !inCell)
+            if (!box) InsertButton(editor, enabled = editor.flowEditingActive && !inCell)
             LinkButton(editor, style.link)
-            CodeBlockButton(editor, para?.codeLang, enabled = !inCell)
+            if (!box) CodeBlockButton(editor, para?.codeLang, enabled = !inCell)
             BarIcon(Icons.Filled.Functions, stringResource(R.string.equation), active = style.math, enabled = editor.flowEditingActive) {
                 editor.flowToggleMath()
             }
-            BarIcon(Icons.Outlined.TableChart, stringResource(R.string.insert_table), enabled = editor.flowEditingActive && !inCell) {
-                tableDialog = true
+            if (!box) {
+                BarIcon(Icons.Outlined.TableChart, stringResource(R.string.insert_table), enabled = editor.flowEditingActive && !inCell) {
+                    tableDialog = true
+                }
             }
             BarDivider()
             BarIcon(alignIcon(para?.align ?: ParaAlign.LEFT), stringResource(R.string.alignment), active = para != null && para.align != ParaAlign.LEFT) {
@@ -248,7 +256,7 @@ private fun HeadingButton(editor: Editor, level: Int, enabled: Boolean) {
 /** The "/" menu's entries the bar has no own button for. */
 private val INSERT_KINDS = setOf(
     SlashCommands.Kind.QUOTE, SlashCommands.Kind.CALLOUT,
-    SlashCommands.Kind.PAGE_BREAK, SlashCommands.Kind.DATE, SlashCommands.Kind.TIME,
+    SlashCommands.Kind.RULE, SlashCommands.Kind.PAGE_BREAK, SlashCommands.Kind.DATE, SlashCommands.Kind.TIME,
 )
 
 @Composable

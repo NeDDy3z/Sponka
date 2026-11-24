@@ -13,6 +13,7 @@ import com.xnotes.core.shapes.ArrowKinds
 import com.xnotes.core.shapes.ShapeKind
 import com.xnotes.core.shapes.ShapeParams
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.math.atan2
@@ -50,37 +51,84 @@ class ResizeMathTest {
         assertEquals(Pt(50.0, 50.0), e)
     }
 
-    @Test fun textResizeRightWidensWidthOnly() {
-        val (pos, w, h) = ResizeMath.resizeText(Pt(0.0, 0.0), 100.0, 40.0, HandleId.R, Pt(150.0, 20.0))
-        assertEquals(Pt(0.0, 0.0), pos)
-        assertEquals(150.0, w, 1e-9)
-        assertEquals(40.0, h, 1e-9) // a side handle leaves the other axis untouched
+    @Test fun openShapeEndSnapsLevelAndUprightNearAnAxis() {
+        assertEquals(Pt(100.0, 0.0), ResizeMath.resizeOpenShape(Pt(0.0, 0.0), Pt(50.0, 50.0), HandleId.END, Pt(100.0, 3.0)).second)
+        assertEquals(Pt(50.0, 100.0), ResizeMath.resizeOpenShape(Pt(0.0, 0.0), Pt(50.0, 0.0), HandleId.START, Pt(53.0, 100.0)).first)
     }
 
-    @Test fun textResizeLeftMovesLeftEdge() {
-        val (pos, w, _) = ResizeMath.resizeText(Pt(0.0, 0.0), 100.0, 40.0, HandleId.L, Pt(20.0, 0.0))
-        assertEquals(20.0, pos.x, 1e-9) // left moved, right edge (100) fixed
-        assertEquals(80.0, w, 1e-9)
+    /** Feed [snap] the angles [degs], one 8 ms frame apart from [frame0]; the snapped angles, in degrees. */
+    private fun feed(snap: AngleSnap, degs: List<Double>, quarterTurns: Boolean = false, frame0: Int = 0): List<Double> =
+        degs.mapIndexed { i, d -> Math.toDegrees(snap.snap(Math.toRadians(d), quarterTurns, (frame0 + i) * 8_000_000L)) }
+
+    private fun ramp(from: Double, step: Double, n: Int) = List(n) { from + it * step }
+
+    @Test fun aQuickTurnHoldsFortyFiveUntilItLeavesTheWindow() {
+        val out = feed(AngleSnap(), ramp(0.0, 3.0, 19)) // 375 deg/s up to 54
+        assertEquals(36.0, out[12], 1e-9)
+        for (k in 13..17) assertEquals(45.0, out[k], 1e-9)
+        assertEquals(54.0, out[18], 1e-9)
     }
 
-    @Test fun textResizeBottomGrowsHeight() {
-        val (pos, w, h) = ResizeMath.resizeText(Pt(0.0, 0.0), 100.0, 40.0, HandleId.B, Pt(50.0, 120.0))
-        assertEquals(Pt(0.0, 0.0), pos)
-        assertEquals(100.0, w, 1e-9)
-        assertEquals(120.0, h, 1e-9)
+    @Test fun aCarefulTurnNeverSnaps() {
+        val inputs = ramp(40.0, 0.1, 100) // 12.5 deg/s, across 45
+        feed(AngleSnap(), inputs).forEachIndexed { k, out -> assertEquals(inputs[k], out, 1e-9) }
     }
 
-    @Test fun textResizeCornerChangesBothAxes() {
-        val (pos, w, h) = ResizeMath.resizeText(Pt(10.0, 10.0), 100.0, 40.0, HandleId.TL, Pt(-90.0, -40.0))
-        assertEquals(Pt(-90.0, -40.0), pos) // top-left follows the pointer; bottom-right (110,50) fixed
-        assertEquals(200.0, w, 1e-9)
-        assertEquals(90.0, h, 1e-9)
+    @Test fun aMediumTurnStaysFree() {
+        val inputs = ramp(25.0, 0.1, 240) // 12.5 deg/s, across 30 and 45
+        feed(AngleSnap(), inputs).forEachIndexed { k, out -> assertEquals(inputs[k], out, 1e-9) }
     }
 
-    @Test fun textResizeEnforcesMinSize() {
-        val (_, w, h) = ResizeMath.resizeText(Pt(0.0, 0.0), 100.0, 100.0, HandleId.BR, Pt(5.0, 5.0))
-        assertTrue(w >= ResizeMath.MIN_SIZE && h >= ResizeMath.MIN_SIZE)
+    @Test fun snappingNeverPullsBackAgainstTheTurn() {
+        var a = 0.0
+        val inputs = List(400) { i -> a += if ((i / 20) % 2 == 0) 2.5 else 0.2; a } // quick and slow in turns
+        val out = feed(AngleSnap(), inputs)
+        for (k in 1 until out.size) assertTrue("frame $k went back: ${out[k - 1]} -> ${out[k]}", out[k] >= out[k - 1] - 1e-9)
     }
+
+    @Test fun creepingSlowlyOffAHeldStepLetsGo() {
+        val snap = AngleSnap()
+        feed(snap, ramp(0.0, 3.0, 16)) // quick, onto 45
+        val out = feed(snap, ramp(45.05, 0.05, 100), frame0 = 16)
+        assertEquals(45.0, out.first(), 1e-9)
+        assertEquals(50.0, out.last(), 1e-9)
+    }
+
+    @Test fun quarterTurnSettingCatchesFromFurtherAtAnySpeed() {
+        assertEquals(90.0, feed(AngleSnap(), ramp(75.0, 0.1, 61), quarterTurns = true).last(), 1e-9)
+        assertEquals(81.0, feed(AngleSnap(), ramp(75.0, 0.1, 61)).last(), 1e-9)
+    }
+
+    @Test fun snappedAnglesAndRunsLandExactlyOnTheirSteps() {
+        val deg = Math.PI / 180.0
+        assertTrue(ResizeMath.onSnapStep(-135.0 * deg))
+        assertFalse(ResizeMath.onSnapStep(39.0 * deg))
+        assertEquals(Pt(100.0, 3.0), ResizeMath.resizeOpenShape(Pt(0.0, 0.0), Pt(50.0, 50.0), HandleId.END, Pt(100.0, 3.0), step = null).second)
+        val thirty = ResizeMath.snapAxis(Pt(0.0, 0.0), Pt(100.0, 60.0), 30.0 * deg)
+        assertEquals(30.0 * deg, atan2(thirty.y, thirty.x), 1e-12)
+        assertTrue(ResizeMath.onSnapStep(atan2(thirty.y, thirty.x)))
+    }
+
+    @Test fun openShapeEndSnapsToDiagonalsAndStaysFreeBetween() {
+        val diag = ResizeMath.snapAxis(Pt(0.0, 0.0), Pt(100.0, 95.0))
+        assertEquals(97.5, diag.x, 1e-9)
+        assertEquals(97.5, diag.y, 1e-9)
+        assertEquals(Pt(100.0, 70.0), ResizeMath.snapAxis(Pt(0.0, 0.0), Pt(100.0, 70.0)))
+        assertEquals(Pt(0.0, -100.0), ResizeMath.snapAxis(Pt(0.0, 0.0), Pt(-8.0, -100.0)))
+    }
+
+    @Test fun angleReadsClockwiseOnScreen() {
+        assertEquals(0, ResizeMath.angleDeg(Pt(0.0, 0.0), Pt(10.0, 0.0)))
+        assertEquals(90, ResizeMath.angleDeg(Pt(0.0, 0.0), Pt(0.0, 10.0)))
+        assertEquals(180, ResizeMath.angleDeg(Pt(0.0, 0.0), Pt(-10.0, 0.0)))
+        assertEquals(270, ResizeMath.angleDeg(Pt(0.0, 0.0), Pt(0.0, -10.0)))
+        assertEquals(0, ResizeMath.angleDeg(Pt(0.0, 0.0), Pt(1000.0, 1.0)))
+    }
+
+
+
+
+
 
     @Test fun imageHandlesAreFourCorners() {
         val img = ImageItem(ImageData(java.io.File("test-image"),10, 10), Rect(0.0, 0.0, 100.0, 50.0))
@@ -90,12 +138,12 @@ class ResizeMathTest {
         assertTrue(handles.any { it.id == HandleId.BR && it.content == Pt(148.0, 98.0) })
     }
 
-    @Test fun textHandlesAreEightAroundTheBox() {
-        val t = TextItem(Pt(0.0, 0.0), width = 100.0, height = 50.0, text = "x", measurer = FakeTextMeasurer())
+    @Test fun textHandlesAreCornersAndSides() {
+        val t = TextItem(Pt(0.0, 0.0), width = 100.0, text = "x", measurer = FakeTextMeasurer())
         val handles = ResizeMath.handles(t, Pt(0.0, 0.0))
-        assertEquals(8, handles.size)
-        val ids = handles.map { it.id }.toSet()
-        assertEquals(setOf(HandleId.TL, HandleId.T, HandleId.TR, HandleId.R, HandleId.BR, HandleId.B, HandleId.BL, HandleId.L), ids)
+        // Height follows the text, so there is no top or bottom to drag.
+        assertEquals(setOf(HandleId.TL, HandleId.TR, HandleId.R, HandleId.BR, HandleId.BL, HandleId.L), handles.map { it.id }.toSet())
+        assertEquals(6, handles.size)
     }
 
     @Test fun boxHandlesAreEightAroundTheBox() {

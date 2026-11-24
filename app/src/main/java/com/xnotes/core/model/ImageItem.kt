@@ -39,6 +39,8 @@ class ImageItem(
     override var link: String? = null
     override var group: Int? = null
     override var sync: SyncMark? = null
+    /** An image imported as the page itself, which paints under typed text like the paper. */
+    var paper = false
 
     override fun paint(r: Renderer) = r.drawImage(image, rect, orientation, angle, flip, part)
 

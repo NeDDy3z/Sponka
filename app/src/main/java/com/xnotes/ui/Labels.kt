@@ -93,6 +93,39 @@ val MarkupMode.labelRes: Int
 
 
 @get:StringRes
+val com.xnotes.core.tools.SelectionAction.labelRes: Int
+    get() = when (this) {
+        com.xnotes.core.tools.SelectionAction.DELETE -> R.string.delete
+        com.xnotes.core.tools.SelectionAction.CUT -> R.string.cut
+        com.xnotes.core.tools.SelectionAction.COPY -> R.string.copy
+        com.xnotes.core.tools.SelectionAction.DUPLICATE -> R.string.duplicate
+        com.xnotes.core.tools.SelectionAction.ARRANGE -> R.string.arrange
+        com.xnotes.core.tools.SelectionAction.LOCK -> R.string.lock
+        com.xnotes.core.tools.SelectionAction.PLAY -> R.string.audio_play
+        com.xnotes.core.tools.SelectionAction.CROP -> R.string.crop
+        com.xnotes.core.tools.SelectionAction.SIZE -> R.string.selection_size
+        com.xnotes.core.tools.SelectionAction.MIRROR -> R.string.mirror
+        com.xnotes.core.tools.SelectionAction.AUDIO_RENAME -> R.string.audio_rename
+        com.xnotes.core.tools.SelectionAction.AUDIO_SAVE -> R.string.audio_save
+        com.xnotes.core.tools.SelectionAction.AUDIO_SHARE -> R.string.audio_share
+        com.xnotes.core.tools.SelectionAction.AUDIO_UNLINK -> R.string.audio_unlink
+        com.xnotes.core.tools.SelectionAction.CHANGE_STYLE -> R.string.change_style
+        com.xnotes.core.tools.SelectionAction.EDIT_FUNCTION -> R.string.canvas_menu_edit_function
+        com.xnotes.core.tools.SelectionAction.EDIT_TEXT -> R.string.canvas_menu_edit
+        com.xnotes.core.tools.SelectionAction.CONVERT_TEXT -> R.string.canvas_menu_convert_to_text
+        com.xnotes.core.tools.SelectionAction.CONVERT_MATH -> R.string.canvas_menu_convert_to_math
+        com.xnotes.core.tools.SelectionAction.LINK -> R.string.canvas_menu_add_link
+        com.xnotes.core.tools.SelectionAction.CAPTION -> R.string.canvas_menu_add_caption
+        com.xnotes.core.tools.SelectionAction.LABEL -> R.string.shape_label_add
+        com.xnotes.core.tools.SelectionAction.REROUTE -> R.string.connector_reroute
+        com.xnotes.core.tools.SelectionAction.GROUP -> R.string.group
+        com.xnotes.core.tools.SelectionAction.UNGROUP -> R.string.ungroup
+        com.xnotes.core.tools.SelectionAction.COPY_IMAGE -> R.string.copy_as_image
+        com.xnotes.core.tools.SelectionAction.SHARE_IMAGE -> R.string.share_as_image
+        com.xnotes.core.tools.SelectionAction.SAVE_STICKER -> R.string.save_as_sticker
+    }
+
+@get:StringRes
 val ToolbarItem.labelRes: Int
     get() = when (this) {
         ToolbarItem.HOME -> R.string.toolbar_home
@@ -117,18 +150,12 @@ val ToolbarItem.labelRes: Int
         ToolbarItem.TABLE -> R.string.tool_table
         ToolbarItem.UNDO -> R.string.undo
         ToolbarItem.REDO -> R.string.redo
-        ToolbarItem.PAGE_NAV -> R.string.toolbar_page_nav
         ToolbarItem.SEARCH -> R.string.search
-        ToolbarItem.STYLES -> R.string.toolbar_styles
-        ToolbarItem.MARGINS -> R.string.toolbar_margins
+        ToolbarItem.ADD_PAGE -> R.string.add_page
+        ToolbarItem.MARGINS -> R.string.title_margins
         ToolbarItem.VIEW -> R.string.toolbar_view
-        ToolbarItem.ZOOM -> R.string.toolbar_zoom
-        ToolbarItem.FIT -> R.string.toolbar_fit
-        ToolbarItem.ZOOM_LOCK -> R.string.toolbar_zoom_lock
-        ToolbarItem.FULLSCREEN -> R.string.toolbar_fullscreen
         ToolbarItem.COLORS -> R.string.toolbar_colours
-        ToolbarItem.WAYPOINTS -> R.string.toolbar_waypoints
-        ToolbarItem.MINIMAP -> R.string.toolbar_minimap
+        ToolbarItem.PENCILCASE -> R.string.toolbar_pencilcase
     }
 
 @get:StringRes

@@ -1,6 +1,7 @@
 package com.xnotes.core.model
 
 import com.xnotes.core.geometry.Pt
+import com.xnotes.core.geometry.Rect
 import com.xnotes.core.shapes.ShapeKind
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -17,6 +18,13 @@ class PageLayersTest {
         assertEquals(0, PageLayers.underText(emptyList()))
         assertEquals(2, PageLayers.underText(listOf(fill(), fill(), box(), fill())))
         assertEquals(0, PageLayers.underText(listOf(box(), fill())))
+    }
+
+    private fun image(paper: Boolean) = ImageItem(ImageData(java.io.File("x.png"), 10, 10), Rect(0.0, 0.0, 10.0, 10.0)).also { it.paper = paper }
+
+    @Test fun aPaperImageGoesUnderTheTextLikeAFill() {
+        assertEquals(2, PageLayers.underText(listOf(image(paper = true), fill(), box())))
+        assertEquals(0, PageLayers.underText(listOf(image(paper = false), fill())))
     }
 
     @Test fun theTextPaintsBetweenThem() {

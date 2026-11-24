@@ -1,5 +1,7 @@
 package com.xnotes.settings
 
+import com.xnotes.core.model.BoxDefaults
+import com.xnotes.core.model.BoxStyle
 import com.xnotes.core.infinite.CanvasBackground
 import com.xnotes.core.model.PagePattern
 import com.xnotes.core.model.PageTemplates
@@ -16,15 +18,27 @@ import com.xnotes.core.text.TableStyle
 import com.xnotes.core.tools.EraseMode
 import com.xnotes.core.tools.InkPalette
 import com.xnotes.core.tools.MarkupMode
+import com.xnotes.core.tools.PencilcaseItem
 import com.xnotes.core.tools.SelectKind
 import com.xnotes.core.tools.ShapeConfig
 import com.xnotes.core.shapes.ShapeKind
 import com.xnotes.core.tools.Tool
 import com.xnotes.core.tools.ToolConfig
 import com.xnotes.core.tools.ToolDefaults
+import com.xnotes.core.tools.SelectionBarLayout
 import com.xnotes.core.tools.ToolbarLayout
 import org.json.JSONArray
 import org.json.JSONObject
+import kotlin.math.abs
+
+/** Saved zooms offered until the user saves their own. */
+val DEFAULT_FAVORITE_ZOOMS = listOf(2f, 4f, 6f)
+
+/** How far apart two zooms may sit and still count as the same jump to the user. */
+const val ZOOM_MATCH_TOLERANCE = 0.005f
+
+/** How many zooms can be saved; past this the largest other one is dropped. */
+const val MAX_FAVORITE_ZOOMS = 12
 
 /**
  * How the in-app explorer orders entries. The chosen key sorts within each group (folders first,
@@ -46,8 +60,11 @@ data class PinnedFolder(val uri: String, val name: String)
 
 /** All persistent non-document state (spec 09 §2). */
 data class Settings(
-    /** Global View-menu defaults; per-note [com.xnotes.canvas.ViewOverrides] shadow them. */
-    val viewDefaults: com.xnotes.canvas.ViewSettings = com.xnotes.canvas.ViewSettings(),
+    /** View-menu defaults while the app is light, and while it is dark or OLED; only their PDF filters differ. */
+    val viewDefaultsLight: com.xnotes.canvas.ViewSettings = com.xnotes.canvas.ViewSettings.factory(dark = false),
+    val viewDefaultsDark: com.xnotes.canvas.ViewSettings = com.xnotes.canvas.ViewSettings.factory(dark = true),
+    /** Reader mode's display settings, the same for every note and apart from the view defaults. */
+    val readerSettings: com.xnotes.canvas.ReaderSettings = com.xnotes.canvas.ReaderSettings(),
     val tools: Map<Tool, ToolConfig> = emptyMap(),
     val shapeConfig: ShapeConfig = ShapeConfig(),
     /** The toolbar swatches while the app is dark, and while it is light; slot for slot partners. */
@@ -57,6 +74,7 @@ data class Settings(
     val toolbarLayout: ToolbarLayout = ToolbarLayout.DEFAULT,
     /** The infinite canvas's own bar. A separate layout because the two hold different items. */
     val canvasToolbarLayout: ToolbarLayout = ToolbarLayout.CANVAS_DEFAULT,
+    val selectionBarLayout: SelectionBarLayout = SelectionBarLayout.DEFAULT,
     val activeColor: Int = 0,
     /** The tool armed when the app was last paused, re-armed on the next launch. */
     val lastTool: Tool = Tool.DEFAULT,
@@ -86,6 +104,8 @@ data class Settings(
     val newNoteStyle: PageStyle = PageStyle(),
     /** Flow (text tool) defaults stamped onto every newly created note; null ⇒ none saved (the device's factory). */
     val newNoteFlow: FlowDefaults? = null,
+    /** What a new text box starts as; null is the factory's. */
+    val textBox: BoxDefaults? = null,
     /** Background stamped onto every newly created canvas; null ⇒ none saved. */
     val newCanvasBackground: CanvasBackground? = null,
     /** Size and look the insert-table dialog starts from ("Default for new tables"). */
@@ -93,10 +113,25 @@ data class Settings(
     val prefs: Preferences = Preferences(),
     /** One-shot flag: the first-run stylus check (which may auto-enable finger-draw) has run. */
     val fingerDrawAutoChecked: Boolean = false,
+    /** One-shot flag: the first edit of a PDF has asked whether its saving may show a notification. */
+    val pdfNotificationsAsked: Boolean = false,
+    /** The first-run setup has been finished or skipped; installs that already had a root count as done. */
+    val onboardingDone: Boolean = false,
+    /** Saved zooms from the zoom menu, ascending, shared by every note and canvas. */
+    val favoriteZooms: List<Float> = DEFAULT_FAVORITE_ZOOMS,
+    /** Tools saved in the pencilcase bar, in the order they were added, shared by every note and canvas. */
+    val pencilcase: List<PencilcaseItem> = emptyList(),
 ) {
     fun configFor(tool: Tool): ToolConfig = tools[tool] ?: ToolDefaults.configFor(tool)
 
     fun toolbarColors(dark: Boolean): List<Rgba> = if (dark) toolbarColorsDark else toolbarColorsLight
+
+    fun viewDefaults(dark: Boolean): com.xnotes.canvas.ViewSettings = if (dark) viewDefaultsDark else viewDefaultsLight
+
+    /** Save [vs] as the [dark] theme's View defaults; the other theme takes its layout too. */
+    fun withViewDefaults(dark: Boolean, vs: com.xnotes.canvas.ViewSettings): Settings =
+        if (dark) copy(viewDefaultsDark = vs, viewDefaultsLight = viewDefaultsLight.withLayoutOf(vs))
+        else copy(viewDefaultsLight = vs, viewDefaultsDark = viewDefaultsDark.withLayoutOf(vs))
 
     /** Push a colour to the front of recent colours, de-duped, capped at 24. */
     fun rememberColor(c: Rgba): Settings =
@@ -108,6 +143,15 @@ data class Settings(
         val current = swatchesFor(role)
         if (index !in current.indices) return this
         return copy(swatches = swatches + (role to current.toMutableList().also { it[index] = color }))
+    }
+
+    /** [zoom] saved if it was not, removed if it was; zooms within [ZOOM_MATCH_TOLERANCE] count as one. */
+    fun toggleFavoriteZoom(zoom: Float): Settings {
+        val held = favoriteZooms.any { abs(it - zoom) <= ZOOM_MATCH_TOLERANCE }
+        val kept = favoriteZooms.filterNot { abs(it - zoom) <= ZOOM_MATCH_TOLERANCE }
+        if (held) return copy(favoriteZooms = kept)
+        val room = kept.sorted().take(MAX_FAVORITE_ZOOMS - 1)
+        return copy(favoriteZooms = (room + zoom).sorted())
     }
 
     fun toJson(): JSONObject {
@@ -123,6 +167,7 @@ data class Settings(
             .put("toolbar_color_count", toolbarColorCount)
             .put("toolbar_layout", toolbarLayoutJson(toolbarLayout))
             .put("canvas_toolbar_layout", toolbarLayoutJson(canvasToolbarLayout))
+            .put("selection_bar_layout", JSONArray(selectionBarLayout.sections.map { s -> JSONArray(s.map { JSONObject().put("id", it.action.id).put("visible", it.visible) }) }))
             .put("active_color", activeColor)
             .put("last_tool", lastTool.id)
             .put("last_canvas_tool", lastCanvasTool.id)
@@ -144,11 +189,18 @@ data class Settings(
             .put("render_scale", renderScale)
             .apply { if (!newNoteStyle.isEmpty) put("new_note_style", pageStyleJson(newNoteStyle)) }
             .apply { newNoteFlow?.let { put("new_note_flow", flowDefaultsJson(it)) } }
+            .apply { textBox?.let { put("text_box", boxDefaultsJson(it)) } }
             .apply { newCanvasBackground?.let { put("new_canvas_background", canvasBackgroundJson(it)) } }
             .apply { if (!newTable.isFactory) put("new_table", tableDefaultsJson(newTable)) }
             .put("prefs", prefs.toJson())
-            .put("view_defaults", com.xnotes.platform.ViewSettingsJson.write(JSONObject(), viewDefaults))
+            .put("view_defaults_light", com.xnotes.platform.ViewSettingsJson.write(JSONObject(), viewDefaultsLight, com.xnotes.canvas.ViewSettings.factory(dark = false)))
+            .put("view_defaults_dark", com.xnotes.platform.ViewSettingsJson.write(JSONObject(), viewDefaultsDark, com.xnotes.canvas.ViewSettings.factory(dark = true)))
+            .put("reader_settings", com.xnotes.platform.ReaderSettingsJson.write(readerSettings))
             .put("finger_draw_auto_checked", fingerDrawAutoChecked)
+            .put("pdf_notifications_asked", pdfNotificationsAsked)
+            .put("onboarding_done", onboardingDone)
+            .put("favorite_zooms", JSONArray().apply { favoriteZooms.forEach { put(it.toDouble()) } })
+            .put("pencilcase", JSONArray().apply { pencilcase.forEach { put(pencilcaseItemJson(it)) } })
     }
 
     companion object {
@@ -166,11 +218,14 @@ data class Settings(
             val shape = toolsObj?.optJSONObject("shape")?.let { shapeConfig(it) } ?: ShapeConfig()
 
             val (darkColors, lightColors) = toolbarColors(o)
+            val (viewLight, viewDark) = viewDefaults(o)
 
             return Settings(
-                viewDefaults = o.optJSONObject("view_defaults")
-                    ?.let { com.xnotes.platform.ViewSettingsJson.read(it) }
-                    ?: legacyViewDefaults(o.optJSONObject("prefs")),
+                viewDefaultsLight = viewLight,
+                viewDefaultsDark = viewDark,
+                readerSettings = o.optJSONObject("reader_settings")
+                    ?.let { com.xnotes.platform.ReaderSettingsJson.read(it) }
+                    ?: com.xnotes.canvas.ReaderSettings(),
                 tools = tools,
                 shapeConfig = shape,
                 toolbarColorsDark = darkColors,
@@ -182,6 +237,7 @@ data class Settings(
                     ToolbarLayout.CANVAS_ITEMS,
                     ToolbarLayout.CANVAS_DEFAULT,
                 ),
+                selectionBarLayout = selectionBarLayout(o.optJSONArray("selection_bar_layout")),
                 activeColor = o.optInt("active_color", 0).coerceIn(0, InkPalette.MAX_SWATCHES - 1),
                 // Only tools the toolbar can arm come back; a transient one (e.g. TEXT_BOX) would
                 // leave the bar showing a tool the user never picked.
@@ -206,10 +262,15 @@ data class Settings(
                 renderScale = o.optDouble("render_scale", 1.0),
                 newNoteStyle = pageStyle(o.optJSONObject("new_note_style")),
                 newNoteFlow = o.optJSONObject("new_note_flow")?.let { flowDefaults(it) },
+                textBox = o.optJSONObject("text_box")?.let { boxDefaults(it) },
                 newCanvasBackground = canvasBackground(o.optJSONObject("new_canvas_background")),
                 newTable = tableDefaults(o.optJSONObject("new_table")),
                 prefs = Preferences.fromJson(o.optJSONObject("prefs")),
                 fingerDrawAutoChecked = o.optBoolean("finger_draw_auto_checked", false),
+                pdfNotificationsAsked = o.optBoolean("pdf_notifications_asked", false),
+                onboardingDone = o.optBoolean("onboarding_done", o.has("browse_root")),
+                favoriteZooms = favoriteZooms(o.optJSONArray("favorite_zooms")),
+                pencilcase = pencilcase(o.optJSONArray("pencilcase")),
             )
         }
 
@@ -220,6 +281,69 @@ data class Settings(
                 val saved = rgbaList(o.optJSONArray(role.id))
                 if (saved.isEmpty()) null else role to List(SwatchRole.COUNT) { saved.getOrNull(it) ?: role.defaults[it] }
             }.toMap()
+        }
+
+        /** Only a file that never had the key gets the defaults; a list the user emptied stays empty. */
+        private fun favoriteZooms(a: JSONArray?): List<Float> {
+            if (a == null) return DEFAULT_FAVORITE_ZOOMS
+            return (0 until a.length()).mapNotNull { i ->
+                a.optDouble(i, Double.NaN).takeIf { it.isFinite() }?.toFloat()
+            }.take(MAX_FAVORITE_ZOOMS)
+        }
+
+        private fun pencilcaseItemJson(item: PencilcaseItem) = JSONObject()
+            .put("tool", item.tool.id)
+            .put("color", rgbaArr(item.color))
+            .apply { item.name?.let { put("name", it) } }
+            .apply {
+                when (item.tool) {
+                    Tool.SHAPE -> put("shape", shapeConfigJson(item.shape))
+                    Tool.TABLE -> put("table", JSONObject().put("cols", item.table.cols).put("rows", item.table.rows).put("width", item.table.look.width).apply {
+                        val box = item.table.look.box
+                        val lines = item.table.look.lines
+                        box.fill?.let { put("fill", rgbaArr(it)) }
+                        box.border?.let { put("border", rgbaArr(it)) }
+                        put("border_width", box.borderWidth).put("corner", box.corner)
+                        put("dashed", lines.dashed).put("dash_length", lines.dashLength).put("dash_gap", lines.dashGap)
+                        put("neon", lines.neon).put("neon_strength", lines.neonStrength)
+                    })
+                    else -> put("config", toolConfigJson(item.config))
+                }
+            }
+
+        /** Items of a tool this version does not know, or cannot save, are dropped. */
+        private fun pencilcase(a: JSONArray?): List<PencilcaseItem> {
+            if (a == null) return emptyList()
+            return (0 until a.length()).mapNotNull { i ->
+                val o = a.optJSONObject(i) ?: return@mapNotNull null
+                val tool = Tool.fromId(o.optString("tool"))?.takeIf { it in PencilcaseItem.TOOLS } ?: return@mapNotNull null
+                PencilcaseItem(
+                    tool = tool,
+                    config = o.optJSONObject("config")?.let { toolConfig(it, tool) } ?: ToolDefaults.configFor(tool),
+                    shape = o.optJSONObject("shape")?.let { shapeConfig(it) } ?: ShapeConfig(),
+                    color = rgba(o.optJSONArray("color")) ?: InkPalette.DEFAULT,
+                    table = o.optJSONObject("table")?.let { t ->
+                        val d = PencilcaseItem.DEFAULT_TABLE
+                        d.copy(
+                            cols = t.optInt("cols", d.cols).coerceIn(1, com.xnotes.core.model.TableItem.MAX_LINES),
+                            rows = t.optInt("rows", d.rows).coerceIn(1, com.xnotes.core.model.TableItem.MAX_LINES),
+                            look = com.xnotes.core.model.TableLook(
+                                t.optDouble("width", d.look.width).coerceIn(1.0, 12.0),
+                                com.xnotes.core.model.BoxStyle(
+                                    rgba(t.optJSONArray("fill")), rgba(t.optJSONArray("border")),
+                                    t.optDouble("border_width", 0.0).coerceIn(0.0, com.xnotes.core.model.BoxStyle.MAX_BORDER),
+                                    t.optDouble("corner", 0.0).coerceIn(0.0, com.xnotes.core.model.BoxStyle.MAX_CORNER),
+                                ),
+                                com.xnotes.core.model.TableLines(
+                                    t.optBoolean("dashed", false), t.optDouble("dash_length", 10.0), t.optDouble("dash_gap", 8.0),
+                                    t.optBoolean("neon", false), t.optDouble("neon_strength", 0.6),
+                                ),
+                            ),
+                        )
+                    } ?: PencilcaseItem.DEFAULT_TABLE,
+                    name = o.optString("name").takeIf { it.isNotBlank() },
+                )
+            }
         }
 
         private fun recentDocs(a: JSONArray?): List<RecentDoc> {
@@ -238,6 +362,20 @@ data class Settings(
                 val uri = o.optString("uri", "").ifEmpty { return@mapNotNull null }
                 PinnedFolder(uri, o.optString("name", ""))
             }
+        }
+
+        /** The light and the dark View defaults. Settings from before the split kept one set for
+         *  every theme: unless it held a colour filter, both themes take their factory filters. */
+        private fun viewDefaults(o: JSONObject): Pair<com.xnotes.canvas.ViewSettings, com.xnotes.canvas.ViewSettings> {
+            val light = com.xnotes.canvas.ViewSettings.factory(dark = false)
+            val dark = com.xnotes.canvas.ViewSettings.factory(dark = true)
+            if (o.has("view_defaults_light") || o.has("view_defaults_dark")) return Pair(
+                o.optJSONObject("view_defaults_light")?.let { com.xnotes.platform.ViewSettingsJson.read(it, light) } ?: light,
+                o.optJSONObject("view_defaults_dark")?.let { com.xnotes.platform.ViewSettingsJson.read(it, dark) } ?: dark,
+            )
+            val old = o.optJSONObject("view_defaults")?.let { com.xnotes.platform.ViewSettingsJson.read(it) }
+                ?: legacyViewDefaults(o.optJSONObject("prefs"))
+            return if (old.filtersOn) old to old else light.withLayoutOf(old) to dark.withLayoutOf(old)
         }
 
         /** Settings written before the View menu's Global tab: the old PDF dark-mode
@@ -300,6 +438,30 @@ data class Settings(
                 patternColor = rgba(o.optJSONArray("pattern_color")) ?: d.patternColor,
                 spacing = o.optDouble("spacing", d.spacing),
                 paperColor = rgba(o.optJSONArray("paper_color")),
+            )
+        }
+
+        private fun boxDefaultsJson(d: BoxDefaults) = JSONObject()
+            .put("face", d.face.id)
+            .put("size_pt", d.sizePt)
+            .apply { d.color?.let { put("color", rgbaArr(it)) } }
+            .apply { d.box.fill?.let { put("fill", rgbaArr(it)) } }
+            .apply { d.box.border?.let { put("border", rgbaArr(it)) } }
+            .put("border_width", d.box.borderWidth)
+            .put("corner", d.box.corner)
+
+        private fun boxDefaults(o: JSONObject): BoxDefaults {
+            val d = BoxDefaults()
+            return BoxDefaults(
+                face = FontFace(o.optString("face", d.face.id)),
+                sizePt = o.optDouble("size_pt", d.sizePt),
+                color = rgba(o.optJSONArray("color")),
+                box = BoxStyle(
+                    fill = rgba(o.optJSONArray("fill")),
+                    border = rgba(o.optJSONArray("border")),
+                    borderWidth = o.optDouble("border_width", 0.0).coerceIn(0.0, BoxStyle.MAX_BORDER),
+                    corner = o.optDouble("corner", 0.0).coerceIn(0.0, BoxStyle.MAX_CORNER),
+                ),
             )
         }
 
@@ -398,6 +560,10 @@ data class Settings(
             .put("erase_markups", c.eraseMarkups)
             .put("scribble_erase", c.scribbleErase)
             .put("erasable_kinds_off", kindsJson(SelectKind.ALL - c.erasableKinds))
+            .put("lock_pan_x", c.lockPanX)
+            .put("lock_pan_y", c.lockPanY)
+            .put("pan_sensitivity", c.panSensitivity)
+            .put("pan_glide", c.panGlide)
             .put("switch_back_after_select", c.switchBackAfterSelect)
             .put("select_whole_items", c.selectWholeItems)
             .put("select_kinds_off", kindsJson(SelectKind.ALL - c.selectKinds))
@@ -406,6 +572,8 @@ data class Settings(
             .put("scale", c.scale)
             .put("highlighter_alpha", c.highlighterAlpha)
             .put("highlighter_inverse", c.highlighterInverse)
+            .put("opacity_enabled", c.opacityEnabled)
+            .put("opacity", c.opacity)
             .put("markup_mode", c.markupMode.id)
             .put("markup_intensity", c.markupIntensity)
             .put("tape_mode", c.tapeMode.id)
@@ -453,10 +621,16 @@ data class Settings(
                     ?.takeIf { it.isNotEmpty() }
                     ?: d.selectKinds,
                 snapToMargins = o.optBoolean("snap_to_margins", d.snapToMargins),
+                lockPanX = o.optBoolean("lock_pan_x", d.lockPanX),
+                lockPanY = o.optBoolean("lock_pan_y", d.lockPanY),
+                panSensitivity = o.optInt("pan_sensitivity", d.panSensitivity).coerceIn(1, 10),
+                panGlide = o.optBoolean("pan_glide", d.panGlide),
                 straightLine = o.optBoolean("straight_line", d.straightLine),
                 scale = o.optBoolean("scale", d.scale),
                 highlighterAlpha = o.optDouble("highlighter_alpha", d.highlighterAlpha),
                 highlighterInverse = o.optBoolean("highlighter_inverse", d.highlighterInverse),
+                opacityEnabled = o.optBoolean("opacity_enabled", d.opacityEnabled),
+                opacity = o.optDouble("opacity", d.opacity).coerceIn(ToolConfig.OPACITY_MIN, 1.0),
                 markupMode = if (o.has("markup_mode")) MarkupMode.fromId(o.optString("markup_mode")) else d.markupMode,
                 markupIntensity = o.optDouble("markup_intensity", d.markupIntensity)
                     .coerceIn(ToolConfig.MARKUP_INTENSITY_MIN, 1.0),
@@ -516,6 +690,15 @@ data class Settings(
                 secArr.put(entryArr)
             }
             return JSONObject().put("sections", secArr)
+        }
+
+        private fun selectionBarLayout(arr: JSONArray?): SelectionBarLayout {
+            if (arr == null) return SelectionBarLayout.DEFAULT
+            val raw = (0 until arr.length()).map { i ->
+                val list = arr.optJSONArray(i) ?: JSONArray()
+                (0 until list.length()).mapNotNull { j -> list.optJSONObject(j)?.let { it.optString("id") to it.optBoolean("visible", true) } }
+            }
+            return SelectionBarLayout.fromRaw(raw)
         }
 
         private fun toolbarLayout(

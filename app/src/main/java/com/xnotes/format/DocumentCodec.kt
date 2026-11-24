@@ -6,6 +6,7 @@ import com.xnotes.core.geometry.Rect
 import com.xnotes.core.model.AudioData
 import com.xnotes.core.model.AudioItem
 import com.xnotes.core.model.Bookmark
+import com.xnotes.core.model.MathOrigin
 import com.xnotes.core.model.CanvasItem
 import com.xnotes.core.model.ConnectorEnd
 import com.xnotes.core.model.ConnectorItem
@@ -68,6 +69,9 @@ import java.util.zip.CRC32
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
+import com.xnotes.core.model.BoxStyle
+import com.xnotes.core.text.CharStyle
+import com.xnotes.core.text.TextFlow
 
 /** Thrown when a file is not a valid `.xnote` bundle. */
 class XNoteFormatException(message: String) : Exception(message)
@@ -384,6 +388,10 @@ class DocumentCodec(
             j.name("at").value(r.at)
             j.name("size").value(r.size)
             if (r.sideways) j.name("sideways").value(true)
+            r.color?.let {
+                j.name("color")
+                writeRgba(j, it)
+            }
             j.endObject()
         }
         j.endArray()
@@ -434,6 +442,7 @@ class DocumentCodec(
             j.name("highlighter_alpha").value(s.config.highlighterAlpha)
             if (s.config.highlighterInverse) j.name("highlighter_inverse").value(true)
         }
+        if (s.config.opacityEnabled) j.name("opacity").value(s.config.opacity)
         j.endObject()
         // Samples are ~97% of a dense manifest's bytes, so they go out through [JsonWrite.samplePoint], which rounds them: 0.01
         // content px (2dp) and 0.001 pressure (3dp) are far below anything visible, and a
@@ -474,6 +483,7 @@ class DocumentCodec(
         item.part?.let { j.name("part").beginArray().value(it.x).value(it.y).value(it.w).value(it.h).endArray() }
         item.sync?.let { writeSync(j, it) }
         if (item.locked) j.name("locked").value(true)
+        if (item.paper) j.name("paper").value(true)
         item.link?.let { j.name("link").value(it) }
         item.group?.let { j.name("group").value(it) }
         j.endObject()
@@ -499,32 +509,53 @@ class DocumentCodec(
         j.name("rec_ms").value(m.ms)
     }
 
+    /**
+     * The first fields are a plain box as every version reads it: where its text starts, what it
+     * wraps at, its words and one style. What only a rich box has follows, each field only when set.
+     */
     private fun writeText(j: JsonWrite, t: TextItem, id: Int?) {
+        // Published whole, so a keystroke landing mid-write cannot tear it.
+        val c = t.content
+        val flow = c.frozen
+        val box = t.box
         j.beginObject()
         j.name("kind").value(TextItem.KIND)
         id?.let { j.name("id").value(it) }
         j.name("pos").beginArray().value(t.pos.x).value(t.pos.y).endArray()
-        j.name("width").value(t.width)
-        j.name("text").value(t.text)
+        j.name("width").value(if (t.autoWidth) c.w else t.width)
+        j.name("text").value(c.plain)
         j.name("rgba")
-        writeRgba(j, t.rgba)
-        j.name("point_size").value(t.pointSize)
-        // Additive fields: written only when set, so older readers stay compatible
-        // and notes that use neither serialize exactly as before.
-        if (t.height > 0.0) j.name("height").value(t.height)
-        if (t.face != TextItem.DEFAULT_FACE) j.name("font_face").value(t.face.id)
-        if (t.bold) j.name("bold").value(true)
-        if (t.italic) j.name("italic").value(true)
-        if (t.underline) j.name("underline").value(true)
-        if (t.strike) j.name("strike").value(true)
-        if (t.align != com.xnotes.core.pal.HAlign.LEFT) j.name("align").value(t.align.name.lowercase())
+        writeRgba(j, c.frame.defaultColor)
+        j.name("point_size").value(flow.defaultSizePt)
+        if (flow.defaultFace != TextItem.DEFAULT_FACE) j.name("font_face").value(flow.defaultFace.id)
+        if (flow.defaultColor == null) j.name("auto_color").value(true)
+        if (t.autoWidth) j.name("auto_width").value(true)
+        if (isRich(flow)) j.name("flow").value(String(FlowXml.write(flow), Charsets.UTF_8))
+        box.fill?.let {
+            j.name("box_fill")
+            writeRgba(j, it)
+        }
+        box.border?.let {
+            j.name("box_border")
+            writeRgba(j, it)
+        }
+        if (box.borderWidth != 0.0) j.name("box_border_width").value(box.borderWidth)
+        if (box.corner != 0.0) j.name("box_corner").value(box.corner)
         if (t.math) j.name("math").value(true)
+        t.ocr?.let {
+            j.name("math_ocr_model").value(it.model)
+            j.name("math_ocr_raw").value(it.raw)
+        }
         t.sync?.let { writeSync(j, it) }
         if (t.locked) j.name("locked").value(true)
         t.link?.let { j.name("link").value(it) }
         t.group?.let { j.name("group").value(it) }
         j.endObject()
     }
+
+    /** Whether [flow] holds anything its plain text and the box's one style do not say. */
+    private fun isRich(flow: TextFlow): Boolean =
+        flow.paragraphs.any { p -> !p.isDefaultStyle() || p.runs.any { it.style != CharStyle.DEFAULT } }
 
     private fun writeShape(j: JsonWrite, s: ShapeItem, id: Int?) {
         // A shape older readers cannot draw goes down as the polygon they can, its real geometry after.
@@ -619,6 +650,38 @@ class DocumentCodec(
         j.name("stroke_rgba")
         writeRgba(j, t.strokeRgba)
         j.name("stroke_width").value(t.strokeWidth)
+        t.box.fill?.let {
+            j.name("box_fill")
+            writeRgba(j, it)
+        }
+        t.box.border?.let {
+            j.name("box_border")
+            writeRgba(j, it)
+        }
+        if (t.box.borderWidth != 0.0) j.name("box_border_width").value(t.box.borderWidth)
+        if (t.box.corner != 0.0) j.name("box_corner").value(t.box.corner)
+        if (t.lines.neon) {
+            j.name("neon").value(true)
+            j.name("neon_strength").value(t.lines.neonStrength)
+        }
+        if (t.lines.dashed) {
+            j.name("dashed").value(true)
+            j.name("dash_length").value(t.lines.dashLength)
+            j.name("dash_gap").value(t.lines.dashGap)
+        }
+        if (t.cells.isNotEmpty()) {
+            j.name("cells").beginArray()
+            t.cells.forEach { (at, c) ->
+                j.beginObject()
+                j.name("row").value(at.first)
+                j.name("col").value(at.second)
+                c.fill?.let { j.name("fill"); writeRgba(j, it) }
+                c.border?.let { j.name("border"); writeRgba(j, it) }
+                if (c.borderWidth != 0.0) j.name("border_width").value(c.borderWidth)
+                j.endObject()
+            }
+            j.endArray()
+        }
         if (t.locked) j.name("locked").value(true)
         t.link?.let { j.name("link").value(it) }
         t.group?.let { j.name("group").value(it) }
@@ -772,6 +835,10 @@ class DocumentCodec(
         m.top?.let { j.name("top").value(it) }
         m.right?.let { j.name("right").value(it) }
         m.bottom?.let { j.name("bottom").value(it) }
+        m.color?.let {
+            j.name("color")
+            writeRgba(j, it)
+        }
         j.endObject()
     }
 
@@ -936,6 +1003,12 @@ class DocumentCodec(
                     if (spec is PendingImage) glue.named(item, spec.id)
                 }
             }
+            // Notes from before the paper flag: an image imported as the page sits under any colour, filling it exactly.
+            (page.items.firstOrNull { (it as? ShapeItem)?.isFill != true } as? ImageItem)?.let {
+                if (it.angle == 0.0 && it.orientation == 0 && it.part == null &&
+                    it.rect.x == 0.0 && it.rect.y == 0.0 && it.rect.w == page.width && it.rect.h == page.height
+                ) it.paper = true
+            }
         }
         // A recording whose item did not survive leaves its file behind; nothing else will delete it.
         val used = m.pageImages.flatMap { it.second }.filterIsInstance<PendingAudio>().map { it.asset }.toSet()
@@ -1002,6 +1075,7 @@ class DocumentCodec(
         val sync: SyncMark?,
         val group: Int? = null,
         val part: Rect? = null,
+        val paper: Boolean = false,
     ) : Pending(index, asset)
 
     private class PendingAudio(
@@ -1181,6 +1255,7 @@ class DocumentCodec(
     /** Union of every kind's fields, so an item parses in one pass whatever its key order. */
     private class ItemScratch {
         var locked = false
+        var paper = false
         var link: String? = null
         var group: Int? = null
         var kind: String? = null
@@ -1205,9 +1280,18 @@ class DocumentCodec(
         var rgba: Rgba? = null
         var pointSize = TextItem.DEFAULT_POINT_SIZE
         var fontFace = ""
+        var autoColor = false
+        var autoWidth = false
+        var flowXml: String? = null
+        var boxFill: Rgba? = null
+        var boxBorder: Rgba? = null
+        var boxBorderWidth = 0.0
+        var boxCorner = 0.0
         var textBold = false
         var textItalic = false
         var textMath = false
+        var ocrModel: String? = null
+        var ocrRaw: String? = null
         var textUnderline = false
         var textStrike = false
         var textAlign = "left"
@@ -1239,6 +1323,7 @@ class DocumentCodec(
         var functionYMax: Double? = null
         var tableCols: List<Double>? = null
         var tableRows: List<Double>? = null
+        var tableCells: Map<Pair<Int, Int>, com.xnotes.core.model.CellStyle>? = null
         var rid = 0
         var name = ""
         var durationMs = 0
@@ -1271,6 +1356,7 @@ class DocumentCodec(
         var dashGap: Double? = null
         var highlighterAlpha: Double? = null
         var highlighterInverse: Boolean? = null
+        var opacity: Double? = null
     }
 
     private fun parseItem(p: JsonPull, items: MutableList<CanvasItem>, pending: MutableList<Pending>, glue: GlueRead) {
@@ -1301,9 +1387,18 @@ class DocumentCodec(
                 "rgba" -> s.rgba = rgbaOrNull(p)
                 "point_size" -> s.pointSize = doubleOr(p, TextItem.DEFAULT_POINT_SIZE)
                 "font_face" -> s.fontFace = stringOr(p, "")
+                "auto_color" -> s.autoColor = boolOr(p, false)
+                "auto_width" -> s.autoWidth = boolOr(p, false)
+                "flow" -> s.flowXml = stringOrNull(p)
+                "box_fill" -> s.boxFill = rgbaOrNull(p)
+                "box_border" -> s.boxBorder = rgbaOrNull(p)
+                "box_border_width" -> s.boxBorderWidth = doubleOr(p, 0.0)
+                "box_corner" -> s.boxCorner = doubleOr(p, 0.0)
                 "bold" -> s.textBold = boolOr(p, false)
                 "italic" -> s.textItalic = boolOr(p, false)
                 "math" -> s.textMath = boolOr(p, false)
+                "math_ocr_model" -> s.ocrModel = stringOrNull(p)
+                "math_ocr_raw" -> s.ocrRaw = stringOrNull(p)
                 "underline" -> s.textUnderline = boolOr(p, false)
                 "strike" -> s.textStrike = boolOr(p, false)
                 "align" -> s.textAlign = stringOr(p, "left")
@@ -1335,7 +1430,9 @@ class DocumentCodec(
                 "function_ymax" -> s.functionYMax = doubleOr(p, 0.0)
                 "cols" -> s.tableCols = doubleListOrNull(p)
                 "rows" -> s.tableRows = doubleListOrNull(p)
+                "cells" -> s.tableCells = cellsOrNull(p)
                 "locked" -> s.locked = boolOr(p, false)
+                "paper" -> s.paper = boolOr(p, false)
                 "link" -> s.link = stringOr(p, "").ifEmpty { null }
                 "group" -> s.group = intOrNull(p)
                 "rid" -> s.rid = intOr(p, 0)
@@ -1362,7 +1459,7 @@ class DocumentCodec(
                     pending.add(
                         PendingImage(
                             items.size + pending.size, asset, s.rect, s.srcW, s.srcH,
-                            s.orientation, s.angle, Flip.fromId(s.flip), s.locked, s.id, s.link, sync, s.group, s.part,
+                            s.orientation, s.angle, Flip.fromId(s.flip), s.locked, s.id, s.link, sync, s.group, s.part, s.paper,
                         ),
                     )
                 }
@@ -1373,28 +1470,8 @@ class DocumentCodec(
                     pending.add(PendingAudio(items.size + pending.size, asset, s.rect, s.rid, s.name, s.durationMs, s.peaks ?: ByteArray(0), s.locked, s.group))
                 }
             }
-            TextItem.KIND -> items.add(
-                TextItem(
-                    pos = s.pos ?: Pt.ZERO,
-                    width = s.width,
-                    height = s.height,
-                    text = s.text,
-                    rgba = s.rgba ?: TextItem.DEFAULT_COLOR,
-                    pointSize = s.pointSize,
-                    face = FontFace.fromId(s.fontFace),
-                    bold = s.textBold,
-                    italic = s.textItalic,
-                    underline = s.textUnderline,
-                    strike = s.textStrike,
-                    align = when (s.textAlign) {
-                        "center" -> com.xnotes.core.pal.HAlign.CENTER
-                        "right" -> com.xnotes.core.pal.HAlign.RIGHT
-                        else -> com.xnotes.core.pal.HAlign.LEFT
-                    },
-                    measurer = textMeasurer,
-                    math = s.textMath,
-                ),
-            )
+            // A box is dropped when left empty; one saved mid-typing with no words yet goes the same way.
+            TextItem.KIND -> buildText(s).takeIf { it.text.isNotBlank() }?.let { items.add(it) }
             ShapeItem.KIND, ShapeItem.GLYPHS_KIND, ShapeItem.FILL_KIND -> {
                 val c = s.connector
                 items.add(if (c != null && s.kind == ShapeItem.KIND) buildConnector(s, c, glue) else buildShape(s))
@@ -1447,6 +1524,8 @@ class DocumentCodec(
             // Absent on legacy highlighter strokes -> the historical 0.35, so they reload unchanged.
             highlighterAlpha = c?.highlighterAlpha ?: def.highlighterAlpha,
             highlighterInverse = c?.highlighterInverse ?: def.highlighterInverse,
+            opacityEnabled = c?.opacity != null,
+            opacity = (c?.opacity ?: def.opacity).coerceIn(ToolConfig.OPACITY_MIN, 1.0),
         )
         val stroke = Stroke(tool, config, emptyList(), s.speedScale, s.straight, s.smoothScale)
         s.samples?.let { stroke.setSamples(it.xs, it.ys, it.ps, it.ts, it.n, it.ws) }
@@ -1639,7 +1718,11 @@ class DocumentCodec(
         val rect = s.rect ?: return null
         val cols = s.tableCols?.takeIf { it.isNotEmpty() } ?: return null
         val rows = s.tableRows?.takeIf { it.isNotEmpty() } ?: return null
-        return TableItem(rect, cols, rows, s.strokeRgba ?: Rgba(0, 0, 0, 255), s.strokeWidth)
+        return TableItem(rect, cols, rows, s.strokeRgba ?: Rgba(0, 0, 0, 255), s.strokeWidth).also {
+            it.box = BoxStyle(s.boxFill, s.boxBorder, s.boxBorderWidth.coerceIn(0.0, BoxStyle.MAX_BORDER), s.boxCorner.coerceIn(0.0, BoxStyle.MAX_CORNER))
+            it.lines = com.xnotes.core.model.TableLines(s.dashed, s.dashLength, s.dashGap, s.neon, s.neonStrength)
+            s.tableCells?.let { c -> it.cells.putAll(c) }
+        }
     }
 
     private fun parseConfig(p: JsonPull): ConfigScratch? {
@@ -1668,6 +1751,7 @@ class DocumentCodec(
                 "dash_gap" -> c.dashGap = doubleOrNull(p)
                 "highlighter_alpha" -> c.highlighterAlpha = doubleOrNull(p)
                 "highlighter_inverse" -> c.highlighterInverse = boolOrNull(p)
+                "opacity" -> c.opacity = doubleOrNull(p)
                 else -> p.skipValue()
             }
         }
@@ -1791,6 +1875,7 @@ class DocumentCodec(
         var top: Double? = null
         var right: Double? = null
         var bottom: Double? = null
+        var color: Rgba? = null
         p.beginObject()
         while (p.hasNext()) {
             when (p.nextName()) {
@@ -1798,13 +1883,14 @@ class DocumentCodec(
                 "top" -> top = doubleOrNull(p)
                 "right" -> right = doubleOrNull(p)
                 "bottom" -> bottom = doubleOrNull(p)
+                "color" -> color = rgbaOrNull(p)
                 else -> p.skipValue()
             }
         }
         p.endObject()
         // A file from a newer/looser writer can carry anything; clamp to the range the UI offers.
         fun clamp(v: Double?) = v?.coerceIn(0.0, PageMargins.MAX)
-        return PageMargins(clamp(left), clamp(top), clamp(right), clamp(bottom))
+        return PageMargins(clamp(left), clamp(top), clamp(right), clamp(bottom), color)
     }
 
     /** The note's size for added pages; null (copy the page before) when absent or naming a size this build lacks. */
@@ -1849,6 +1935,7 @@ class DocumentCodec(
                 it.link = spec.link
                 it.sync = spec.sync
                 it.group = spec.group
+                it.paper = spec.paper
             }
     }
 
@@ -1885,6 +1972,67 @@ class DocumentCodec(
             p.skipValue()
             null
         }
+    }
+
+    /**
+     * A box's own fields say its place, base style and frame; its rich text, when it has any, is
+     * the flow beside them, read for its paragraphs alone. Without one, or with one that will not
+     * parse, the plain words stand.
+     */
+    private fun buildText(s: ItemScratch): TextItem {
+        val color = if (s.autoColor) null else s.rgba ?: TextItem.DEFAULT_COLOR
+        val face = FontFace.fromId(s.fontFace)
+        val rich = s.flowXml?.let { xml ->
+            TextItem.boxFlow(color, s.pointSize, face).also { flow ->
+                FlowXml.readInto(flow, xml.toByteArray(Charsets.UTF_8))
+                TextItem.boxFlow(color, s.pointSize, face).let {
+                    flow.margins = it.margins
+                    flow.defaultColor = it.defaultColor
+                    flow.defaultSizePt = it.defaultSizePt
+                    flow.defaultFace = it.defaultFace
+                }
+            }.takeIf { it.paragraphs.isNotEmpty() }
+        }
+        val item = if (rich != null) {
+            TextItem(s.pos ?: Pt.ZERO, s.width, s.autoWidth, rich, textMeasurer)
+        } else {
+            TextItem(s.pos ?: Pt.ZERO, s.width, s.text, color, s.pointSize, face, textMeasurer, s.autoWidth)
+        }
+        item.math = s.textMath
+        val model = s.ocrModel
+        val raw = s.ocrRaw
+        if (model != null && raw != null) item.ocr = MathOrigin(model, raw)
+        if (rich == null) applyOldBoxStyle(item, s)
+        if (s.boxFill != null || s.boxBorder != null || s.boxBorderWidth != 0.0 || s.boxCorner != 0.0) {
+            item.box = BoxStyle(
+                s.boxFill, s.boxBorder,
+                s.boxBorderWidth.coerceIn(0.0, BoxStyle.MAX_BORDER), s.boxCorner.coerceIn(0.0, BoxStyle.MAX_CORNER),
+            )
+        }
+        return item
+    }
+
+    /** Older fork notes styled a whole box with flags; carry them onto every run and paragraph of its flow. */
+    private fun applyOldBoxStyle(item: TextItem, s: ItemScratch) {
+        val align = when (s.textAlign) {
+            "center" -> com.xnotes.core.text.ParaAlign.CENTER
+            "right" -> com.xnotes.core.text.ParaAlign.RIGHT
+            else -> null
+        }
+        if (!s.textBold && !s.textItalic && !s.textUnderline && !s.textStrike && align == null) return
+        for (para in item.flow.paragraphs) {
+            for (run in para.runs) {
+                run.style = run.style.copy(
+                    bold = run.style.bold || s.textBold,
+                    italic = run.style.italic || s.textItalic,
+                    underline = run.style.underline || s.textUnderline,
+                    strike = run.style.strike || s.textStrike,
+                )
+            }
+            if (align != null) para.align = align
+            para.touch()
+        }
+        item.reflow()
     }
 
     private fun boolOr(p: JsonPull, def: Boolean): Boolean = boolOrNull(p) ?: def
@@ -1961,17 +2109,19 @@ class DocumentCodec(
             var at: Double? = null
             var size: Double? = null
             var sideways = false
+            var color: Rgba? = null
             p.beginObject()
             while (p.hasNext()) {
                 when (p.nextName()) {
                     "at" -> at = doubleOrNull(p)
                     "size" -> size = doubleOrNull(p)
                     "sideways" -> sideways = boolOr(p, false)
+                    "color" -> color = rgbaOrNull(p)
                     else -> p.skipValue()
                 }
             }
             p.endObject()
-            if (at != null && size != null && at.isFinite() && size.isFinite() && size > 0.0) out += Room(at, size, sideways)
+            if (at != null && size != null && at.isFinite() && size.isFinite() && size > 0.0) out += Room(at, size, sideways, color)
         }
         p.endArray()
         return out
@@ -2064,6 +2214,36 @@ class DocumentCodec(
         while (out.isNotEmpty() && out.last().x.isNaN()) out.removeAt(out.size - 1)
         while (out.isNotEmpty() && out.first().x.isNaN()) out.removeAt(0)
         return if (out.count { !it.x.isNaN() } >= 2) out else null
+    }
+
+    private fun cellsOrNull(p: JsonPull): Map<Pair<Int, Int>, com.xnotes.core.model.CellStyle>? {
+        if (p.peek() != JsonPull.Token.BEGIN_ARRAY) {
+            p.skipValue()
+            return null
+        }
+        val out = HashMap<Pair<Int, Int>, com.xnotes.core.model.CellStyle>()
+        p.beginArray()
+        while (p.hasNext()) {
+            if (p.peek() != JsonPull.Token.BEGIN_OBJECT) { p.skipValue(); continue }
+            var row = -1; var col = -1
+            var fill: Rgba? = null; var border: Rgba? = null; var width = 0.0
+            p.beginObject()
+            while (p.hasNext()) {
+                when (p.nextName()) {
+                    "row" -> row = intOr(p, -1)
+                    "col" -> col = intOr(p, -1)
+                    "fill" -> fill = rgbaOrNull(p)
+                    "border" -> border = rgbaOrNull(p)
+                    "border_width" -> width = doubleOr(p, 0.0).coerceIn(0.0, BoxStyle.MAX_BORDER)
+                    else -> p.skipValue()
+                }
+            }
+            p.endObject()
+            val style = com.xnotes.core.model.CellStyle(fill, border, width)
+            if (row >= 0 && col >= 0 && !style.isEmpty) out[row to col] = style
+        }
+        p.endArray()
+        return out.ifEmpty { null }
     }
 
     private fun doubleListOrNull(p: JsonPull): List<Double>? {

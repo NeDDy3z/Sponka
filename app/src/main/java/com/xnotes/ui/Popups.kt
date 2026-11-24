@@ -22,6 +22,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -36,16 +38,18 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -58,6 +62,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -69,6 +74,7 @@ import androidx.compose.ui.layout.MeasurePolicy
 import androidx.compose.ui.layout.MeasureResult
 import androidx.compose.ui.layout.MeasureScope
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -84,6 +90,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.PopupProperties
 import com.xnotes.R
 import com.xnotes.canvas.PdfColorFilter
+import com.xnotes.canvas.ReaderPageMode
+import com.xnotes.canvas.ReaderSettings
 import com.xnotes.canvas.ViewOverrides
 import com.xnotes.canvas.ViewSettings
 import com.xnotes.canvas.ViewingMode
@@ -111,22 +119,25 @@ import com.xnotes.core.shapes.ShapeKind
 import com.xnotes.core.tools.Tool
 import com.xnotes.core.tools.ToolConfig
 import com.xnotes.core.tools.ToolConversions
+import com.xnotes.core.tools.ToolDefaults
 import com.xnotes.platform.FontCatalog
 import com.xnotes.platform.TemplateLibrary
 import com.xnotes.settings.Preferences
 import com.xnotes.settings.SwatchRole
+import com.xnotes.settings.ZOOM_MATCH_TOLERANCE
 import com.xnotes.ui.icons.XnotesIcons
 import com.xnotes.ui.theme.LocalPalette
 import com.xnotes.ui.theme.toComposeColor
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
- * Stroke-tool configuration popup (spec 10 §3): PRESSURE / SENSITIVITY, then the
- * tool's signature control: MULTIPLIER (calligraphy), THINNING / SMOOTHING / TOP SPEED (speed pen) or
- * TIP WIDTH PERCENTAGE (taper pen), then WIDTH, a STABILIZATION toggle (with STRENGTH and
- * CROSSOVER), and a NEON toggle (with INTENSITY) on any stroke tool but the highlighter. With
- * [onPick], a pen also gets a scrolling row of every pen kind under its title, which re-arms the
- * toolbar pen as that kind.
+ * A stroke tool's menu (spec 10 §3), in three cards. The stroke: a preview, its colour and WIDTH.
+ * How it answers the hand: PRESSURE / SENSITIVITY, the tool's signature control (MULTIPLIER for
+ * calligraphy, THINNING / SMOOTHING / TOP SPEED for the speed pen, TIP WIDTH PERCENTAGE for the
+ * taper pen) and STABILIZATION. How it sits on the page: OPACITY (hidden under neon), NEON, SCALE,
+ * and SNAP TO SHAPES. With [onPick], a pen also gets a row of every pen kind under its title, which
+ * re-arms the toolbar pen as that kind.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -148,13 +159,15 @@ fun ToolConfigPopup(editor: ToolPopupHost, tool: Tool, onPick: ((Tool) -> Unit)?
     var scale by remember(tool) { mutableStateOf(base.scale) }
     var intensity by remember(tool) { mutableStateOf(ToolConversions.highlighterAlphaToIntensity(base.highlighterAlpha).toFloat()) }
     var inverse by remember(tool) { mutableStateOf(base.highlighterInverse) }
+    var faded by remember(tool) { mutableStateOf(base.opacityEnabled) }
+    var opacity by remember(tool) { mutableStateOf(ToolConversions.opacityToPercent(base.opacity).toFloat()) }
     var colorOverride by remember(tool) { mutableStateOf(base.colorOverride) }
     var steady by remember(tool) { mutableStateOf(base.stabilize) }
     var steadyStrength by remember(tool) { mutableStateOf(ToolConversions.trailToStrength(base.stabilizeTrail).toFloat()) }
     var crossover by remember(tool) { mutableStateOf(ToolConversions.dpPerSToCrossover(base.stabilizeCrossover).toFloat()) }
     var snapShapes by remember(tool) { mutableStateOf(editor.snapHeldToShapes) }
 
-    fun emit() {
+    fun current(): ToolConfig {
         val m = ToolConversions.sensitivityToMinFactor(sensitivity.toDouble())
         val ds = if (tool == Tool.CALLIGRAPHY) ToolConversions.multiplierToDirectionStrength(multiplier.toDouble()) else 0.0
         val sp = if (tool == Tool.SPEED) ToolConversions.speedToStrength(speed.toDouble()) else 0.0
@@ -162,338 +175,124 @@ fun ToolConfigPopup(editor: ToolPopupHost, tool: Tool, onPick: ((Tool) -> Unit)?
         val top = if (tool == Tool.SPEED) ToolConversions.topSpeedToDpPerMs(topSpeed.toDouble()) else base.speedTop
         val tmf = if (tool == Tool.TAPER) taperTip.toDouble() / 100.0 else base.taperMinFactor
         val ha = if (tool == Tool.HIGHLIGHTER) ToolConversions.intensityToHighlighterAlpha(intensity.toDouble()) else base.highlighterAlpha
-        editor.updateToolConfig(
-            tool,
-            base.copy(
-                baseWidth = ToolConversions.snapWidth(tool, width.toDouble()),
-                pressureEnabled = pressure,
-                pressureMinFactor = m,
-                directionStrength = ds,
-                speedStrength = sp,
-                speedSmoothing = blur,
-                speedTop = top,
-                taperMinFactor = tmf,
-                neon = glow,
-                neonStrength = ToolConversions.intensityToNeonStrength(glowIntensity.toDouble()),
-                dashLength = dashLen.toDouble(),
-                dashGap = gapLen.toDouble(),
-                straightLine = straight,
-                scale = scale,
-                highlighterAlpha = ha,
-                highlighterInverse = inverse,
-                colorOverride = colorOverride,
-                stabilize = steady,
-                stabilizeTrail = ToolConversions.strengthToTrail(steadyStrength.toDouble()),
-                stabilizeCrossover = ToolConversions.crossoverToDpPerS(crossover.toDouble()),
-            ),
+        val op = if (tool != Tool.HIGHLIGHTER) ToolConversions.percentToOpacity(opacity.toDouble()) else base.opacity
+        return base.copy(
+            baseWidth = ToolConversions.snapWidth(tool, width.toDouble()),
+            pressureEnabled = pressure,
+            pressureMinFactor = m,
+            directionStrength = ds,
+            speedStrength = sp,
+            speedSmoothing = blur,
+            speedTop = top,
+            taperMinFactor = tmf,
+            neon = glow,
+            neonStrength = ToolConversions.intensityToNeonStrength(glowIntensity.toDouble()),
+            dashLength = dashLen.toDouble(),
+            dashGap = gapLen.toDouble(),
+            straightLine = straight,
+            scale = scale,
+            highlighterAlpha = ha,
+            highlighterInverse = inverse,
+            colorOverride = colorOverride,
+            stabilize = steady,
+            stabilizeTrail = ToolConversions.strengthToTrail(steadyStrength.toDouble()),
+            stabilizeCrossover = ToolConversions.crossoverToDpPerS(crossover.toDouble()),
+            opacityEnabled = faded,
+            opacity = op,
         )
     }
 
-    DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
-        Column(Modifier.width(250.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
-            PopupTitle(stringResource(tool.labelRes))
-            if (onPick != null && tool in Tool.PENS) {
-                Row(Modifier.horizontalScroll(rememberScrollState()).padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    for (pen in Tool.PENS) KindChip(penIcon(pen), stringResource(pen.labelRes), pen == tool) { if (pen != tool) onPick(pen) }
+    fun emit() = editor.updateToolConfig(tool, current())
+
+    val active = editor.hostToolbarColors.getOrNull(editor.hostActiveColorIndex)
+    val ink = colorOverride ?: active ?: LocalPalette.current.text
+    val hasPressure = tool == Tool.PEN || tool == Tool.CALLIGRAPHY || tool == Tool.SPEED || tool == Tool.TAPER
+    // Glow is offered on every stroke tool except the highlighter (translucent) and the
+    // dashed pen (it draws a line, not a fillable ribbon, so a halo has nothing to hug).
+    val hasGlow = tool.isStroke && tool != Tool.HIGHLIGHTER && tool != Tool.DASHED
+    val range = ToolConversions.widthRange(tool)
+
+    ToolMenu(stringResource(tool.labelRes), onDismiss) {
+        // The stroke itself: how it comes out, its colour and its width.
+        if (onPick != null && tool in Tool.PENS) {
+            PanelCard(padding = PaddingValues(6.dp)) {
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    for (pen in Tool.PENS) MenuTile(penIcon(pen), stringResource(pen.labelRes), pen == tool, 44.dp) { if (pen != tool) onPick(pen) }
                 }
             }
-            // COLOUR override: "Default" follows the toolbar's active ink colour; pick a hue to pin
-            // this tool to it regardless of the toolbar selection.
-            StyleCaption(stringResource(R.string.caption_colour))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                ModeChip(stringResource(R.string.default_choice), colorOverride == null) { colorOverride = null; emit() }
-                ColorPickerDot(
-                    colorOverride,
-                    custom = colorOverride != null,
-                    onPick = { colorOverride = it; emit() },
-                    dismissOnPick = false,
-                ) { d, p ->
-                    ColorPickerPopup(
-                        initial = colorOverride ?: editor.hostToolbarColors.getOrNull(editor.hostActiveColorIndex),
-                        recents = editor.hostRecentColors,
-                        onDismiss = d,
-                        onPick = p,
-                    )
+        }
+        MenuCard(buildList<MenuGroup> {
+            add {
+                StrokePreview(tool, current().copy(rgba = ink), editor, Modifier.padding(start = 10.dp, top = 10.dp, end = 10.dp))
+                // "Default" follows the toolbar's active ink colour; a colour picked here pins the tool to it.
+                MenuRow(stringResource(R.string.caption_colour)) {
+                    ColorOrNone(
+                        stringResource(R.string.default_choice),
+                        colorOverride,
+                        suggested = active ?: LocalPalette.current.text,
+                        onChange = { colorOverride = it; emit() },
+                    ) { d, p ->
+                        ColorPickerPopup(initial = colorOverride ?: active, recents = editor.hostRecentColors, onDismiss = d, onPick = p)
+                    }
                 }
             }
-            Spacer(Modifier.size(12.dp))
-            val hasPressure = tool == Tool.PEN || tool == Tool.CALLIGRAPHY || tool == Tool.SPEED || tool == Tool.TAPER
-            if (hasPressure) {
-                ToggleRow(stringResource(R.string.caption_pressure), pressure) { pressure = it; emit() }
-                SliderRow(stringResource(R.string.caption_sensitivity), sensitivity, 0f..100f, enabled = pressure) { sensitivity = it; emit() }
+            add {
+                MenuSlider(
+                    stringResource(R.string.caption_thickness), width,
+                    range.start.toFloat()..range.endInclusive.toFloat(), step = ToolConversions.WIDTH_STEP.toFloat(),
+                ) { width = it; emit() }
             }
-            if (tool == Tool.CALLIGRAPHY) {
-                SliderRow(stringResource(R.string.caption_multiplier), multiplier, 1f..5f) { multiplier = it; emit() }
-            }
-            if (tool == Tool.SPEED) {
-                SliderRow(stringResource(R.string.caption_thinning), speed, 0f..100f) { speed = it; emit() }
-                SliderRow(stringResource(R.string.caption_smoothing), smoothing, 0f..100f) { smoothing = it; emit() }
-                SliderRow(stringResource(R.string.caption_top_speed), topSpeed, 0f..100f) { topSpeed = it; emit() }
-            }
-            if (tool == Tool.TAPER) {
-                SliderRow(stringResource(R.string.caption_tip_width), taperTip, 0f..100f) { taperTip = it; emit() }
-            }
-            val range = ToolConversions.widthRange(tool)
-            SliderRow(
-                stringResource(R.string.caption_width), width,
-                range.start.toFloat()..range.endInclusive.toFloat(), step = ToolConversions.WIDTH_STEP.toFloat(),
-            ) { width = it; emit() }
-            // SCALE off: ink keeps a constant on-screen thickness whatever zoom you draw at.
-            ToggleRow(stringResource(R.string.caption_scale), scale) { scale = it; emit() }
-            // Global dwell shape detection (holding the pen still). Off for the highlighter, which never dwells.
-            if (tool.isStroke && tool != Tool.HIGHLIGHTER) {
-                ToggleRow(stringResource(R.string.caption_snap_to_shapes), snapShapes) { snapShapes = it; editor.snapHeldToShapes = it }
-            }
+            if (tool == Tool.HIGHLIGHTER) add { MenuSlider(stringResource(R.string.caption_intensity), intensity, 10f..100f) { intensity = it; emit() } }
             if (tool == Tool.DASHED) {
-                SliderRow(stringResource(R.string.caption_dash), dashLen, 2f..40f) { dashLen = it; emit() }
-                SliderRow(stringResource(R.string.caption_gap), gapLen, 2f..40f) { gapLen = it; emit() }
+                add { MenuSlider(stringResource(R.string.caption_dash), dashLen, 2f..40f) { dashLen = it; emit() } }
+                add { MenuSlider(stringResource(R.string.caption_gap), gapLen, 2f..40f) { gapLen = it; emit() } }
             }
-            // The highlighter's strength (translucency) and an optional straight-segment lock
-            // (for ruling/underlining).
-            if (tool == Tool.HIGHLIGHTER) {
-                SliderRow(stringResource(R.string.caption_intensity), intensity, 10f..100f) { intensity = it; emit() }
-                ToggleRow(stringResource(R.string.caption_straight_line), straight) { straight = it; emit() }
-                // INVERSE swaps the multiply blend for a screen one, so the marker lightens the
-                // page instead of darkening it. A multiply has nothing to darken on a dark page.
-                ToggleRow(stringResource(R.string.caption_inverse), inverse) { inverse = it; emit() }
+        })
+        // How it answers the hand.
+        MenuCard(buildList<MenuGroup> {
+            if (hasPressure) add {
+                MenuSwitch(stringResource(R.string.caption_pressure), pressure) { pressure = it; emit() }
+                if (pressure) MenuSlider(stringResource(R.string.caption_sensitivity), sensitivity, 0f..100f, child = true) { sensitivity = it; emit() }
             }
+            if (tool == Tool.CALLIGRAPHY) add { MenuSlider(stringResource(R.string.caption_multiplier), multiplier, 1f..5f) { multiplier = it; emit() } }
+            if (tool == Tool.SPEED) {
+                add { MenuSlider(stringResource(R.string.caption_thinning), speed, 0f..100f) { speed = it; emit() } }
+                add { MenuSlider(stringResource(R.string.caption_smoothing), smoothing, 0f..100f) { smoothing = it; emit() } }
+                add { MenuSlider(stringResource(R.string.caption_top_speed), topSpeed, 0f..100f) { topSpeed = it; emit() } }
+            }
+            if (tool == Tool.TAPER) add { MenuSlider(stringResource(R.string.caption_tip_width), taperTip, 0f..100f) { taperTip = it; emit() } }
+            // A straight-segment lock, for ruling and underlining.
+            if (tool == Tool.HIGHLIGHTER) add { MenuSwitch(stringResource(R.string.caption_straight_line), straight) { straight = it; emit() } }
             // STABILIZATION steadies the path while drawing; a straight line has nothing to steady.
-            if (tool.isStroke && !(tool == Tool.HIGHLIGHTER && straight)) {
-                ToggleRow(stringResource(R.string.caption_stabilization), steady) { steady = it; emit() }
+            if (tool.isStroke && !(tool == Tool.HIGHLIGHTER && straight)) add {
+                MenuSwitch(stringResource(R.string.caption_stabilization), steady) { steady = it; emit() }
                 if (steady) {
-                    SliderRow(stringResource(R.string.caption_strength), steadyStrength, 0f..100f) { steadyStrength = it; emit() }
-                    SliderRow(stringResource(R.string.caption_crossover), crossover, 0f..100f) { crossover = it; emit() }
+                    MenuSlider(stringResource(R.string.caption_strength), steadyStrength, 0f..100f, child = true) { steadyStrength = it; emit() }
+                    MenuSlider(stringResource(R.string.caption_crossover), crossover, 0f..100f, child = true) { crossover = it; emit() }
                 }
             }
-            // Glow is offered on every stroke tool except the highlighter (translucent) and the
-            // dashed pen (it draws a line, not a fillable ribbon, so a halo has nothing to hug).
-            if (tool.isStroke && tool != Tool.HIGHLIGHTER && tool != Tool.DASHED) {
-                ToggleRow(stringResource(R.string.caption_neon), glow) { glow = it; emit() }
-                if (glow) {
-                    SliderRow(stringResource(R.string.caption_glow_intensity), glowIntensity, 0f..100f) { glowIntensity = it; emit() }
-                }
+        })
+        // How it sits on the page.
+        MenuCard(buildList<MenuGroup> {
+            // Neon paints at full strength whatever the opacity, so opacity hides under it.
+            if (tool.isStroke && tool != Tool.HIGHLIGHTER && !(hasGlow && glow)) add {
+                MenuSwitch(stringResource(R.string.caption_opacity), faded) { faded = it; emit() }
+                if (faded) MenuSlider(stringResource(R.string.caption_intensity), opacity, 10f..100f, step = 1f, child = true) { opacity = it; emit() }
             }
-        }
-    }
-}
-
-/**
- * Page-styles popup (spec 10): two tabs, "All Pages" (the document-wide override) and "Current
- * Page", each editing the paper colour and the template. Controls are tri-state: "Default"
- * leaves the field unset so it inherits the level below (page, document, then the global
- * page-colour preference or a built-in default). The All Pages template has no "Default", since
- * nothing sits below it but None. Customize opens the shown template on a page of its own, with
- * its colours and parameters, which belong to that template alone; while the popup is open each
- * level keeps them for every template it showed ([TemplateMemory]), so trying another loses
- * nothing. Like [ToolConfigPopup], the popup holds the edited style locally and pushes each
- * change to the [Editor] (which persists, but never undoes). The All Pages tab also offers making
- * its style the default stamped onto new notes, plus a Reset back to all-Default, which forgets
- * that memory too. Below both tabs sits the note's new page size, which neither tab nor Reset
- * touches.
- */
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-fun StylesPopup(editor: Editor, onImportTemplate: () -> Unit = {}, onDismiss: () -> Unit) {
-    var tab by remember { mutableStateOf(0) } // 0 = All Pages, 1 = Current Page
-    var customizing by remember { mutableStateOf(false) }
-    var docStyle by remember { mutableStateOf(editor.documentStyle) }
-    var pageStyle by remember { mutableStateOf(editor.currentPageStyle) }
-    var textColor by remember { mutableStateOf(editor.flowConfigValue().color) }
-    val style = if (tab == 0) docStyle else pageStyle
-    // "Default for new notes" shows once the All Pages style differs from the saved new-note
-    // default, and stays for the rest of the popup session (so it doesn't vanish when checked).
-    // An all-Default style hides it regardless (e.g. after Reset): there is nothing to save.
-    var showNewNoteRow by remember { mutableStateOf(editor.documentStyle != editor.newNoteStyle) }
-    // What each level had for the templates it showed during this visit.
-    val memory = remember { TemplateMemory() }
-    // Both levels are read back: a template picked for All Pages also changes the pages following it.
-    fun synced() {
-        docStyle = editor.documentStyle
-        pageStyle = editor.currentPageStyle
-        if (docStyle != editor.newNoteStyle) showNewNoteRow = true
-    }
-    fun apply(next: PageStyle) {
-        if (tab == 0) editor.setDocumentStyle(next) else editor.setCurrentPageStyle(next)
-        synced()
-    }
-    fun pick(key: String?) {
-        if (tab == 0) editor.setDocumentTemplate(key ?: PageTemplates.NONE, memory) else editor.setCurrentPageTemplate(key, memory)
-        synced()
-    }
-
-    // What this level shows with no template of its own: the document's, on the page tab.
-    val inherited = if (tab == 0) PageTemplates.NONE else docStyle.template ?: PageTemplates.NONE
-    val shownKey = style.template ?: inherited
-    val shown = if (shownKey == PageTemplates.NONE) null else editor.templateFor(shownKey)
-    // The level below whose settings show through, when it shows the same template.
-    val lower = docStyle.takeIf { tab == 1 && (it.template ?: PageTemplates.NONE) == shownKey }
-    val look = TemplateLook.of(style, lower, LocalPalette.current.paper, below = if (tab == 1) docStyle else null)
-    // A strip tile draws its template as this tab shows it, as last set during this visit, or as it comes.
-    fun drawing(e: TemplateLibrary.Entry): TemplateDrawing {
-        val kept = if (tab == 0) memory.recall(null, e.key) else editor.currentPage?.let { memory.recall(it, e.key) }
-        return TemplateDrawing.inStrip(e, style, shownKey, kept, docStyle.takeIf { tab == 1 }, look.paper, editor.documentDpi)
-    }
-
-    DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
-        if (customizing && shown != null) {
-            TemplateCustomizer(editor, shown, shownKey, tab, style, lower, look, ::apply) { customizing = false }
-        } else Column(Modifier.width(286.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
-            PopupTitle(stringResource(R.string.title_styles))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                ModeChip(stringResource(R.string.all_pages), tab == 0) { tab = 0 }
-                ModeChip(stringResource(R.string.current_page), tab == 1) { tab = 1 }
+            if (hasGlow) add {
+                MenuSwitch(stringResource(R.string.caption_neon), glow) { glow = it; emit() }
+                if (glow) MenuSlider(stringResource(R.string.caption_glow_intensity), glowIntensity, 0f..100f, child = true) { glowIntensity = it; emit() }
             }
-
-            Spacer(Modifier.size(12.dp))
-            StyleCaption(stringResource(R.string.caption_page_colour))
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                ModeChip(stringResource(R.string.default_choice), style.pageColor == null) { apply(style.copy(pageColor = null)) }
-                SwatchCircles(editor, SwatchRole.PAPER, style.pageColor) { apply(style.copy(pageColor = it)) }
+            // INVERSE swaps the multiply blend for a screen one, so the marker lightens the
+            // page instead of darkening it. A multiply has nothing to darken on a dark page.
+            if (tool == Tool.HIGHLIGHTER) add { MenuSwitch(stringResource(R.string.caption_inverse), inverse) { inverse = it; emit() } }
+            // SCALE off: ink keeps a constant on-screen thickness whatever zoom you draw at.
+            add { MenuSwitch(stringResource(R.string.caption_scale), scale) { scale = it; emit() } }
+            // Global dwell shape detection (holding the pen still). Off for the highlighter, which never dwells.
+            if (tool.isStroke && tool != Tool.HIGHLIGHTER) add {
+                MenuSwitch(stringResource(R.string.caption_snap_to_shapes), snapShapes) { snapShapes = it; editor.snapHeldToShapes = it }
             }
-
-            Spacer(Modifier.size(12.dp))
-            StyleCaption(stringResource(R.string.text_colour))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                // The page tab's null follows All Pages, like its page colour.
-                val own = if (tab == 0) textColor else pageStyle.textColor
-                val shown = own ?: if (tab == 0) editor.flowDefaultColor() else editor.currentPageTextColor()
-                fun setText(c: Rgba?) {
-                    if (tab == 0) {
-                        editor.setFlowConfig(editor.flowConfigValue().copy(color = c))
-                        textColor = c
-                    } else {
-                        apply(pageStyle.copy(textColor = c))
-                    }
-                }
-                // Auto picks light or dark text against the paper; turning it off keeps the colour it showed.
-                ModeChip(stringResource(if (tab == 0) R.string.auto else R.string.default_choice), own == null) {
-                    setText(if (own == null) shown else null)
-                }
-                Spacer(Modifier.width(8.dp))
-                ColorPickerDot(own, custom = own != null, onPick = { setText(it) }, dismissOnPick = false) { d, p ->
-                    ColorPickerPopup(shown, editor.recentColors, d, p)
-                }
-            }
-
-            Spacer(Modifier.size(12.dp))
-            StyleCaption(stringResource(R.string.caption_template))
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                // With nothing below All Pages, an unset template there already means None.
-                if (tab == 1) ModeChip(stringResource(R.string.default_choice), style.template == null) { pick(null) }
-                val none = style.template == PageTemplates.NONE || (tab == 0 && style.template == null)
-                ModeChip(stringResource(R.string.none), none) { pick(PageTemplates.NONE) }
-            }
-            Spacer(Modifier.size(6.dp))
-            val libraryVersion = TemplateLibraryUi.version
-            // On the cover, its own tab lists cover designs instead of page templates.
-            val coverPage = tab == 1 && editor.currentPageIsCover
-            val choices = remember(libraryVersion, tab, coverPage) {
-                editor.templateChoices(if (coverPage) com.xnotes.core.template.TemplateKind.COVER else com.xnotes.core.template.TemplateKind.PAGE)
-            }
-            TemplateStrip(
-                entries = choices,
-                selected = style.template,
-                pageMm = editor.currentPageMm,
-                drawing = ::drawing,
-                onSelect = { pick(it) },
-                onImport = onImportTemplate,
-                onRemove = { editor.removeTemplate(it) },
-                onKeep = { editor.keepNoteTemplate(it) },
-            )
-            if (shown != null) {
-                Spacer(Modifier.size(6.dp))
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        shown.name,
-                        color = LocalPalette.current.text.toComposeColor(),
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f).padding(end = 8.dp),
-                    )
-                    ModeChip(stringResource(R.string.customize), false) { customizing = true }
-                }
-            }
-
-            if (tab == 0) {
-                Spacer(Modifier.size(8.dp))
-                if (showNewNoteRow && !docStyle.isEmpty) {
-                    // The checkbox's 48dp touch frame insets the drawn box; pull the row back to align it.
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().offset(x = (-14).dp)) {
-                        Checkbox(
-                            checked = !editor.newNoteStyle.isEmpty && docStyle == editor.newNoteStyle,
-                            onCheckedChange = { on ->
-                                editor.saveNewNoteStyle(if (on) docStyle else PageStyle())
-                            },
-                        )
-                        Text(
-                            stringResource(R.string.default_for_new_notes),
-                            color = LocalPalette.current.text.toComposeColor(),
-                            fontSize = 12.sp,
-                        )
-                    }
-                    Spacer(Modifier.size(4.dp))
-                }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    ModeChip(stringResource(R.string.reset), false) {
-                        editor.resetDocumentStyle(memory)
-                        synced()
-                    }
-                }
-            }
-
-            HorizontalDivider(Modifier.padding(vertical = 12.dp), color = LocalPalette.current.border.toComposeColor())
-            NewPageSizeControls(editor)
-        }
-    }
-}
-
-/** The size of pages added to the note: the page before's, a named size turned either way, or Custom's sides. */
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun NewPageSizeControls(editor: Editor) {
-    var choice by remember { mutableStateOf(editor.newPageSize) }
-    fun apply(next: PageSizeChoice?) {
-        choice = next
-        editor.setNewPageSize(next)
-    }
-
-    StyleCaption(stringResource(R.string.caption_new_page_size))
-    Spacer(Modifier.size(6.dp))
-    // A first pick starts from the Preferences size, so Custom opens on the sides typed there.
-    SizeDropdown(choice?.size, stringResource(R.string.same_as_previous)) { size ->
-        apply(size?.let { (choice ?: editor.preferences.defaultPageChoice).copy(size = it) })
-    }
-    val c = choice
-    if (c != null) {
-        Spacer(Modifier.size(8.dp))
-        if (c.size == PageSize.CUSTOM) {
-            // The fields keep the callback they were built with, so it reads the choice as it is now.
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                SideField(stringResource(R.string.width_mm), c.customWidthMm, Modifier.weight(1f)) { mm ->
-                    choice?.let { apply(it.copy(customWidthMm = mm)) }
-                }
-                SideField(stringResource(R.string.height_mm), c.customHeightMm, Modifier.weight(1f)) { mm ->
-                    choice?.let { apply(it.copy(customHeightMm = mm)) }
-                }
-            }
-        } else {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                ModeChip(stringResource(R.string.orientation_portrait), c.orientation == Orientation.PORTRAIT) {
-                    apply(c.copy(orientation = Orientation.PORTRAIT))
-                }
-                ModeChip(stringResource(R.string.orientation_landscape), c.orientation == Orientation.LANDSCAPE) {
-                    apply(c.copy(orientation = Orientation.LANDSCAPE))
-                }
-            }
-        }
+        })
     }
 }
 
@@ -517,319 +316,94 @@ internal fun SideField(label: String, mm: Double, modifier: Modifier, onChange: 
 }
 
 /**
- * The Styles popup's second page: [t] (keyed [key]) on a style level ([tab] as in [StylesPopup]),
- * with a live preview, its pattern and accent colours, and every parameter it declares. Reset
- * clears just these, keeping the level's template and paper colour.
+ * The cards that set [t] on a page-style level: its colours (the paper when [withPaper], the
+ * template's ink and accent when [withInk], then its colour parameters), then its lengths and
+ * numbers. Each falls back to [lower] (the level below, when its values apply) and then the template.
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun TemplateCustomizer(
-    editor: Editor,
-    t: com.xnotes.core.template.Template,
-    key: String,
-    tab: Int,
+internal fun TemplateCards(
+    t: com.xnotes.core.template.Template?,
     style: PageStyle,
     lower: PageStyle?,
     look: TemplateLook,
+    dpi: Int,
+    store: SwatchStore,
+    withPaper: Boolean,
+    withInk: Boolean,
     apply: (PageStyle) -> Unit,
-    onBack: () -> Unit,
 ) {
-    val palette = LocalPalette.current
-    val dpi = editor.documentDpi
-    Column(Modifier.width(286.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
-        PopupBackLink(stringResource(R.string.back_customize), onBack)
-        Text(
-            t.name,
-            color = palette.text.toComposeColor(),
-            fontWeight = FontWeight.Bold,
-            fontSize = 14.sp,
-            modifier = Modifier.padding(top = 4.dp),
-        )
-        StyleCaption(stringResource(if (tab == 0) R.string.all_pages else R.string.current_page))
-        t.description?.let {
-            Spacer(Modifier.size(4.dp))
-            Text(it, color = palette.textDim.toComposeColor(), fontSize = 12.sp)
+    MenuCard(buildList<MenuGroup> {
+        if (withPaper) add {
+            ColourRow(stringResource(R.string.caption_paper), style.pageColor, look.paper, store, SwatchRole.PAPER) { apply(style.copy(pageColor = it)) }
         }
-
-        Spacer(Modifier.size(12.dp))
-        val drawn = TemplateDrawing.of(t, style.settings, lower?.settings, look.paper, dpi)
-        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-            TemplatePreview(t, key, editor.currentPageMm, drawn.look.ink, drawn.look.accent, drawn.look.paper, drawn.values, 112.dp)
-        }
-
-        if (t.usesInk) {
-            Spacer(Modifier.size(12.dp))
-            StyleCaption(stringResource(R.string.caption_pattern_colour))
-            Spacer(Modifier.size(4.dp))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                ModeChip(stringResource(R.string.default_choice), style.patternColor == null) { apply(style.copy(patternColor = null)) }
-                // Circles hold the hue at full strength; OPACITY sets the alpha, so a pick keeps it.
-                SwatchCircles(editor, SwatchRole.LINES, style.patternColor?.copy(a = 255)) {
-                    apply(style.copy(patternColor = it.copy(a = look.ink.a)))
-                }
+        if (t != null && withInk && t.usesInk) add {
+            // The colour holds the hue at full strength; Opacity sets the alpha, so a pick keeps it.
+            ColourRow(stringResource(R.string.caption_pattern_colour), style.patternColor?.copy(a = 255), look.ink.copy(a = 255), store, SwatchRole.LINES) {
+                apply(style.copy(patternColor = it?.copy(a = look.ink.a)))
             }
-            Spacer(Modifier.size(12.dp))
-            val opacityPct = look.ink.a * 100f / 255f
-            StyleCaption(stringResource(R.string.caption_opacity_percent, opacityPct.roundToInt()))
-            Slider(
-                value = opacityPct,
-                onValueChange = { pct ->
-                    apply(style.copy(patternColor = look.ink.copy(a = (pct / 100f * 255f).roundToInt().coerceIn(0, 255))))
-                },
-                valueRange = 0f..100f,
-            )
+            val pct = look.ink.a * 100f / 255f
+            ParamSlider(stringResource(R.string.caption_opacity), "${pct.roundToInt()}%", pct, 0f..100f, own = style.patternColor != null, child = true) { v ->
+                apply(style.copy(patternColor = look.ink.copy(a = (v / 100f * 255f).roundToInt().coerceIn(0, 255))))
+            }
         }
-        if (t.usesAccent) {
-            Spacer(Modifier.size(4.dp))
-            StyleCaption(stringResource(R.string.caption_accent_colour))
-            Spacer(Modifier.size(4.dp))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                ModeChip(stringResource(R.string.default_choice), style.accentColor == null) { apply(style.copy(accentColor = null)) }
-                SwatchCircles(editor, SwatchRole.ACCENT, style.accentColor?.copy(a = 255)) {
-                    apply(style.copy(accentColor = it.copy(a = look.accent.a)))
+        if (t != null && withInk && t.usesAccent) add {
+            ColourRow(stringResource(R.string.caption_accent_colour), style.accentColor?.copy(a = 255), look.accent.copy(a = 255), store, SwatchRole.ACCENT) {
+                apply(style.copy(accentColor = it?.copy(a = look.accent.a)))
+            }
+        }
+        for (p in t?.params.orEmpty()) {
+            if (p.type != com.xnotes.core.template.ParamType.COLOR) continue
+            add {
+                val suggested = lower?.colors?.get(p.name) ?: p.defaultColor ?: look.ink.copy(a = 255)
+                ColourRow(p.label ?: p.name.replaceFirstChar { it.uppercase() }, style.colors?.get(p.name), suggested, store, SwatchRole.TEMPLATE) { c ->
+                    val rest = style.colors?.minus(p.name)
+                    apply(style.copy(colors = if (c == null) rest?.takeIf { it.isNotEmpty() } else (rest ?: emptyMap()) + (p.name to c)))
                 }
             }
         }
-
-        TemplateParamControls(t, style, lower, dpi, editor, apply = apply)
-
-        Spacer(Modifier.size(12.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            ModeChip(stringResource(R.string.reset), false) {
-                apply(style.withSettings(TemplateSettings()))
-            }
-        }
-    }
+    })
+    if (t != null) MenuCard(templateValueGroups(t, style, lower, dpi, apply))
 }
 
-/**
- * Text-margins popup: the margins text flows in and the select tool snaps to, for all pages (the
- * note's) or just the current page (its own, which until set follows the note's). One chip per
- * edge plus "All" for every edge at once, a slider in whole mm (0 to 50, or 0 to 100 with "Expand
- * range"), and a "Show margins" checkbox.
- * While the slider is held the margins show on the page as dashed lines.
- */
-private const val NARROW_MARGIN_MM = 50.0
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-fun MarginsPopup(editor: Editor, onDismiss: () -> Unit) {
-    var tab by remember { mutableStateOf(0) } // 0 = All Pages, 1 = Current Page
-    var edge by remember { mutableStateOf<PageEdge?>(null) } // null = all edges
-    var docMargins by remember { mutableStateOf(editor.flowMargins) }
-    var pageMargins by remember { mutableStateOf(editor.currentPageTextMargins) }
-    val margins = if (tab == 0) docMargins else pageMargins ?: docMargins
-    fun apply(next: FlowMargins?) {
-        if (tab == 0) {
-            docMargins = next ?: FlowMargins(); editor.setFlowMargins(docMargins)
-        } else {
-            pageMargins = next; editor.setCurrentPageTextMargins(next)
-        }
-    }
-    fun FlowMargins.mm(e: PageEdge?) = when (e) {
-        null, PageEdge.LEFT -> leftMm
-        PageEdge.RIGHT -> rightMm
-        PageEdge.TOP -> topMm
-        PageEdge.BOTTOM -> bottomMm
-    }
-    fun FlowMargins.withMm(e: PageEdge?, v: Double) = when (e) {
-        null -> FlowMargins(v, v, v, v)
-        PageEdge.LEFT -> copy(leftMm = v)
-        PageEdge.RIGHT -> copy(rightMm = v)
-        PageEdge.TOP -> copy(topMm = v)
-        PageEdge.BOTTOM -> copy(bottomMm = v)
-    }
-
-    val held = remember { MutableInteractionSource() }
-    val pressed by held.collectIsPressedAsState()
-    val dragged by held.collectIsDraggedAsState()
-    LaunchedEffect(pressed || dragged) { editor.setMarginPreview(pressed || dragged) }
-    DisposableEffect(Unit) { onDispose { editor.setMarginPreview(false) } }
-
-    val mm = margins.mm(edge)
-    // Opens expanded when any edge already sits past the narrow range, so its slider never pins short.
-    var expanded by remember {
-        mutableStateOf(listOfNotNull(docMargins, pageMargins).any { maxOf(it.leftMm, it.topMm, it.rightMm, it.bottomMm) > NARROW_MARGIN_MM })
-    }
-    val maxMm = if (expanded) FlowMargins.MAX_MM else NARROW_MARGIN_MM
-    val px = PageSize.mmToPx(mm, editor.documentDpi).roundToInt()
-    val edgeLabel = edge?.let { stringResource(it.labelRes) } ?: stringResource(R.string.edge_all)
-
-    // Expand page: extra paper on an edge as a fraction of the page's width/height. Unset inherits page -> note -> none.
-    var expandEdge by remember { mutableStateOf<PageEdge?>(null) } // null = all edges
-    var docExpand by remember { mutableStateOf(editor.documentMargins) }
-    var pageExpand by remember { mutableStateOf(editor.currentPageMargins) }
-    val expand = if (tab == 0) docExpand else pageExpand
-    fun applyExpand(next: PageMargins) {
-        if (tab == 0) {
-            docExpand = next; editor.setDocumentMargins(next)
-        } else {
-            pageExpand = next; editor.setCurrentPageMargins(next)
-        }
-    }
-    fun PageMargins.withAll(e: PageEdge?, f: Double?) =
-        if (e != null) withEdge(e, f) else PageEdge.entries.fold(this) { m, x -> m.withEdge(x, f) }
-    val expandOwn = expand.edge(expandEdge ?: PageEdge.LEFT)
-    val expandInherited = if (tab == 1) docExpand.edge(expandEdge ?: PageEdge.LEFT) else null
-    val expandPercent = ((expandOwn ?: expandInherited ?: 0.0) * 100).toFloat().coerceIn(0f, 100f)
-    val expandLabel = expandEdge?.let { stringResource(it.labelRes) } ?: stringResource(R.string.edge_all)
-
-    DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
-        Column(Modifier.width(286.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                ModeChip(stringResource(R.string.all_pages), tab == 0) { tab = 0 }
-                ModeChip(stringResource(R.string.current_page), tab == 1) { tab = 1 }
-            }
-
-            Spacer(Modifier.size(8.dp))
-            PopupTitle(stringResource(R.string.margin_settings))
-            Spacer(Modifier.size(4.dp))
-            StyleCaption(stringResource(R.string.caption_side))
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                ModeChip(stringResource(R.string.edge_all), edge == null) { edge = null }
-                PageEdge.entries.forEach { e ->
-                    ModeChip(stringResource(e.labelRes), edge == e) { edge = e }
-                }
-            }
-
-            Spacer(Modifier.size(12.dp))
-            StyleCaption(
-                stringResource(R.string.caption_value_mm_px, edgeLabel, mm, px) +
-                    if (tab == 1 && pageMargins == null) stringResource(R.string.default_suffix) else "",
-            )
-            Slider(
-                value = mm.toFloat().coerceIn(FlowMargins.MIN_MM.toFloat(), maxMm.toFloat()),
-                onValueChange = { apply(margins.withMm(edge, it.roundToInt().toDouble())) }, // whole mm, without steps' tick dots
-                valueRange = FlowMargins.MIN_MM.toFloat()..maxMm.toFloat(),
-                interactionSource = held,
-            )
-
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.offset(x = (-14).dp)) {
-                Checkbox(checked = expanded, onCheckedChange = { expanded = it })
-                Text(stringResource(R.string.expand_range), color = LocalPalette.current.text.toComposeColor(), fontSize = 13.sp)
-            }
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.offset(x = (-14).dp)) {
-                Checkbox(checked = editor.showMargins, onCheckedChange = { editor.setShowMarginsPref(it) })
-                Text(stringResource(R.string.show_margins), color = LocalPalette.current.text.toComposeColor(), fontSize = 13.sp)
-            }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                // On Current Page, Reset drops the page's own margins so it follows All Pages again.
-                ModeChip(stringResource(R.string.reset), false) { apply(null) }
-            }
-
-            HorizontalDivider(Modifier.padding(vertical = 12.dp), color = LocalPalette.current.border.toComposeColor())
-            PopupTitle(stringResource(R.string.expand_page))
-            Spacer(Modifier.size(4.dp))
-            StyleCaption(stringResource(R.string.caption_side))
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                ModeChip(stringResource(R.string.edge_all), expandEdge == null) { expandEdge = null }
-                PageEdge.entries.forEach { e ->
-                    ModeChip(stringResource(e.labelRes), expandEdge == e) { expandEdge = e }
-                }
-            }
-
-            Spacer(Modifier.size(12.dp))
-            StyleCaption(stringResource(R.string.caption_value_percent, expandLabel, expandPercent.roundToInt()) + if (expandOwn == null) stringResource(R.string.default_suffix) else "")
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ModeChip(stringResource(R.string.default_choice), expandOwn == null) { applyExpand(expand.withAll(expandEdge, null)) }
-                Slider(
-                    value = expandPercent,
-                    onValueChange = { applyExpand(expand.withAll(expandEdge, it.toDouble() / 100.0)) },
-                    valueRange = 0f..100f,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-
-            Spacer(Modifier.size(8.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                ModeChip(stringResource(R.string.reset), false) { applyExpand(PageMargins()) }
-            }
-        }
-    }
-}
-
-/**
- * Controls for [t]'s parameters on a page-style level: the spacing parameter on the classic
- * spacing slider (content px), the others as sliders or colour pickers, each with a Default chip
- * that falls back to [lower] (the level below, when its values apply) and then the template.
- * [captionGap] spaces a colour row's caption from its circles, as the host's own rows do.
- */
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-internal fun TemplateParamControls(
+/** [t]'s lengths and numbers as sliders, the spacing one first and in mm like every other length. */
+private fun templateValueGroups(
     t: com.xnotes.core.template.Template,
     style: PageStyle,
     lower: PageStyle?,
     dpi: Int,
-    store: SwatchStore,
-    captionGap: Dp = 0.dp,
     apply: (PageStyle) -> Unit,
-) {
+): List<MenuGroup> = buildList<MenuGroup> {
     val k = dpi / 25.4
     t.spacingParam?.let { sp ->
-        Spacer(Modifier.size(12.dp))
-        val lo = ((sp.min ?: (sp.default / 4)) * k).toFloat()
-        val hi = ((sp.max ?: (sp.default * 4)) * k).toFloat().coerceAtLeast(lo + 1f)
-        val spacing = style.spacing ?: lower?.spacing ?: (sp.default * k)
-        // In mm under the template's own name for it, like every other length.
-        val label = sp.label ?: stringResource(R.string.caption_spacing)
-        StyleCaption("$label  ${"%.1f mm".format(spacing / k)}" + if (style.spacing == null) stringResource(R.string.default_suffix) else "")
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            ModeChip(stringResource(R.string.default_choice), style.spacing == null) { apply(style.copy(spacing = null)) }
-            Slider(
-                value = spacing.toFloat().coerceIn(lo, hi),
-                onValueChange = { apply(style.copy(spacing = it.toDouble())) },
-                valueRange = lo..hi,
-                modifier = Modifier.weight(1f),
-            )
+        add {
+            val lo = ((sp.min ?: (sp.default / 4)) * k).toFloat()
+            val hi = ((sp.max ?: (sp.default * 4)) * k).toFloat().coerceAtLeast(lo + 1f)
+            val spacing = style.spacing ?: lower?.spacing ?: (sp.default * k)
+            ParamSlider(
+                sp.label ?: stringResource(R.string.caption_spacing), "%.1f mm".format(spacing / k), spacing.toFloat(), lo..hi,
+                own = style.spacing != null, onReset = { apply(style.copy(spacing = null)) },
+            ) { apply(style.copy(spacing = it.toDouble())) }
         }
     }
     for (p in t.params) {
-        if (p === t.spacingParam) continue
-        Spacer(Modifier.size(12.dp))
-        val label = p.label ?: p.name.replaceFirstChar { it.uppercase() }
-        if (p.type == com.xnotes.core.template.ParamType.COLOR) {
-            val own = style.colors?.get(p.name)
-            StyleCaption(label)
-            Spacer(Modifier.size(captionGap))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                ModeChip(stringResource(R.string.default_choice), own == null) {
-                    apply(style.copy(colors = style.colors?.minus(p.name)?.takeIf { it.isNotEmpty() }))
-                }
-                SwatchCircles(store, SwatchRole.TEMPLATE, own) {
-                    apply(style.copy(colors = (style.colors ?: emptyMap()) + (p.name to it)))
-                }
-            }
-            continue
-        }
-        val own = style.params?.get(p.name)
-        val value = p.clamp(own ?: lower?.params?.get(p.name) ?: p.default)
-        val lo = p.min ?: if (p.default > 0) p.default / 4 else p.default - 10
-        val hi = (p.max ?: if (p.default > 0) p.default * 4 else p.default + 10).coerceAtLeast(lo + 1e-6)
-        val shown = when (p.type) {
-            com.xnotes.core.template.ParamType.LENGTH -> "%.1f mm".format(value)
-            com.xnotes.core.template.ParamType.INTEGER -> value.roundToInt().toString()
-            else -> "%.2f".format(value).trimEnd('0').trimEnd('.', ',')
-        }
-        StyleCaption("$label  $shown" + if (own == null) stringResource(R.string.default_suffix) else "")
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            ModeChip(stringResource(R.string.default_choice), own == null) {
-                apply(style.copy(params = style.params?.minus(p.name)?.takeIf { it.isNotEmpty() }))
+        if (p === t.spacingParam || p.type == com.xnotes.core.template.ParamType.COLOR) continue
+        add {
+            val own = style.params?.get(p.name)
+            val value = p.clamp(own ?: lower?.params?.get(p.name) ?: p.default)
+            val lo = p.min ?: if (p.default > 0) p.default / 4 else p.default - 10
+            val hi = (p.max ?: if (p.default > 0) p.default * 4 else p.default + 10).coerceAtLeast(lo + 1e-6)
+            val shown = when (p.type) {
+                com.xnotes.core.template.ParamType.LENGTH -> "%.1f mm".format(value)
+                com.xnotes.core.template.ParamType.INTEGER -> value.roundToInt().toString()
+                else -> "%.2f".format(value).trimEnd('0').trimEnd('.', ',')
             }
             val integer = p.type == com.xnotes.core.template.ParamType.INTEGER
-            Slider(
-                value = value.toFloat().coerceIn(lo.toFloat(), hi.toFloat()),
-                onValueChange = { v -> apply(style.copy(params = (style.params ?: emptyMap()) + (p.name to p.clamp(v.toDouble())))) },
-                valueRange = lo.toFloat()..hi.toFloat(),
+            ParamSlider(
+                p.label ?: p.name.replaceFirstChar { it.uppercase() }, shown, value.toFloat(), lo.toFloat()..hi.toFloat(),
+                own = own != null,
                 steps = if (integer) ((hi - lo).roundToInt() - 1).coerceIn(0, 200) else 0,
-                modifier = Modifier.weight(1f),
-            )
+                onReset = { apply(style.copy(params = style.params?.minus(p.name)?.takeIf { it.isNotEmpty() })) },
+            ) { v -> apply(style.copy(params = (style.params ?: emptyMap()) + (p.name to p.clamp(v.toDouble())))) }
         }
     }
 }
@@ -843,290 +417,93 @@ internal fun StyleCaption(text: String) {
     )
 }
 
-/**
- * The toolbar's View menu: one set of controls always showing the open note's effective
- * (resolved) view settings; a change writes that field's per-note override — stored
- * app-side like zoom/scroll, never in the file itself. Like [StylesPopup], the current
- * values can be saved as the global defaults every note without overrides follows
- * ("Default for all notes"), and Reset drops the note's overrides back onto them. The PDF colour
- * filters only show their values here; Adjust opens them on a page of their own.
- */
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-fun ViewMenuPopup(editor: Editor, onDismiss: () -> Unit) {
-    val defaults = editor.viewDefaults
-    val overrides = editor.viewOverrides
-    val vs = editor.viewSettings
-    // Same session-sticky rule as the styles popup's "Default for new notes" row.
-    var showDefaultRow by remember { mutableStateOf(editor.viewSettings != editor.viewDefaults) }
-    // Unchecking "Default for all notes" goes back to the defaults this popup opened with.
-    val openedDefaults = remember { editor.viewDefaults }
-    var filtering by remember { mutableStateOf(false) }
-
-    fun apply(new: ViewOverrides) {
-        editor.updateViewOverrides(new)
-        if (editor.viewSettings != editor.viewDefaults) showDefaultRow = true
-    }
-    fun setMode(v: ViewingMode) = apply(overrides.copy(mode = v))
-    fun setVerticalScroll(v: Boolean) = apply(overrides.copy(verticalScroll = v))
-    fun setFreeMovement(v: Boolean) = apply(overrides.copy(freeMovement = v))
-    fun setFreeHorizontalScroll(v: Boolean) = apply(overrides.copy(freeHorizontalScroll = v))
-    fun setContrast(v: Int) = apply(overrides.copy(contrast = v))
-    fun setInvert(v: Int) = apply(overrides.copy(invert = v))
-    fun setBrightness(v: Int) = apply(overrides.copy(brightness = v))
-    fun setSepia(v: Int) = apply(overrides.copy(sepia = v))
-    fun setMultiply(v: Rgba) = apply(overrides.copy(multiply = v))
-    fun setScreen(v: Rgba) = apply(overrides.copy(screen = v))
-    fun setKeepImages(v: Boolean) = apply(overrides.copy(keepImages = v))
-    fun setRotation(v: Int) = apply(overrides.copy(rotation = v))
-    fun setScrollbar(v: Boolean) = apply(overrides.copy(scrollbar = v))
-
-    DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
-        if (filtering) Column(Modifier.width(250.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
-            PopupBackLink("\u2039  " + stringResource(R.string.caption_pdf_filters)) { filtering = false }
-            Spacer(Modifier.size(8.dp))
-            FilterSlider(stringResource(R.string.filter_contrast), vs.contrast, 200, ::setContrast)
-            FilterSlider(stringResource(R.string.filter_invert), vs.invert, 100, ::setInvert)
-            FilterSlider(stringResource(R.string.filter_brightness), vs.brightness, 200, ::setBrightness)
-            FilterSlider(stringResource(R.string.filter_sepia), vs.sepia, 200, ::setSepia)
-            Spacer(Modifier.size(4.dp))
-            FilterColorRow(stringResource(R.string.filter_multiply), vs.multiply, PdfColorFilter.MULTIPLY_OFF) { setMultiply(it) }
-            FilterColorRow(stringResource(R.string.filter_screen), vs.screen, PdfColorFilter.SCREEN_OFF) { setScreen(it) }
-            ToggleRow(stringResource(R.string.caption_keep_images), vs.keepImages) { setKeepImages(it) }
-        } else Column(Modifier.width(250.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
-            PopupTitle(stringResource(R.string.title_view))
-            StyleCaption(stringResource(R.string.caption_viewing_mode))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                ModeChip(stringResource(R.string.view_single), vs.mode == ViewingMode.SINGLE) { setMode(ViewingMode.SINGLE) }
-                ModeChip(stringResource(R.string.view_double), vs.mode == ViewingMode.DOUBLE) { setMode(ViewingMode.DOUBLE) }
-                ModeChip(stringResource(R.string.view_cover), vs.mode == ViewingMode.COVER) { setMode(ViewingMode.COVER) }
-            }
-
-            Spacer(Modifier.size(10.dp))
-            ToggleRow(stringResource(R.string.caption_vertical_scrolling), vs.verticalScroll) { setVerticalScroll(it) }
-            if (!vs.verticalScroll) {
-                ToggleRow(stringResource(R.string.caption_free_movement), vs.freeMovement) { setFreeMovement(it) }
-            } else {
-                ToggleRow(stringResource(R.string.caption_free_horizontal_scroll), vs.freeHorizontalScroll) { setFreeHorizontalScroll(it) }
-            }
-
-            Spacer(Modifier.size(10.dp))
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.weight(1f)) { StyleCaption(stringResource(R.string.caption_pdf_filters)) }
-                ModeChip(stringResource(R.string.adjust), false) { filtering = true }
-            }
-            Spacer(Modifier.size(4.dp))
-            val off = stringResource(R.string.off)
-            FilterValueRow(stringResource(R.string.filter_contrast), "${vs.contrast}%")
-            FilterValueRow(stringResource(R.string.filter_invert), "${vs.invert}%")
-            FilterValueRow(stringResource(R.string.filter_brightness), "${vs.brightness}%")
-            FilterValueRow(stringResource(R.string.filter_sepia), "${vs.sepia}%")
-            FilterValueRow(stringResource(R.string.filter_multiply), off, vs.multiply.takeIf { it != PdfColorFilter.MULTIPLY_OFF })
-            FilterValueRow(stringResource(R.string.filter_screen), off, vs.screen.takeIf { it != PdfColorFilter.SCREEN_OFF })
-
-            Spacer(Modifier.size(10.dp))
-            StyleCaption(stringResource(R.string.caption_rotate_degrees, vs.rotation))
-            Slider(
-                value = vs.rotation.toFloat(),
-                onValueChange = { setRotation((it / 90f).roundToInt() * 90) },
-                valueRange = 0f..270f,
-                steps = 2,
-            )
-
-            ToggleRow(stringResource(R.string.caption_scrollbar), vs.scrollbar) { setScrollbar(it) }
-
-            Spacer(Modifier.size(8.dp))
-            if (showDefaultRow && overrides != ViewOverrides()) {
-                // The checkbox's 48dp touch frame insets the drawn box; pull the row back to align it.
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().offset(x = (-14).dp)) {
-                    Checkbox(
-                        checked = vs == defaults,
-                        onCheckedChange = { on ->
-                            editor.updateViewDefaults(if (on) vs else openedDefaults.takeIf { it != vs } ?: ViewSettings())
-                        },
-                    )
-                    Text(
-                        stringResource(R.string.default_for_all_notes),
-                        color = LocalPalette.current.text.toComposeColor(),
-                        fontSize = 12.sp,
-                    )
-                }
-                Spacer(Modifier.size(4.dp))
-            }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                ModeChip(stringResource(R.string.reset), false) { apply(ViewOverrides()) }
-            }
-        }
-    }
-}
-
-/** A PDF filter's value as the View menu shows it: [text], or a dot of [color] when it has one. */
-@Composable
-private fun FilterValueRow(label: String, text: String, color: Rgba? = null) {
-    val palette = LocalPalette.current
-    Row(Modifier.padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, color = palette.textDim.toComposeColor(), fontSize = 13.sp, modifier = Modifier.width(84.dp))
-        Box(Modifier.width(44.dp), contentAlignment = Alignment.CenterEnd) {
-            if (color != null) {
-                Box(
-                    Modifier.size(14.dp).clip(CircleShape).background(color.toComposeColor())
-                        .border(1.dp, palette.border.toComposeColor(), CircleShape),
-                )
-            } else {
-                Text(text, color = palette.text.toComposeColor(), fontSize = 13.sp)
-            }
-        }
-    }
-}
-
-/** A PDF filter's percentage slider. It applies on release, since every change re-renders the PDF. */
-@Composable
-private fun FilterSlider(label: String, value: Int, max: Int, onSet: (Int) -> Unit) {
-    var held by remember { mutableStateOf<Int?>(null) }
-    SliderRow(
-        label, (held ?: value).toFloat(), 0f..max.toFloat(), step = 1f, suffix = "%",
-        onChangeFinished = { held?.let(onSet); held = null },
-    ) { held = it.roundToInt() }
-}
-
-/**
- * A labelled colour row for the two blend filters: the shared picker dot plus an Off chip that
- * writes the blend's identity colour (white for multiply, black for screen), so "no filter" and
- * "blend with the no-op colour" are the same state and the row needs no separate enable flag.
- */
-@Composable
-private fun FilterColorRow(label: String, value: Rgba, off: Rgba, onChange: (Rgba) -> Unit) {
-    val palette = LocalPalette.current
-    val on = value != off
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(label, color = palette.textDim.toComposeColor(), fontSize = 13.sp, modifier = Modifier.width(84.dp))
-        ColorPickerDot(
-            current = value,
-            custom = on,
-            onPick = onChange,
-            dismissOnPick = false,
-        ) { d, p -> PageColorGridPopup(value, d, p) }
-        Spacer(Modifier.size(8.dp))
-        ModeChip(stringResource(R.string.off), !on) { onChange(off) }
-    }
-}
-
-/** Page-nav popup: type a page number (1-based) and jump to it; Done/GO both commit. */
-@Composable
-fun PageJumpPopup(editor: Editor, onDismiss: () -> Unit) {
-    var text by remember { mutableStateOf("${editor.pageIndex + 1}") }
-    fun go() {
-        val n = text.toIntOrNull() ?: return
-        editor.goToPage(n - 1)
-        onDismiss()
-    }
-    DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
-        Column(Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
-            PopupTitle(stringResource(R.string.title_go_to_page))
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FieldFrame(Modifier.width(72.dp)) {
-                    NativeField(
-                        value = text,
-                        onText = { text = it },
-                        modifier = Modifier.weight(1f),
-                        numeric = true,
-                        maxLen = 5,
-                        endAlign = true,
-                        autoFocus = true,
-                        onDone = { go() },
-                    )
-                }
-                Text(
-                    "/ ${editor.pageCount}",
-                    color = LocalPalette.current.textDim.toComposeColor(),
-                    fontSize = 13.sp,
-                )
-                ModeChip(stringResource(R.string.go), selected = true) { go() }
-            }
-        }
-    }
-}
-
-/** Zoom menu: optional MIN/MAX zoom limits. While a limit is on, every zoom path (pinch,
- *  buttons, keyboard, fit) clamps to it; its spin field greys out when the toggle is off. */
-@Composable
-fun ZoomMenuPopup(editor: Editor, onDismiss: () -> Unit) {
-    val base = remember { editor.preferences }
-    var minOn by remember { mutableStateOf(base.minZoomEnabled) }
-    var minPct by remember { mutableStateOf(base.minZoomPercent) }
-    var maxOn by remember { mutableStateOf(base.maxZoomEnabled) }
-    var maxPct by remember { mutableStateOf(base.maxZoomPercent) }
-
-    fun emit() = editor.applyPreferences(
-        editor.preferences.copy(
-            minZoomEnabled = minOn, minZoomPercent = minPct,
-            maxZoomEnabled = maxOn, maxZoomPercent = maxPct,
-        ),
-    )
-
-    DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
-        Column(Modifier.width(280.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
-            PopupTitle(stringResource(R.string.title_zoom))
-            ZoomLimitRow(
-                stringResource(R.string.caption_min_zoom), minOn, minPct,
-                onToggle = {
-                    minOn = it
-                    if (minOn && maxOn && minPct > maxPct) minPct = maxPct
-                    emit()
-                },
-                onValue = {
-                    minPct = it.coerceIn(Preferences.ZOOM_LIMIT_MIN_PCT, Preferences.ZOOM_LIMIT_MAX_PCT)
-                        .coerceAtMost(if (maxOn) maxPct else Preferences.ZOOM_LIMIT_MAX_PCT)
-                    emit()
-                },
-            )
-            ZoomLimitRow(
-                stringResource(R.string.caption_max_zoom), maxOn, maxPct,
-                onToggle = {
-                    maxOn = it
-                    if (maxOn && minOn && maxPct < minPct) maxPct = minPct
-                    emit()
-                },
-                onValue = {
-                    maxPct = it.coerceIn(Preferences.ZOOM_LIMIT_MIN_PCT, Preferences.ZOOM_LIMIT_MAX_PCT)
-                        .coerceAtLeast(if (minOn) minPct else Preferences.ZOOM_LIMIT_MIN_PCT)
-                    emit()
-                },
-            )
-        }
-    }
-}
-
-/** One zoom-limit row: label, a percent spinfield (stepping by 10, greyed while off), a toggle. */
-@Composable
-private fun ZoomLimitRow(label: String, enabled: Boolean, value: Int, onToggle: (Boolean) -> Unit, onValue: (Int) -> Unit) {
-    val palette = LocalPalette.current
-    val color = (if (enabled) palette.text else palette.textDim).toComposeColor()
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(label, color = color, fontSize = 12.sp, modifier = Modifier.width(76.dp))
-        Box(Modifier.size(34.dp).clickable(enabled = enabled) { onValue(value - 10) }, contentAlignment = Alignment.Center) {
-            Text("−", color = color, fontSize = 18.sp)
-        }
-        Text(
-            "$value%",
-            color = color,
-            fontSize = 13.sp,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.width(52.dp),
-        )
-        Box(Modifier.size(34.dp).clickable(enabled = enabled) { onValue(value + 10) }, contentAlignment = Alignment.Center) {
-            Text("+", color = color, fontSize = 18.sp)
-        }
-        Spacer(Modifier.weight(1f))
-        Switch(checked = enabled, onCheckedChange = onToggle)
-    }
-}
-
 /** Eraser configuration popup: a STROKE/AREA mode picker and a SIZE slider (the eraser radius). */
+
+/** Lock and save chips for the current zoom, the zoom bar switch, then the saved zooms. */
+/**
+ * The zooms starred in [owner]'s settings: a star saves the zoom in view (or drops it), a chip
+ * jumps back to one with [onPick], and the optional zoom bar shows them on the page.
+ */
+@Composable
+internal fun SavedZooms(owner: Editor, zoomPercent: Int, locked: Boolean, onPick: (Float) -> Unit) {
+    val current = zoomPercent / 100f
+    val favorites = owner.favoriteZooms
+    val starred = favorites.any { isSameZoom(it, current) }
+    Spacer(Modifier.height(8.dp))
+    PanelCaption(stringResource(R.string.caption_saved_zooms)) {
+        PanelChip(stringResource(R.string.zoom_save, zoomPercent), starred, XnotesIcons.bookmark) { owner.toggleFavoriteZoom(current) }
+    }
+    if (favorites.isNotEmpty()) SavedZoomChips(favorites, current, locked, onPick, owner::toggleFavoriteZoom)
+    PanelToggle(stringResource(R.string.zoom_show_bar), owner.showZoomBar, owner::setShowZoomBar)
+}
+
+internal fun isSameZoom(a: Float, b: Float) = abs(a - b) <= ZOOM_MATCH_TOLERANCE
+
+/** The saved zooms as chips: tap one to jump to it, its x to remove it. */
+@Composable
+internal fun SavedZoomChips(favorites: List<Float>, current: Float, locked: Boolean, onPick: (Float) -> Unit, onRemove: (Float) -> Unit) {
+    val palette = LocalPalette.current
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        favorites.forEach { zoom ->
+            val pct = (zoom * 100).roundToInt()
+            val selected = isSameZoom(zoom, current)
+            val fg = (if (selected) palette.selectionForeground else palette.text).toComposeColor()
+            Row(
+                Modifier
+                    .clip(MaterialTheme.shapes.extraSmall)
+                    .background((if (selected) palette.selectionBackground else palette.surface).toComposeColor())
+                    .border(1.dp, (if (selected) palette.accent else palette.border).toComposeColor(), MaterialTheme.shapes.extraSmall),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "$pct%",
+                    color = fg,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 12.sp,
+                    modifier = Modifier.clickable(enabled = !locked) { onPick(zoom) }.padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+                )
+                Icon(
+                    XnotesIcons.close,
+                    contentDescription = stringResource(R.string.zoom_remove_saved, pct),
+                    tint = fg,
+                    modifier = Modifier.clickable { onRemove(zoom) }.padding(6.dp).size(14.dp),
+                )
+            }
+        }
+    }
+}
+
+
+/** Pan configuration popup: which axes a finger pan moves along, how fast, and whether a flick glides on. */
+@Composable
+fun PanConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
+    var cfg by remember { mutableStateOf(editor.toolConfig(Tool.PAN)) }
+    fun emit(next: ToolConfig) { cfg = next; editor.updateToolConfig(Tool.PAN, next) }
+
+    fun reset() {
+        val d = ToolDefaults.configFor(Tool.PAN)
+        emit(cfg.copy(lockPanX = d.lockPanX, lockPanY = d.lockPanY, panSensitivity = d.panSensitivity, panGlide = d.panGlide))
+    }
+
+    ToolMenu(stringResource(R.string.tool_pan), onDismiss, action = { PanelChip(stringResource(R.string.reset), onClick = ::reset) }) {
+        PanelCard(padding = PaddingValues(start = 12.dp, top = 10.dp, end = 12.dp, bottom = 12.dp)) {
+            PanelCaption(stringResource(R.string.caption_pan_axes))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                ModeChip(stringResource(R.string.pan_axis_x), selected = !cfg.lockPanX) { emit(cfg.copy(lockPanX = !cfg.lockPanX)) }
+                ModeChip(stringResource(R.string.pan_axis_y), selected = !cfg.lockPanY) { emit(cfg.copy(lockPanY = !cfg.lockPanY)) }
+                ModeChip(stringResource(R.string.pan_axis_zoom), selected = !editor.hostZoomLocked) { editor.toggleHostZoomLock() }
+            }
+        }
+        MenuCard(buildList<MenuGroup> {
+            add { MenuSlider(stringResource(R.string.caption_pan_sensitivity), cfg.panSensitivity.toFloat(), 1f..10f, step = 1f) { emit(cfg.copy(panSensitivity = it.roundToInt())) } }
+            add { MenuSwitch(stringResource(R.string.caption_pan_glide), cfg.panGlide) { emit(cfg.copy(panGlide = it)) } }
+        })
+    }
+}
 @Composable
 fun EraserConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
     val base = remember { editor.toolConfig(Tool.ERASER) }
-    var area by remember { mutableStateOf(base.eraseMode == EraseMode.AREA) }
+    var mode by remember { mutableStateOf(base.eraseMode) }
     var size by remember { mutableStateOf(base.baseWidth.toFloat()) }
     var switchBack by remember { mutableStateOf(base.switchBackAfterErase) }
     var scale by remember { mutableStateOf(base.scale) }
@@ -1138,7 +515,7 @@ fun EraserConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
         Tool.ERASER,
         base.copy(
             baseWidth = size.toDouble(),
-            eraseMode = if (area) EraseMode.AREA else EraseMode.STROKE,
+            eraseMode = mode,
             switchBackAfterErase = switchBack,
             scale = scale,
             eraseMarkups = markups,
@@ -1147,32 +524,37 @@ fun EraserConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
         ),
     )
 
-    DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
-        Column(Modifier.width(250.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
-            PopupTitle(stringResource(R.string.title_eraser))
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                ModeChip(stringResource(R.string.eraser_stroke), selected = !area) { area = false; emit() }
-                ModeChip(stringResource(R.string.eraser_area), selected = area) { area = true; emit() }
+    ToolMenu(stringResource(R.string.title_eraser), onDismiss) {
+        MenuCard(buildList<MenuGroup> {
+            add {
+                val modes = listOf(EraseMode.STROKE, EraseMode.AREA, EraseMode.LASSO)
+                MenuSegmented(
+                    listOf(stringResource(R.string.eraser_stroke), stringResource(R.string.eraser_area), stringResource(R.string.tool_lasso)),
+                    modes.indexOf(mode).coerceAtLeast(0),
+                ) { mode = modes[it]; emit() }
+                val r = ToolConversions.widthRange(Tool.ERASER)
+                MenuSlider(stringResource(R.string.caption_size), size, r.start.toFloat()..r.endInclusive.toFloat()) { size = it; emit() }
             }
-            Spacer(Modifier.size(8.dp))
-            StyleCaption(stringResource(R.string.caption_erasable_kinds))
+        })
+        PanelCard(padding = PaddingValues(start = 12.dp, top = 10.dp, end = 12.dp, bottom = 12.dp)) {
+            PanelCaption(stringResource(R.string.caption_erasable_kinds))
             KindChips(kinds) { kinds = it; emit() }
-            val r = ToolConversions.widthRange(Tool.ERASER)
-            SliderRow(stringResource(R.string.caption_size), size, r.start.toFloat()..r.endInclusive.toFloat()) { size = it; emit() }
+        }
+        MenuCard(buildList<MenuGroup> {
             // SCALE off: the eraser holds a constant on-screen size whatever zoom you are at.
-            ToggleRow(stringResource(R.string.caption_scale), scale) { scale = it; emit() }
+            add { MenuSwitch(stringResource(R.string.caption_scale), scale) { scale = it; emit() } }
             // Re-arm the previous pen/highlighter once an erase lifts, so a quick fix doesn't strand
             // you in the eraser.
-            ToggleRow(stringResource(R.string.caption_switch_back), switchBack) { switchBack = it; emit() }
-            if (editor.hostHasPdf) ToggleRow(stringResource(R.string.caption_erase_markups), markups) { markups = it; emit() }
+            add { MenuSwitch(stringResource(R.string.caption_switch_back), switchBack) { switchBack = it; emit() } }
+            if (editor.hostHasPdf) add { MenuSwitch(stringResource(R.string.caption_erase_markups), markups) { markups = it; emit() } }
             // A pen scribbled over ink erases it without picking up the eraser.
-            ToggleRow(stringResource(R.string.caption_scribble_erase), scribble) { scribble = it; emit() }
-        }
+            add { MenuSwitch(stringResource(R.string.caption_scribble_erase), scribble) { scribble = it; emit() } }
+        })
     }
 }
 
 @Composable
-private fun penIcon(pen: Tool): ImageVector = ImageVector.vectorResource(
+internal fun penIcon(pen: Tool): ImageVector = ImageVector.vectorResource(
     when (pen) {
         Tool.DASHED -> R.drawable.ic_stroke_dashed
         Tool.CALLIGRAPHY -> R.drawable.ic_stroke_calligraphy
@@ -1229,64 +611,57 @@ fun SelectConfigPopup(editor: ToolPopupHost, tool: Tool = Tool.SELECT, onPick: (
         editor.updateToolConfig(Tool.SELECT, editor.toolConfig(Tool.SELECT).copy(selectKinds = kinds))
     }
 
-    DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
-        Column(Modifier.width(250.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
-            PopupTitle(stringResource(if (tool == Tool.LASSO) R.string.tool_lasso else R.string.title_select))
-            Row(Modifier.padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                KindChip(XnotesIcons.select, stringResource(R.string.shape_rectangle), tool == Tool.SELECT) { if (tool != Tool.SELECT) onPick(Tool.SELECT) }
-                KindChip(XnotesIcons.lasso, stringResource(R.string.tool_lasso), tool == Tool.LASSO) { if (tool != Tool.LASSO) onPick(Tool.LASSO) }
+    ToolMenu(stringResource(if (tool == Tool.LASSO) R.string.tool_lasso else R.string.title_select), onDismiss) {
+        PanelCard(padding = PaddingValues(6.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                MenuTile(XnotesIcons.select, stringResource(R.string.shape_rectangle), tool == Tool.SELECT, 44.dp) { if (tool != Tool.SELECT) onPick(Tool.SELECT) }
+                MenuTile(XnotesIcons.lasso, stringResource(R.string.tool_lasso), tool == Tool.LASSO, 44.dp) { if (tool != Tool.LASSO) onPick(Tool.LASSO) }
             }
-            StyleCaption(stringResource(R.string.caption_select_kinds))
-            KindChips(kinds, Modifier.padding(bottom = 8.dp)) { kinds = it; emit() }
-            ToggleRow(stringResource(R.string.caption_select_whole_items), whole) { whole = it; emit() }
+        }
+        PanelCard(padding = PaddingValues(start = 12.dp, top = 10.dp, end = 12.dp, bottom = 12.dp)) {
+            PanelCaption(stringResource(R.string.caption_select_kinds))
+            KindChips(kinds) { kinds = it; emit() }
+        }
+        MenuCard(buildList<MenuGroup> {
+            add { MenuSwitch(stringResource(R.string.caption_select_whole_items), whole) { whole = it; emit() } }
             // Re-arm the previous pen/highlighter once a selection action (move, resize, delete,
             // cut, copy, duplicate) finishes, so a quick edit doesn't strand you in select.
             if (tool == Tool.SELECT) {
-                ToggleRow(stringResource(R.string.caption_switch_back), switchBack) { switchBack = it; emit() }
-                if (editor.hostIsPaged) ToggleRow(stringResource(R.string.caption_snap_to_margins), snap) { snap = it; emit() }
+                add { MenuSwitch(stringResource(R.string.caption_switch_back), switchBack) { switchBack = it; emit() } }
+                if (editor.hostIsPaged) add { MenuSwitch(stringResource(R.string.caption_snap_to_margins), snap) { snap = it; emit() } }
             }
-        }
+        })
     }
 }
 
 /**
- * Table-tool configuration popup: the line colour, column/row counts and line thickness for the next table.
- * The table itself is drawn on the page by dragging, like the shape tool; these are just its
- * defaults. An existing table's columns/rows are edited in table edit mode, its width via the
- * selection's Change-style slider.
+ * Table-tool configuration popup: everything the next table starts with. The table itself is drawn
+ * on the page by dragging, like the shape tool; an existing one is restyled through Change style.
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun TableConfigPopup(editor: Editor, onDismiss: () -> Unit) {
     var cols by remember { mutableStateOf(editor.tableToolCols) }
     var rows by remember { mutableStateOf(editor.tableToolRows) }
-    var width by remember { mutableStateOf(editor.tableToolWidth.toFloat()) }
+    var look by remember { mutableStateOf(editor.tableToolLook) }
     var color by remember { mutableStateOf(editor.tableToolColor) }
-    DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
-        Column(Modifier.width(250.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
-            PopupTitle(stringResource(R.string.title_table))
-            StyleCaption(stringResource(R.string.caption_colour))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                ModeChip(stringResource(R.string.default_choice), color == null) { color = null; editor.tableToolColor = null }
-                ColorPickerDot(
-                    color,
-                    custom = color != null,
-                    onPick = { color = it; editor.tableToolColor = it },
-                    dismissOnPick = false,
-                ) { d, p ->
-                    ColorPickerPopup(
-                        initial = color ?: editor.hostToolbarColors.getOrNull(editor.hostActiveColorIndex),
-                        recents = editor.hostRecentColors,
-                        onDismiss = d,
-                        onPick = p,
-                    )
-                }
+    val active = editor.hostToolbarColors.getOrNull(editor.hostActiveColorIndex) ?: LocalPalette.current.text
+    val colour: MenuGroup = {
+        // "Default" follows the toolbar's ink colour; a colour picked here pins the tool to it.
+        MenuRow(stringResource(R.string.caption_colour)) {
+            ColorOrNone(stringResource(R.string.default_choice), color, suggested = active, onChange = { color = it; editor.tableToolColor = it }) { d, p ->
+                ColorPickerPopup(initial = color ?: active, recents = editor.hostRecentColors, onDismiss = d, onPick = p)
             }
-            Spacer(Modifier.size(12.dp))
-            TableStepperRow(stringResource(R.string.caption_columns), cols, 1, 20) { cols = it; editor.tableToolCols = it }
-            TableStepperRow(stringResource(R.string.caption_rows), rows, 1, 20) { rows = it; editor.tableToolRows = it }
-            SliderRow(stringResource(R.string.caption_width), width, 1f..12f) { width = it; editor.tableToolWidth = it.toDouble() }
         }
+    }
+    val counts = listOf(
+        tableCount(R.string.caption_columns, cols) { cols = it; editor.tableToolCols = it },
+        tableCount(R.string.caption_rows, rows) { rows = it; editor.tableToolRows = it },
+    )
+    ToolMenu(stringResource(R.string.title_table), onDismiss) {
+        look.groups(color ?: active, editor.hostRecentColors, colour, counts) { next, _ ->
+            look = next
+            editor.tableToolLook = next
+        }.forEach { MenuCard(it) }
     }
 }
 
@@ -1313,49 +688,71 @@ fun TapeConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
         ),
     )
 
-    DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
-        Column(Modifier.width(250.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
-            PopupTitle(stringResource(R.string.tool_tape))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                for (m in TapeMode.entries) ModeChip(stringResource(m.labelRes), selected = mode == m) { mode = m; emit() }
-            }
-            Spacer(Modifier.size(8.dp))
-            StyleCaption(stringResource(R.string.caption_colour))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                ModeChip(stringResource(R.string.default_choice), colorOverride == null) { colorOverride = null; emit() }
-                ColorPickerDot(
-                    colorOverride,
-                    custom = colorOverride != null,
-                    onPick = { colorOverride = it; emit() },
-                    dismissOnPick = false,
-                ) { d, p ->
-                    ColorPickerPopup(
-                        initial = colorOverride ?: editor.hostToolbarColors.getOrNull(editor.hostActiveColorIndex),
-                        recents = editor.hostRecentColors,
-                        onDismiss = d,
-                        onPick = p,
-                    )
+    ToolMenu(stringResource(R.string.tool_tape), onDismiss) {
+        MenuCard(buildList<MenuGroup> {
+            add {
+                val modes = TapeMode.entries
+                MenuSegmented(modes.map { stringResource(it.labelRes) }, modes.indexOf(mode)) { mode = modes[it]; emit() }
+                MenuRow(stringResource(R.string.caption_colour)) {
+                    val active = editor.hostToolbarColors.getOrNull(editor.hostActiveColorIndex)
+                    ColorOrNone(
+                        stringResource(R.string.default_choice),
+                        colorOverride,
+                        suggested = active ?: LocalPalette.current.text,
+                        onChange = { colorOverride = it; emit() },
+                    ) { d, p ->
+                        ColorPickerPopup(initial = colorOverride ?: active, recents = editor.hostRecentColors, onDismiss = d, onPick = p)
+                    }
                 }
             }
-            Spacer(Modifier.size(8.dp))
-            StyleCaption(stringResource(R.string.caption_pattern))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                for (p in TapePattern.entries) ModeChip(stringResource(p.labelRes), selected = pattern == p) { pattern = p; emit() }
+            add {
+                Column(Modifier.padding(10.dp)) {
+                    PanelCaption(stringResource(R.string.caption_pattern))
+                    val patterns = TapePattern.entries
+                    PanelSegmented(patterns.map { stringResource(it.labelRes) }, patterns.indexOf(pattern), { pattern = patterns[it]; emit() })
+                }
             }
             // A rectangle is as tall as it is dragged, so only a strip and a band take a width.
             if (mode != TapeMode.RECTANGLE) {
-                Spacer(Modifier.size(4.dp))
-                val range = ToolConversions.widthRange(Tool.TAPE)
-                SliderRow(
-                    stringResource(R.string.caption_width), width,
-                    range.start.toFloat()..range.endInclusive.toFloat(), step = ToolConversions.WIDTH_STEP.toFloat(),
-                ) { width = it; emit() }
-                ToggleRow(stringResource(R.string.caption_scale), scale) { scale = it; emit() }
+                add {
+                    val range = ToolConversions.widthRange(Tool.TAPE)
+                    MenuSlider(
+                        stringResource(R.string.caption_thickness), width,
+                        range.start.toFloat()..range.endInclusive.toFloat(), step = ToolConversions.WIDTH_STEP.toFloat(),
+                    ) { width = it; emit() }
+                }
+                add { MenuSwitch(stringResource(R.string.caption_scale), scale) { scale = it; emit() } }
             }
-            Spacer(Modifier.size(8.dp))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                ModeChip(stringResource(R.string.tape_reveal_all), selected = false) { editor.setAllTapePeeled(true) }
-                ModeChip(stringResource(R.string.tape_cover_all), selected = false) { editor.setAllTapePeeled(false) }
+        })
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            MenuAction(stringResource(R.string.tape_reveal_all), XnotesIcons.eye, Modifier.weight(1f)) { editor.setAllTapePeeled(true) }
+            MenuAction(stringResource(R.string.tape_cover_all), XnotesIcons.eyeOff, Modifier.weight(1f)) { editor.setAllTapePeeled(false) }
+        }
+    }
+}
+
+/** Insert space popup: the colour new room takes. Default leaves it the page's own colour. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun InsertSpaceConfigPopup(editor: Editor, onDismiss: () -> Unit) {
+    val base = remember { editor.toolConfig(Tool.INSERT_SPACE) }
+    var color by remember { mutableStateOf(base.colorOverride) }
+
+    fun pick(next: Rgba?) {
+        color = next
+        editor.updateToolConfig(Tool.INSERT_SPACE, base.copy(colorOverride = next))
+    }
+
+    ToolMenu(stringResource(R.string.tool_insert_space), onDismiss) {
+        PanelCard(padding = PaddingValues(start = 12.dp, top = 10.dp, end = 12.dp, bottom = 14.dp)) {
+            PanelCaption(stringResource(R.string.caption_colour))
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                itemVerticalAlignment = Alignment.CenterVertically,
+            ) {
+                PanelChip(stringResource(R.string.default_choice), color == null) { pick(null) }
+                SwatchCircles(editor, SwatchRole.PAPER, color) { pick(it) }
             }
         }
     }
@@ -1373,47 +770,24 @@ fun MarkupToolPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
 
     fun emit() = editor.updateToolConfig(Tool.MARKUP, base.copy(markupMode = mode, markupIntensity = intensity / 100.0))
 
-    DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
-        Column(Modifier.width(250.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
-            PopupTitle(stringResource(R.string.tool_markup))
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                MarkupMode.entries.forEach { m ->
-                    KindChip(markupIcon(m), stringResource(m.labelRes), selected = mode == m) { mode = m; emit() }
+    ToolMenu(stringResource(R.string.tool_markup), onDismiss) {
+        val modes = MarkupMode.entries
+        val shaded = mode == MarkupMode.HIGHLIGHT
+        MenuCard(buildList<MenuGroup> {
+            add {
+                Box(Modifier.padding(start = 10.dp, top = 10.dp, end = 10.dp, bottom = if (shaded) 0.dp else 10.dp)) {
+                    IconSegmented(modes.map { markupIcon(it) }, modes.map { stringResource(it.labelRes) }, modes.indexOf(mode), height = 38.dp) {
+                        mode = modes[it]
+                        emit()
+                    }
+                }
+                if (shaded) {
+                    val min = (ToolConfig.MARKUP_INTENSITY_MIN * 100).toFloat()
+                    MenuSlider(stringResource(R.string.caption_intensity), intensity, min..100f) { intensity = it; emit() }
                 }
             }
-            if (mode == MarkupMode.HIGHLIGHT) {
-                val min = (ToolConfig.MARKUP_INTENSITY_MIN * 100).toFloat()
-                SliderRow(stringResource(R.string.caption_intensity), intensity, min..100f) { intensity = it; emit() }
-            }
-        }
+        })
     }
-}
-
-/** A −/value/+ integer stepper row, used by [TableConfigPopup]. */
-@Composable
-private fun TableStepperRow(label: String, value: Int, min: Int, max: Int, onChange: (Int) -> Unit) {
-    val palette = LocalPalette.current
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
-        Text(
-            "$label  $value",
-            color = palette.text.toComposeColor(),
-            fontFamily = FontFamily.Monospace,
-            fontSize = 12.sp,
-            modifier = Modifier.weight(1f),
-        )
-        TableStepButton("−") { onChange((value - 1).coerceAtLeast(min)) }
-        Spacer(Modifier.size(8.dp))
-        TableStepButton("+") { onChange((value + 1).coerceAtMost(max)) }
-    }
-}
-
-@Composable
-private fun TableStepButton(label: String, onClick: () -> Unit) {
-    val palette = LocalPalette.current
-    Box(
-        Modifier.size(32.dp).clip(MaterialTheme.shapes.extraSmall).background(palette.surface.toComposeColor()).clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) { Text(label, color = palette.text.toComposeColor(), fontSize = 16.sp) }
 }
 
 private fun markupIcon(mode: MarkupMode): ImageVector = when (mode) {
@@ -1448,23 +822,13 @@ internal fun PopupTitle(text: String) {
     )
 }
 
-/** The link at the top of a popup's nested page that leads back out of it. */
 @Composable
-private fun PopupBackLink(text: String, onBack: () -> Unit) {
-    Text(
-        text,
-        color = LocalPalette.current.accent.toComposeColor(),
-        fontWeight = FontWeight.Medium,
-        fontSize = 12.sp,
-        modifier = Modifier.clip(MaterialTheme.shapes.extraSmall).clickable(onClick = onBack).padding(vertical = 4.dp),
-    )
-}
-
-@Composable
-internal fun ToggleRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.widthIn(min = 220.dp).fillMaxWidth()) {
-        Text(label, color = LocalPalette.current.text.toComposeColor(), fontSize = 12.sp)
-        Switch(checked = checked, onCheckedChange = onChange)
+internal fun ToggleRow(label: String, checked: Boolean, enabled: Boolean = true, onChange: (Boolean) -> Unit) {
+    // The checkbox's 48dp touch frame insets the drawn box; pull the row back to align it.
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.widthIn(min = 220.dp).fillMaxWidth().offset(x = (-14).dp)) {
+        val palette = LocalPalette.current
+        Checkbox(checked = checked, onCheckedChange = onChange, enabled = enabled)
+        Text(label, color = (if (enabled) palette.text else palette.textDim).toComposeColor(), fontSize = 12.sp)
     }
 }
 
@@ -1505,7 +869,7 @@ internal fun SliderRow(
     }
 }
 
-private val NoTicks
+internal val NoTicks
     @Composable get() = SliderDefaults.colors(
         activeTickColor = Color.Transparent,
         inactiveTickColor = Color.Transparent,
@@ -1514,7 +878,7 @@ private val NoTicks
     )
 
 /** [value] moved to the nearest [step] from the start of [range], held at its ends. */
-private fun snapTo(value: Float, range: ClosedFloatingPointRange<Float>, step: Float): Float {
+internal fun snapTo(value: Float, range: ClosedFloatingPointRange<Float>, step: Float): Float {
     return (range.start + ((value - range.start) / step).roundToInt() * step)
         .coerceIn(range.start, range.endInclusive)
 }
@@ -1553,9 +917,9 @@ internal fun KindChip(icon: ImageVector, label: String, selected: Boolean, latex
     Tooltip(label) {
         Box(
             Modifier
-                .clip(MaterialTheme.shapes.extraSmall)
+                .clip(MaterialTheme.shapes.small)
                 .background(if (selected) palette.selectionBackground.toComposeColor() else palette.surface.toComposeColor())
-                .border(1.dp, if (selected) palette.accent.toComposeColor() else palette.border.toComposeColor(), MaterialTheme.shapes.extraSmall)
+                .border(1.dp, if (selected) palette.accent.toComposeColor() else palette.border.toComposeColor(), MaterialTheme.shapes.small)
                 .clickable(onClick = onClick)
                 // A LaTeX chip trades side padding for width so it stays as wide as an icon chip.
                 .padding(horizontal = if (latex == null) 8.dp else 1.dp, vertical = 8.dp),
@@ -1572,7 +936,7 @@ internal fun KindChip(icon: ImageVector, label: String, selected: Boolean, latex
 }
 
 /** Measures the content at its natural size and shrinks it, centred, until it fits the space given. */
-private fun Modifier.scaleDownToFit() = layout { measurable, constraints ->
+internal fun Modifier.scaleDownToFit() = layout { measurable, constraints ->
     val p = measurable.measure(Constraints())
     val s = minOf(1f, constraints.maxWidth.toFloat() / p.width.coerceAtLeast(1), constraints.maxHeight.toFloat() / p.height.coerceAtLeast(1))
     layout(constraints.maxWidth, constraints.maxHeight) {
@@ -1591,7 +955,10 @@ internal fun DropdownMenu(
     expanded: Boolean,
     onDismissRequest: () -> Unit,
     modifier: Modifier = Modifier,
+    offset: DpOffset = LocalMenuOffset.current,
     properties: PopupProperties = PopupProperties(focusable = true),
+    shape: Shape = MaterialTheme.shapes.large,
+    containerColor: Color = LocalPalette.current.menuBg.toComposeColor(),
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val palette = LocalPalette.current
@@ -1602,9 +969,10 @@ internal fun DropdownMenu(
         expanded = expanded && Eyedropper.target == null && !ended,
         onDismissRequest = onDismissRequest,
         modifier = modifier,
-        offset = LocalMenuOffset.current,
+        offset = offset,
         properties = properties,
-        containerColor = palette.menuBg.toComposeColor(),
+        shape = shape,
+        containerColor = containerColor,
         border = BorderStroke(1.dp, palette.border.toComposeColor()),
     ) {
         // A menu or tip opened from inside this one hangs off its own row, not beside the rail.
@@ -1612,37 +980,124 @@ internal fun DropdownMenu(
     }
 }
 
+/** A bar's icons sit this far in from its rounded ends. */
+internal val BAR_END = 4.dp
+
+/** The frame of a bar or card floating by what it acts on: the menus' surface and corners, lifted off the page. */
+@Composable
+internal fun Modifier.floatingBar(shape: Shape = MaterialTheme.shapes.large): Modifier {
+    val palette = LocalPalette.current
+    return shadow(6.dp, shape)
+        .background(palette.menuBg.toComposeColor(), shape)
+        .border(1.dp, palette.border.toComposeColor(), shape)
+        .clip(shape)
+}
+
+/** A menu's rows sit this far in from its edges, so a press or the current choice is a pill. */
+private val MENU_ROW_INSET = 8.dp
+
 /**
- * The app's dialog: material's, pinned to the palette menu surface and given the same hairline
- * border and 14dp corners the hand-rolled progress dialogs use, so a dialog reads against
- * same-tone surfaces (the backstage, OLED black) and matches the menus. Shadows material3's
- * composable for every same-package caller that doesn't import material's directly.
+ * The app's menu row: rounded and inset from the menu's edges, its icons dim beside its label.
+ * [selected] fills it with the selection container and [danger] colours a destructive action.
+ * Shadows material3's composable like [DropdownMenu] does.
  */
 @Composable
-internal fun AlertDialog(
-    onDismissRequest: () -> Unit,
-    confirmButton: @Composable () -> Unit,
+internal fun DropdownMenuItem(
+    text: @Composable () -> Unit,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    dismissButton: (@Composable () -> Unit)? = null,
-    title: (@Composable () -> Unit)? = null,
-    text: (@Composable () -> Unit)? = null,
-    shape: Shape = MaterialTheme.shapes.large,
-    containerColor: Color = LocalPalette.current.menuBg.toComposeColor(),
+    leadingIcon: (@Composable () -> Unit)? = null,
+    trailingIcon: (@Composable () -> Unit)? = null,
+    enabled: Boolean = true,
+    selected: Boolean = false,
+    danger: Boolean = false,
 ) {
-    if (Eyedropper.target != null) return
-    androidx.compose.material3.AlertDialog(
-        onDismissRequest = onDismissRequest,
-        confirmButton = confirmButton,
-        modifier = modifier.border(1.dp, LocalPalette.current.border.toComposeColor(), shape),
-        dismissButton = dismissButton,
-        title = title,
-        text = text,
-        shape = shape,
-        containerColor = containerColor,
+    val palette = LocalPalette.current
+    val fg = when {
+        !enabled -> palette.disabled
+        selected -> palette.selectionForeground
+        danger -> palette.danger
+        else -> palette.text
+    }.toComposeColor()
+    val iconTint = if (enabled && !selected && !danger) palette.textDim.toComposeColor() else fg
+    Row(
+        modifier
+            .fillMaxWidth()
+            .padding(horizontal = MENU_ROW_INSET, vertical = 1.dp)
+            .sizeIn(minWidth = 112.dp, maxWidth = 280.dp, minHeight = 42.dp)
+            .clip(MaterialTheme.shapes.small)
+            .background(if (selected) palette.selectionBackground.toComposeColor() else Color.Transparent)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .padding(start = 12.dp, end = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (leadingIcon != null) {
+            CompositionLocalProvider(LocalContentColor provides iconTint) {
+                Box(Modifier.padding(end = 12.dp).widthIn(min = 20.dp), contentAlignment = Alignment.Center) { leadingIcon() }
+            }
+        }
+        CompositionLocalProvider(LocalContentColor provides fg) {
+            ProvideTextStyle(TextStyle(fontSize = 14.sp, lineHeight = 20.sp)) {
+                Box(Modifier.weight(1f).padding(vertical = 6.dp)) { text() }
+            }
+        }
+        if (trailingIcon != null) {
+            CompositionLocalProvider(LocalContentColor provides iconTint) {
+                Box(Modifier.padding(start = 12.dp)) { trailingIcon() }
+            }
+        }
+    }
+}
+
+/** A menu action: its [icon] and [label]; [more] marks one that opens further rows. */
+@Composable
+internal fun MenuItem(
+    label: String,
+    icon: ImageVector? = null,
+    enabled: Boolean = true,
+    danger: Boolean = false,
+    more: Boolean = false,
+    onClick: () -> Unit,
+) {
+    DropdownMenuItem(
+        text = { Text(label) },
+        onClick = onClick,
+        leadingIcon = icon?.let { { Icon(it, contentDescription = null, modifier = Modifier.size(18.dp)) } },
+        trailingIcon = if (more) ({ Icon(XnotesIcons.next, contentDescription = null, modifier = Modifier.size(16.dp)) }) else null,
+        enabled = enabled,
+        danger = danger,
     )
 }
 
-/** A text-label chip for a segmented picker (e.g. the eraser's STROKE/AREA modes). */
+/** The first row of a menu's sub-page: its [label], and the way back to the rows it came from. */
+@Composable
+internal fun MenuBack(label: String, onBack: () -> Unit) {
+    DropdownMenuItem(
+        text = { Text(label, fontWeight = FontWeight.Medium) },
+        onClick = onBack,
+        leadingIcon = { Icon(XnotesIcons.prev, contentDescription = stringResource(R.string.back), modifier = Modifier.size(18.dp)) },
+    )
+}
+
+/** The hairline between a menu's groups. */
+@Composable
+internal fun MenuDivider() {
+    Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp).height(1.dp).background(LocalPalette.current.border.toComposeColor()))
+}
+
+/** A small heading over a group of a menu's rows. */
+@Composable
+internal fun MenuCaption(text: String) {
+    Text(
+        text,
+        color = LocalPalette.current.textDim.toComposeColor(),
+        fontSize = 12.sp,
+        fontWeight = FontWeight.Medium,
+        maxLines = 1,
+        modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 6.dp, bottom = 4.dp),
+    )
+}
+
 /** A menu row for one of several choices; the current one wears the selection container. */
 @Composable
 internal fun ChoiceMenuItem(
@@ -1657,7 +1112,7 @@ internal fun ChoiceMenuItem(
         text = { text(fg) },
         onClick = onClick,
         trailingIcon = trailingIcon?.let { icon -> { icon(fg) } },
-        modifier = if (selected) Modifier.background(palette.selectionBackground.toComposeColor()) else Modifier,
+        selected = selected,
     )
 }
 
@@ -1666,9 +1121,9 @@ internal fun ModeChip(label: String, selected: Boolean, onClick: () -> Unit) {
     val palette = LocalPalette.current
     Box(
         Modifier
-            .clip(MaterialTheme.shapes.extraSmall)
+            .clip(MaterialTheme.shapes.small)
             .background(if (selected) palette.selectionBackground.toComposeColor() else palette.surface.toComposeColor())
-            .border(1.dp, if (selected) palette.accent.toComposeColor() else palette.border.toComposeColor(), MaterialTheme.shapes.extraSmall)
+            .border(1.dp, if (selected) palette.accent.toComposeColor() else palette.border.toComposeColor(), MaterialTheme.shapes.small)
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 6.dp),
     ) {

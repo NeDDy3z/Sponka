@@ -4,8 +4,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -16,7 +18,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -41,6 +42,9 @@ import com.xnotes.ui.theme.toComposeColor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+/** The folder list keeps one height, so the dialog holds still from folder to folder. */
+private val LIST_HEIGHT = 300.dp
+
 /**
  * Picks a folder in the tree under [root] to move things into, starting at [start] (a path of (document id,
  * name) below the top folder). [blocked] folders, the ones being moved, can't be opened or picked.
@@ -64,52 +68,48 @@ internal fun FolderPickerDialog(
     val folders by produceState(editor.cachedChildren(root, here)?.filter { it.isDir }, root, here) {
         value = withContext(Dispatchers.IO) { editor.browseChildren(root, here).filter { it.isDir } }
     }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(title) },
-        text = {
-            Column(Modifier.fillMaxWidth().height(380.dp)) {
-                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
-                    Crumb("${rootName}/", current = path.isEmpty()) { path.clear() }
-                    path.forEachIndexed { i, (_, name) ->
-                        Crumb("$name/", current = i == path.lastIndex) { while (path.size > i + 1) path.removeAt(path.lastIndex) }
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-                val list = folders
-                when {
-                    list == null -> EmptyNote(stringResource(R.string.loading))
-                    list.isEmpty() -> EmptyNote(stringResource(R.string.no_folders_here))
-                    else -> LazyColumn(Modifier.fillMaxWidth()) {
-                        items(list, key = { it.documentUri }) { f ->
-                            val id = editor.browseDocId(f.documentUri)
-                            val off = blocked(id)
-                            Row(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .height(48.dp)
-                                    .clip(MaterialTheme.shapes.small)
-                                    .clickable(enabled = !off) { path.add(id to f.name) }
-                                    .alpha(if (off) 0.4f else 1f)
-                                    .padding(horizontal = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            ) {
-                                val code = f.color?.let { codeTint(it, palette) }
-                                Icon(XnotesIcons.folder, null, tint = code ?: palette.textDim.toComposeColor(), modifier = Modifier.size(20.dp))
-                                Text(f.name, color = palette.text.toComposeColor(), fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                                Icon(XnotesIcons.next, null, tint = palette.textDim.toComposeColor(), modifier = Modifier.size(16.dp))
-                            }
+    SheetDialog(
+        title = title,
+        onDismiss = onDismiss,
+        width = 360.dp,
+        foot = { ConfirmButtons(confirmLabel, onDismiss, enabled = !blocked(here)) { onPick(here) } },
+    ) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp).horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+            Crumb("${rootName}/", current = path.isEmpty()) { path.clear() }
+            path.forEachIndexed { i, (_, name) ->
+                Crumb("$name/", current = i == path.lastIndex) { while (path.size > i + 1) path.removeAt(path.lastIndex) }
+            }
+        }
+        PanelCard(Modifier.height(LIST_HEIGHT), padding = PaddingValues(6.dp)) {
+            val list = folders
+            when {
+                list == null -> EmptyNote(stringResource(R.string.loading), Modifier.fillMaxHeight())
+                list.isEmpty() -> EmptyNote(stringResource(R.string.no_folders_here), Modifier.fillMaxHeight())
+                else -> LazyColumn(Modifier.fillMaxWidth()) {
+                    items(list, key = { it.documentUri }) { f ->
+                        val id = editor.browseDocId(f.documentUri)
+                        val off = blocked(id)
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                                .clip(MaterialTheme.shapes.small)
+                                .clickable(enabled = !off) { path.add(id to f.name) }
+                                .alpha(if (off) 0.4f else 1f)
+                                .padding(horizontal = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            val code = f.color?.let { codeTint(it, palette) }
+                            Icon(XnotesIcons.folder, null, tint = code ?: palette.textDim.toComposeColor(), modifier = Modifier.size(20.dp))
+                            Text(f.name, color = palette.text.toComposeColor(), fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                            Icon(XnotesIcons.next, null, tint = palette.textDim.toComposeColor(), modifier = Modifier.size(16.dp))
                         }
                     }
                 }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = { onPick(here) }, enabled = !blocked(here)) { Text(confirmLabel) }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
-    )
+        }
+    }
 }
 
 /**
@@ -131,10 +131,18 @@ internal fun DocumentLinkDialog(editor: Editor, onDismiss: () -> Unit, onPick: (
     var label by remember { mutableStateOf("") }
     var showLabel by remember { mutableStateOf(true) }
     val file = picked
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.add_link_to_document)) },
-        text = {
+    SheetDialog(
+        title = stringResource(R.string.add_link_to_document),
+        onDismiss = onDismiss,
+        foot = {
+            DialogButtons {
+                DialogButton(stringResource(if (file != null) R.string.link_back else R.string.cancel)) { if (file != null) picked = null else onDismiss() }
+                if (file != null) DialogButton(stringResource(R.string.add), ButtonKind.CONFIRM) {
+                    onPick((path.map { it.second } + file.name).joinToString("/"), label.trim().takeIf { showLabel && it.isNotEmpty() })
+                }
+            }
+        },
+    ) {
             if (file != null) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(file.name, color = palette.textDim.toComposeColor(), fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -144,7 +152,7 @@ internal fun DocumentLinkDialog(editor: Editor, onDismiss: () -> Unit, onPick: (
                         Text(stringResource(R.string.show_link_label), color = palette.text.toComposeColor(), fontSize = 14.sp)
                     }
                 }
-                return@AlertDialog
+                return@SheetDialog
             }
             Column(Modifier.fillMaxWidth().height(380.dp)) {
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
@@ -154,7 +162,7 @@ internal fun DocumentLinkDialog(editor: Editor, onDismiss: () -> Unit, onPick: (
                     }
                 }
                 Spacer(Modifier.height(8.dp))
-                val list = entries?.filter { it.isDir || com.xnotes.core.util.ReaderKind.isListed(it.name) }?.sortedWith(compareBy({ !it.isDir }, { it.name.lowercase() }))
+                val list = entries?.filter { it.isDir || com.xnotes.core.util.ReaderKind.isListed(it.name) }?.sortedWith(compareBy<BrowseEntry> { !it.isDir }.thenBy(naturalOrder) { it.name })
                 when {
                     list == null -> EmptyNote(stringResource(R.string.loading))
                     list.isEmpty() -> EmptyNote(stringResource(R.string.no_files_here))
@@ -181,16 +189,5 @@ internal fun DocumentLinkDialog(editor: Editor, onDismiss: () -> Unit, onPick: (
                     }
                 }
             }
-        },
-        confirmButton = {
-            if (file != null) TextButton(
-                onClick = { onPick((path.map { it.second } + file.name).joinToString("/"), label.trim().takeIf { showLabel && it.isNotEmpty() }) },
-            ) { Text(stringResource(R.string.add)) }
-        },
-        dismissButton = {
-            TextButton(onClick = { if (file != null) picked = null else onDismiss() }) {
-                Text(stringResource(if (file != null) R.string.link_back else R.string.cancel))
-            }
-        },
-    )
+    }
 }

@@ -93,6 +93,14 @@ class EraseSession(private val doc: InfiniteDocument) {
         return dirty
     }
 
+    /** Take [items] off whole, as a lasso erase does once the loop closes. */
+    fun eraseWhole(items: List<CanvasItem>) {
+        for (item in items) {
+            val at = doc.replaceItem(item, emptyList())
+            if (at >= 0) record(item, at, emptyList())
+        }
+    }
+
     /**
      * The single undoable edit for the whole drag, or null when it took nothing. A fill comes off
      * before any cut, as it did in the drag, so undo puts it back on a shape that is on the canvas.

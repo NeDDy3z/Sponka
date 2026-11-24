@@ -95,7 +95,7 @@ private fun syncDirections(service: String) = listOf(
 )
 
 @Composable
-fun CloudSyncSection(editor: Editor, onOpenLog: () -> Unit) {
+fun CloudSyncSection(editor: Editor, onOpenLog: (() -> Unit)?) {
     val palette = LocalPalette.current
     val context = LocalContext.current
     var prefs by remember { mutableStateOf(editor.preferences) }
@@ -239,7 +239,7 @@ private fun SignedIn(
     prefs: Preferences,
     status: SyncManager.Status,
     onUpdate: (Preferences) -> Unit,
-    onOpenLog: () -> Unit,
+    onOpenLog: (() -> Unit)?,
     onSignOut: () -> Unit,
 ) {
     val palette = LocalPalette.current
@@ -300,7 +300,7 @@ private fun SignedIn(
             enabled = !status.running && !folder?.id.isNullOrEmpty() && prefs.syncDirection != "off",
             colors = ButtonDefaults.buttonColors(containerColor = palette.accent.toComposeColor(), contentColor = palette.bg.toComposeColor()),
         ) { Text(stringResource(R.string.sync_now)) }
-        TextButton(onClick = onOpenLog) { Text(stringResource(R.string.sync_log), fontSize = 13.sp) }
+        onOpenLog?.let { TextButton(onClick = it) { Text(stringResource(R.string.sync_log), fontSize = 13.sp) } }
     }
     if (status.running) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -450,7 +450,7 @@ private fun FolderPicker(service: CloudService, onDismiss: () -> Unit, onSelecte
         loading = true
         error = null
         SyncManager.listFolders(context, service, current.first).fold(
-            { folders = it.sortedBy { f -> f.name.lowercase() }; loading = false },
+            { folders = it.sortedWith(compareBy(naturalOrder) { f -> f.name }); loading = false },
             { error = it.message; loading = false },
         )
     }

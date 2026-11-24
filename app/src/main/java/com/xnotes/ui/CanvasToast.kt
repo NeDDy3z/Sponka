@@ -3,11 +3,15 @@ package com.xnotes.ui
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -18,8 +22,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.xnotes.core.geometry.Pt
+import com.xnotes.core.infinite.OverlayTessellator
 import com.xnotes.ui.theme.LocalPalette
 import com.xnotes.ui.theme.toComposeColor
 import kotlinx.coroutines.delay
@@ -74,4 +83,41 @@ fun BoxScope.CanvasToastPill(host: ToastHost) {
                 .padding(horizontal = 18.dp, vertical = 9.dp),
         )
     }
+}
+
+/** The angle of a line end or rotation being dragged, [at] the pen in viewport pixels, and the dashed
+ *  [guide] the snap lies along while the angle sits on a 45-degree step. */
+data class AngleReadout(val at: Pt, val deg: Int, val guide: Pair<Pt, Pt>?)
+
+/** [InfiniteEditor.angleReadout] in the same pill as the other readouts, up and right of the pen. */
+@Composable
+fun AngleReadoutPill(canvas: InfiniteEditor) {
+    val (at, deg, guide) = canvas.angleReadout ?: return
+    val palette = LocalPalette.current
+    val shape = MaterialTheme.shapes.small
+    if (guide != null) {
+        val accent = palette.accent.toComposeColor()
+        Canvas(Modifier.fillMaxSize()) {
+            val on = OverlayTessellator.DASH_ON_DP.dp.toPx()
+            val gap = OverlayTessellator.DASH_GAP_DP.dp.toPx()
+            drawLine(
+                accent,
+                Offset(guide.first.x.toFloat(), guide.first.y.toFloat()),
+                Offset(guide.second.x.toFloat(), guide.second.y.toFloat()),
+                strokeWidth = 1.5.dp.toPx(),
+                pathEffect = PathEffect.dashPathEffect(floatArrayOf(on, gap)),
+            )
+        }
+    }
+    Text(
+        text = "$deg°",
+        color = palette.text.toComposeColor(),
+        fontSize = 13.sp,
+        modifier = Modifier
+            .offset { IntOffset((at.x + 24.dp.toPx()).toInt(), (at.y - 56.dp.toPx()).toInt()) }
+            .clip(shape)
+            .background(palette.menuBg.toComposeColor())
+            .border(1.dp, palette.border.toComposeColor(), shape)
+            .padding(horizontal = 10.dp, vertical = 5.dp),
+    )
 }

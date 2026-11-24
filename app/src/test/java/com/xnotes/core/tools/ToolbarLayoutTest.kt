@@ -14,7 +14,7 @@ class ToolbarLayoutTest {
 
     @Test fun defaultMirrorsToolbarGrouping() {
         val d = ToolbarLayout.DEFAULT
-        assertEquals(11, d.sections.size)
+        assertEquals(9, d.sections.size)
         assertEquals(listOf(ToolbarItem.HOME, ToolbarItem.TITLE), d.sections[0].entries.map { it.item })
         assertEquals(
             listOf(
@@ -23,14 +23,16 @@ class ToolbarLayoutTest {
             d.sections[2].entries.map { it.item },
         )
         assertEquals(
-            listOf(ToolbarItem.PAN, ToolbarItem.READER, ToolbarItem.SELECT, ToolbarItem.INSERT_SPACE, ToolbarItem.SCREENSHOT),
+            listOf(ToolbarItem.PAN, ToolbarItem.PENCILCASE, ToolbarItem.SELECT, ToolbarItem.INSERT_SPACE, ToolbarItem.SCREENSHOT),
             d.sections[3].entries.map { it.item },
         )
         assertEquals(
             listOf(ToolbarItem.WAND, ToolbarItem.TAPE, ToolbarItem.SHAPE, ToolbarItem.RULER, ToolbarItem.TEXT, ToolbarItem.TEXT_BOX, ToolbarItem.MARKUP),
             d.sections[4].entries.map { it.item },
         )
-        assertEquals(listOf(ToolbarItem.FULLSCREEN), d.sections[10].entries.map { it.item })
+        assertEquals(listOf(ToolbarItem.UNDO, ToolbarItem.REDO), d.sections[7].entries.map { it.item })
+        assertEquals(listOf(ToolbarItem.SEARCH, ToolbarItem.ADD_PAGE, ToolbarItem.READER, ToolbarItem.MARGINS, ToolbarItem.VIEW), d.sections[8].entries.map { it.item })
+        assertEquals(listOf(true, false, true, false, false), d.sections[8].entries.map { it.visible })
     }
 
     @Test fun defaultContainsEveryItemOnce() {
@@ -65,12 +67,12 @@ class ToolbarLayoutTest {
 
     @Test fun missingItemsAppendedToLastSectionVisible() {
         val raw = ToolbarLayout.DEFAULT.toRaw()
-            .map { s -> s.filterNot { it.first == ToolbarItem.FULLSCREEN.id || it.first == ToolbarItem.STYLES.id } }
+            .map { s -> s.filterNot { it.first == ToolbarItem.RULER.id || it.first == ToolbarItem.IMAGE.id } }
         val back = ToolbarLayout.fromRaw(raw)
         assertEquals(ToolbarLayout.NOTE_ITEMS, back.items().toSet())
         val last = back.sections.last().entries
-        assertTrue(last.any { it.item == ToolbarItem.FULLSCREEN && it.visible })
-        assertTrue(last.any { it.item == ToolbarItem.STYLES && it.visible })
+        assertTrue(last.any { it.item == ToolbarItem.RULER && it.visible })
+        assertTrue(last.any { it.item == ToolbarItem.IMAGE && it.visible })
     }
 
     @Test fun missingTextBoxSlotsInAfterText() {
@@ -95,14 +97,20 @@ class ToolbarLayoutTest {
         assertTrue(ToolbarItem.MARKUP !in ToolbarLayout.CANVAS_ITEMS)
     }
 
-    @Test fun missingViewSlotsInAfterStyles() {
-        // A layout stored before the View menu existed: it must appear right after Styles.
-        val raw = ToolbarLayout.DEFAULT.toRaw()
-            .map { s -> s.filterNot { it.first == ToolbarItem.VIEW.id } }
+    @Test fun aStoredBarLosesThePageAndViewItems() {
+        // A bar stored before the gear: everything that moved behind it is dropped, nothing else. Margins and view came back as items.
+        val old = listOf("page_nav", "styles", "zoom", "fit", "zoom_lock", "fullscreen")
+        val raw = ToolbarLayout.DEFAULT.toRaw() + listOf(old.map { it to true })
         val back = ToolbarLayout.fromRaw(raw)
-        val sec = back.sections.first { s -> s.entries.any { it.item == ToolbarItem.STYLES } }
-        val items = sec.entries.map { it.item }
-        assertEquals(items.indexOf(ToolbarItem.STYLES) + 1, items.indexOf(ToolbarItem.VIEW))
+        assertEquals(ToolbarLayout.NOTE_ITEMS, back.items().toSet())
+        assertTrue(back.items().none { it.id in old })
+        // The three sections that held only these go too.
+        assertEquals(ToolbarLayout.DEFAULT.sections.size, back.sections.size)
+    }
+
+    @Test fun aSectionStoredEmptyStays() {
+        val raw = ToolbarLayout.DEFAULT.toRaw() + listOf(emptyList())
+        assertEquals(ToolbarLayout.DEFAULT.sections.size + 1, ToolbarLayout.fromRaw(raw).sections.size)
     }
 
     @Test fun missingTextBoxWithoutTextAppendsToLastSection() {
@@ -194,11 +202,18 @@ class ToolbarLayoutTest {
         assertEquals(ToolbarLayout.CANVAS_ITEMS.size, items.size)
     }
 
-    @Test fun theTwoBarsDoNotShareTheirOwnItems() {
-        assertTrue(ToolbarItem.WAYPOINTS !in ToolbarLayout.NOTE_ITEMS)
-        assertTrue(ToolbarItem.MINIMAP !in ToolbarLayout.NOTE_ITEMS)
-        assertTrue(ToolbarItem.PAGE_NAV !in ToolbarLayout.CANVAS_ITEMS)
+    @Test fun theCanvasBarHoldsNoPageTools() {
+        assertTrue(ToolbarItem.RULER !in ToolbarLayout.CANVAS_ITEMS)
         assertTrue(ToolbarItem.TEXT !in ToolbarLayout.CANVAS_ITEMS)
+        assertTrue(ToolbarLayout.NOTE_ITEMS.containsAll(ToolbarLayout.CANVAS_ITEMS))
+    }
+
+    @Test fun aStoredCanvasBarLosesItsViewItems() {
+        val old = listOf("styles", "waypoints", "minimap", "zoom", "fit", "zoom_lock")
+        val raw = ToolbarLayout.CANVAS_DEFAULT.toRaw() + listOf(old.map { it to true })
+        val back = ToolbarLayout.fromRaw(raw, ToolbarLayout.CANVAS_ITEMS, ToolbarLayout.CANVAS_DEFAULT)
+        assertEquals(ToolbarLayout.CANVAS_ITEMS, back.items().toSet())
+        assertTrue(back.items().none { it.id in old })
     }
 
     @Test fun theCanvasDefaultRoundTripsThroughRaw() {
@@ -224,10 +239,10 @@ class ToolbarLayoutTest {
 
     @Test fun aCanvasLayoutStoredBeforeAnItemExistedGrowsIt() {
         val raw = ToolbarLayout.CANVAS_DEFAULT.toRaw()
-            .map { s -> s.filterNot { it.first == ToolbarItem.MINIMAP.id } }
+            .map { s -> s.filterNot { it.first == ToolbarItem.IMAGE.id } }
         val back = ToolbarLayout.fromRaw(raw, ToolbarLayout.CANVAS_ITEMS, ToolbarLayout.CANVAS_DEFAULT)
         assertEquals(ToolbarLayout.CANVAS_ITEMS, back.items().toSet())
-        assertTrue(back.sections.last().entries.any { it.item == ToolbarItem.MINIMAP && it.visible })
+        assertTrue(back.sections.last().entries.any { it.item == ToolbarItem.IMAGE && it.visible })
     }
 
     @Test fun anEmptyCanvasLayoutFallsBackToTheCanvasDefault() {
@@ -263,5 +278,12 @@ class ToolbarLayoutTest {
         assertTrue(ToolbarItem.INSERT_SPACE !in ToolbarLayout.CANVAS_DEFAULT.items())
         val canvas = ToolbarLayout.fromRaw(listOf(listOf("select" to true, "insert_space" to true)), ToolbarLayout.CANVAS_ITEMS, ToolbarLayout.CANVAS_DEFAULT)
         assertTrue(ToolbarItem.INSERT_SPACE !in canvas.items())
+    }
+
+    @Test fun addPageJoinsHiddenAfterSearch() {
+        val d = ToolbarLayout.DEFAULT.sections[8].entries
+        assertEquals(ToolbarEntry(ToolbarItem.ADD_PAGE, visible = false), d[1])
+        val stored = ToolbarLayout.fromRaw(listOf(listOf("search" to true, "colors" to true)))
+        assertEquals(ToolbarEntry(ToolbarItem.ADD_PAGE, visible = false), stored.sections[0].entries[1])
     }
 }

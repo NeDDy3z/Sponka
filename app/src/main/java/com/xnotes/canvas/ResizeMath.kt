@@ -11,6 +11,7 @@ import com.xnotes.core.model.TextItem
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
+import kotlin.math.exp
 import kotlin.math.max
 import kotlin.math.sin
 
@@ -43,16 +44,13 @@ object ResizeMath {
             val r = b.right + pageTopLeft.x
             val t = b.top + pageTopLeft.y
             val bot = b.bottom + pageTopLeft.y
-            val cx = b.centerX + pageTopLeft.x
             val cy = b.centerY + pageTopLeft.y
-            // Eight handles: four corners + four side midpoints.
+            // Six handles: the corners scale it, the two sides set its width. Its text sets its height.
             listOf(
                 ResizeHandle(HandleId.TL, Pt(l, t)),
-                ResizeHandle(HandleId.T, Pt(cx, t)),
                 ResizeHandle(HandleId.TR, Pt(r, t)),
                 ResizeHandle(HandleId.R, Pt(r, cy)),
                 ResizeHandle(HandleId.BR, Pt(r, bot)),
-                ResizeHandle(HandleId.B, Pt(cx, bot)),
                 ResizeHandle(HandleId.BL, Pt(l, bot)),
                 ResizeHandle(HandleId.L, Pt(l, cy)),
             )
@@ -116,9 +114,12 @@ object ResizeMath {
     /** On-screen size (device px) below which a selection gets a move grip, as its handles crowd out its body. */
     const val MOVE_GRIP_BELOW_PX = 120.0
 
+    /** True when [obb] seen at [zoom] is below [MOVE_GRIP_BELOW_PX], so it gets a move grip and no box handles. */
+    fun obbCrowded(obb: Obb, zoom: Double): Boolean = kotlin.math.max(obb.halfW, obb.halfH) * 2.0 * zoom < MOVE_GRIP_BELOW_PX
+
     /** The move-grip centre, [arm] content px past the bottom edge of [obb] seen at [zoom], or null when the box is big enough to grab. */
     fun obbMoveGrip(obb: Obb, zoom: Double, arm: Double): Pt? =
-        if (kotlin.math.max(obb.halfW, obb.halfH) * 2.0 * zoom >= MOVE_GRIP_BELOW_PX) null
+        if (!obbCrowded(obb, zoom)) null
         else obb.localToWorld(Pt(0.0, obb.halfH + arm))
 
     /** The pan tool's four-way arrows as polylines centred on [c], reaching [r] content px out. */
@@ -276,9 +277,12 @@ object ResizeMath {
         return anchor to Pt(px, py)
     }
 
-    /** Open-shape resize: drag the grabbed endpoint; the other stays fixed. */
-    fun resizeOpenShape(start: Pt, end: Pt, handle: HandleId, pointer: Pt): Pair<Pt, Pt> =
-        if (handle == HandleId.START) pointer to end else start to pointer
+    /** Open-shape resize: drag the grabbed endpoint, snapped onto a run every [step] (rad, null for none) from the other, which stays fixed. */
+    fun resizeOpenShape(start: Pt, end: Pt, handle: HandleId, pointer: Pt, step: Double? = Math.PI / 4.0): Pair<Pt, Pt> = when {
+        step == null -> if (handle == HandleId.START) pointer to end else start to pointer
+        handle == HandleId.START -> snapAxis(end, pointer, step) to end
+        else -> start to snapAxis(start, pointer, step)
+    }
 
     /** Square-locked closed-shape resize (the perfect circle): the box stays square, sized by the
      *  larger pointer delta from the anchored corner. Returns new (start, end). */
@@ -303,20 +307,60 @@ object ResizeMath {
         }
     }
 
-    /** [p] pinned to an exact horizontal or vertical run from [anchor] when it lands within
-     *  [InteractionController.SHAPE_AXIS_SNAP_DEG] of one (mirrors the recognizer's axis snap). */
-    fun snapAxis(anchor: Pt, p: Pt): Pt {
+    /** [p] pinned onto the nearest run every [step] (rad) from [anchor] when it lands within
+     *  [snapWindow] of one, as far along it as [p] reaches. */
+    fun snapAxis(anchor: Pt, p: Pt, step: Double = Math.PI / 4.0): Pt {
         val dx = p.x - anchor.x
         val dy = p.y - anchor.y
         if (dx == 0.0 && dy == 0.0) return p
-        val snap = Math.toRadians(InteractionController.SHAPE_AXIS_SNAP_DEG)
-        val fromHoriz = atan2(abs(dy), abs(dx)) // 0 = horizontal, PI/2 = vertical
-        return when {
-            fromHoriz <= snap -> Pt(p.x, anchor.y)
-            fromHoriz >= Math.PI / 2.0 - snap -> Pt(anchor.x, p.y)
-            else -> p
-        }
+        val angle = atan2(dy, dx)
+        val snapped = stickToStep(angle, step, snapWindow(step))
+        return if (snapped == angle) p else pointAlong(anchor, p, snapped)
     }
+
+    /** [p] dropped onto the run from [anchor] at [angle] (rad), as far along it as [p] reaches. */
+    fun pointAlong(anchor: Pt, p: Pt, angle: Double): Pt {
+        // Drop the rounding dust so a level or upright run comes out exact.
+        val ux = cos(angle).let { if (abs(it) < 1e-12) 0.0 else it }
+        val uy = sin(angle).let { if (abs(it) < 1e-12) 0.0 else it }
+        val along = (p.x - anchor.x) * ux + (p.y - anchor.y) * uy
+        return Pt(anchor.x + ux * along, anchor.y + uy * along)
+    }
+
+    /** A line end dragged to [pointer], its angle about the other end snapped by [snap]. Returns new (start, end). */
+    fun snapOpenEnd(start: Pt, end: Pt, handle: HandleId, pointer: Pt, snap: AngleSnap): Pair<Pt, Pt> {
+        val held = if (handle == HandleId.START) end else start
+        val angle = atan2(pointer.y - held.y, pointer.x - held.x)
+        val snapped = snap.snap(angle)
+        val pen = if (snapped == angle) pointer else pointAlong(held, pointer, snapped)
+        return resizeOpenShape(start, end, handle, pen, step = null)
+    }
+
+    /** How close (rad) an angle must come to a [step] to be pulled onto it: wide for big steps, a third of a small one. */
+    fun snapWindow(step: Double): Double = minOf(InteractionController.ANGLE_SNAP_RAD, step / 3.0)
+
+    /** Whether [angle] (rad) sits exactly on a 15-degree step, as every snap leaves it. */
+    fun onSnapStep(angle: Double): Boolean {
+        val k = angle / Math.toRadians(15.0)
+        return abs(k - Math.round(k)) < 1e-9
+    }
+
+    /** The run from [a] to [b], carried on [overhang] past each end, or null when they coincide. */
+    fun guideThrough(a: Pt, b: Pt, overhang: Double): Pair<Pt, Pt>? {
+        val len = a.distanceTo(b)
+        if (len == 0.0) return null
+        val u = Pt((b.x - a.x) / len, (b.y - a.y) / len)
+        return Pt(a.x - u.x * overhang, a.y - u.y * overhang) to Pt(b.x + u.x * overhang, b.y + u.y * overhang)
+    }
+
+    /** [angle] on the nearest whole multiple of [step] when within [tolerance] of it, otherwise left as it is. */
+    fun stickToStep(angle: Double, step: Double, tolerance: Double): Double {
+        val nearest = Math.round(angle / step) * step
+        return if (abs(angle - nearest) <= tolerance) nearest else angle
+    }
+
+    /** The direction from [from] to [to] on screen (y down), in whole degrees clockwise from +x, 0..359. */
+    fun angleDeg(from: Pt, to: Pt): Int = Math.round(Math.toDegrees(atan2(to.y - from.y, to.x - from.x))).toInt().mod(360)
 
     /** [p] turned about [anchor] onto the nearest whole step of [stepDeg], as far along it as [p] reaches. */
     fun stepAngle(anchor: Pt, p: Pt, stepDeg: Double): Pt {
@@ -338,28 +382,86 @@ object ResizeMath {
         val sy = if (p.y >= anchor.y) 1.0 else -1.0
         return Pt(anchor.x + sx * h * aspect, anchor.y + sy * h)
     }
+}
 
-    /**
-     * Text box rect resize via any of the 8 handles (page-local pointer). [width] is
-     * the wrap width; [height] is the reserved minimum (the box still grows to fit its
-     * text). The dragged edge follows the pointer, the opposite edge stays fixed, and
-     * both axes clamp to [MIN_SIZE]. Returns new (pos, width, height).
-     */
-    fun resizeText(pos: Pt, width: Double, height: Double, handle: HandleId, pointer: Pt): Triple<Pt, Double, Double> {
-        var left = pos.x
-        var top = pos.y
-        var right = pos.x + width
-        var bottom = pos.y + height
-        val movesLeft = handle == HandleId.TL || handle == HandleId.BL || handle == HandleId.L
-        val movesRight = handle == HandleId.TR || handle == HandleId.BR || handle == HandleId.R
-        val movesTop = handle == HandleId.TL || handle == HandleId.TR || handle == HandleId.T
-        val movesBottom = handle == HandleId.BL || handle == HandleId.BR || handle == HandleId.B
-        if (movesLeft) left = pointer.x
-        if (movesRight) right = pointer.x
-        if (movesTop) top = pointer.y
-        if (movesBottom) bottom = pointer.y
-        if (right - left < MIN_SIZE) { if (movesLeft) left = right - MIN_SIZE else right = left + MIN_SIZE }
-        if (bottom - top < MIN_SIZE) { if (movesTop) top = bottom - MIN_SIZE else bottom = top + MIN_SIZE }
-        return Triple(Pt(left, top), right - left, bottom - top)
+/**
+ * Snapping for one rotate or line-end drag. How fast it turns decides it: a quick turn snaps to
+ * 45 degrees, a slower one not at all. A step once caught is held until the
+ * drag leaves its window, so a change of speed past it never pulls the angle back, and a step just
+ * left cannot catch again until the drag is clear of it. Turning slowly off a held step lets go
+ * early, so a snapped angle can still be fine-tuned by hand.
+ */
+class AngleSnap {
+    private var lastIn = Double.NaN
+    private var lastOut = 0.0
+    private var lastNanos = 0L
+    private var radPerSec = 0.0
+    private var held: Double? = null
+    private var heldWindow = 0.0
+    private var heldAtAnySpeed = false
+    private var left: Double? = null
+
+    fun reset() {
+        lastIn = Double.NaN
+        radPerSec = 0.0
+        held = null
+        left = null
+    }
+
+    /** The drag's [angle] (rad) at [nanos], snapped; with [quarterTurns] quarter turns catch from further away at any speed. */
+    fun snap(angle: Double, quarterTurns: Boolean = false, nanos: Long = System.nanoTime()): Double {
+        // The same angle again (a preview and then its commit) gets the same answer.
+        if (angle == lastIn) return lastOut
+        val prev = lastIn
+        if (!prev.isNaN() && nanos > lastNanos) {
+            val dt = (nanos - lastNanos) / 1e9
+            radPerSec += (abs(wrap(angle - prev)) / dt - radPerSec) * (1.0 - exp(-dt / SMOOTH_SEC))
+        }
+        lastIn = angle
+        lastNanos = nanos
+        lastOut = pick(angle, prev, quarterTurns)
+        return lastOut
+    }
+
+    private fun pick(angle: Double, prev: Double, quarterTurns: Boolean): Double {
+        val step = TIERS.firstOrNull { radPerSec >= it.first }?.second
+        held?.let { h ->
+            val off = abs(wrap(angle - h))
+            if (off <= heldWindow && (step != null || heldAtAnySpeed || off <= SLOW_RELEASE_RAD)) return angle + wrap(h - angle)
+            left = h
+            held = null
+        }
+        left?.let { if (abs(wrap(angle - it)) > InteractionController.ROTATE_SNAP_STICK_RAD) left = null }
+        val quarter = Math.PI / 2.0
+        val tries = listOfNotNull(
+            if (quarterTurns) quarter to InteractionController.ROTATE_SNAP_STICK_RAD else null,
+            step?.let { it to ResizeMath.snapWindow(it) },
+        )
+        for ((s, window) in tries) {
+            val nearest = Math.round(angle / s) * s
+            val justLeft = left?.let { abs(wrap(nearest - it)) < 1e-9 } ?: false
+            // Only a step at or ahead of where the drag came from, so a snap never pulls back against the turn.
+            val behind = !prev.isNaN() && wrap(nearest - prev) * wrap(angle - prev) < 0.0
+            if (abs(angle - nearest) <= window && !justLeft && !behind) {
+                held = nearest
+                heldWindow = window
+                heldAtAnySpeed = s == quarter && quarterTurns
+                return nearest
+            }
+        }
+        return angle
+    }
+
+    private fun wrap(a: Double): Double = atan2(sin(a), cos(a))
+
+    companion object {
+        /** (minimum turning speed, snap step), fastest first; below the last a drag is careful placing and stays free. */
+        val TIERS = listOf(
+            Math.toRadians(30.0) to Math.toRadians(45.0),
+        )
+        const val SMOOTH_SEC = 0.12
+
+        /** How far a slow drag may creep off a held step before it lets go. */
+        val SLOW_RELEASE_RAD = Math.toRadians(2.0)
     }
 }

@@ -35,4 +35,14 @@ object FlowMerge {
         dst.paragraphs.addAll(paras)
         dst.touch()
     }
+
+    /** A copy of [src] holding just [range], its end paragraphs cut where the range cuts them. */
+    fun slice(src: TextFlow, range: FlowRange): TextFlow {
+        val r = range.normalized()
+        val copy = src.deepCopy()
+        val ed = FlowEditor(copy)
+        ed.deleteRange(FlowRange(r.end, copy.endPos()))
+        ed.replaceRange(FlowRange(FlowPos.START, r.start), "", adoptEndProps = true)
+        return copy
+    }
 }

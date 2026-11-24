@@ -134,7 +134,6 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         onCommitSelection = { commitSelection(it) },
         onLiftSelection = { items, at -> scene.setLift(items, at) },
         devicePxPerDp = { devicePxPerDp },
-        measureSteadying = { debugVisible },
         onMinimapPress = { vx, vy -> minimapTap(vx, vy) },
         onContextMenu = { vp, content, locked -> contextMenu = ContextMenuTarget(vp.x, vp.y, content, locked) },
         hasPasteContent = { hasClipboardItems || clipboardHasImage },
@@ -145,6 +144,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         onAudioTap = { tapAudio(it) },
         onPeelTape = { peelTape(it) },
         onUserMovedView = { AudioPlayback.userMoved(this) },
+        onAngleReadout = { angleReadout = it },
     )
 
     private val devicePxPerDp = appContext.resources.displayMetrics.density.toDouble()
@@ -167,6 +167,10 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
 
     /** Whether a held freehand stroke may snap to the shape it looks like. */
     private var detectShapes = false
+
+    /** The angle of a line end or rotation being dragged, or null when none is. */
+    var angleReadout by mutableStateOf<AngleReadout?>(null)
+        private set
 
     /** Live zoom, mirrored into Compose so a readout can follow a pinch frame by frame. */
     var zoomPercent by mutableStateOf(100)
@@ -683,9 +687,13 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     }
 
     override fun pasteClipboardImageAt(content: Pt) {
-        val bytes = com.xnotes.platform.SystemClipboard.imageBytes(appContext) ?: return
-        insertImage(bytes, content)
-        showToast(appContext.getString(R.string.toast_inserted))
+        kotlin.concurrent.thread(name = "xnotes-clip-read", isDaemon = true) {
+            val bytes = com.xnotes.platform.SystemClipboard.imageBytes(appContext) ?: return@thread
+            mainHandler.post {
+                insertImage(bytes, content)
+                showToast(appContext.getString(R.string.toast_inserted))
+            }
+        }
     }
 
     // --- crop: a lone picture cut down to part of itself, for good ---
@@ -743,6 +751,14 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         val bmp = renderSelectionBitmap()
         val ok = bmp != null && com.xnotes.platform.SystemClipboard.putImage(appContext, bmp, "xnotes selection")
         onMessage?.invoke(appContext.getString(if (ok) R.string.image_copied else R.string.err_copy_image), null)
+    }
+
+    /** Hands a saved selection to the sticker library the paged editor owns. */
+    var onSaveSticker: ((List<CanvasItem>, Int, android.graphics.Bitmap?) -> Unit)? = null
+
+    override fun saveSelectionAsSticker() {
+        if (selection.isEmpty) return
+        onSaveSticker?.invoke(selection.items.deepCopyAll(textMeasurer), document.dpi, renderSelectionBitmap())
     }
 
     override fun selectionImageForShare(): java.io.File? {
@@ -845,6 +861,40 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
 
     /** The fills as a refill preview found them, so its settling call records them as one step. */
     private var refillBaseline: Map<ShapeItem, Rgba?>? = null
+
+    override fun selectionEffects() = com.xnotes.core.history.RestyleEffects.effects(selection.items)
+
+    override fun setSelectionEffects(dashed: Boolean?, neon: Boolean?, filled: Boolean?) {
+        val entries = com.xnotes.core.history.RestyleEffects.of(selection.items, dashed, neon, filled)
+        if (entries.isEmpty()) return
+        val command = com.xnotes.core.history.RestyleEffects(entries)
+        command.redo()
+        document.itemsChanged(entries.map { it.item })
+        history.push(OnCanvas(document, command, entries.map { it.item }))
+        markDirty()
+        refresh()
+        publishOverlay()
+    }
+
+    private val shapeLook = com.xnotes.core.history.LiveRestyle.shapes()
+    private val penLook = com.xnotes.core.history.LiveRestyle.pens()
+
+    override fun selectionShapeLook() = shapeLook.first(selection.items)
+    override fun selectionPenLook() = penLook.first(selection.items)
+
+    override fun restyleSelectionShapes(preview: Boolean, change: (com.xnotes.core.history.ShapeLook) -> com.xnotes.core.history.ShapeLook) =
+        settleLook(shapeLook.apply(selection.items, preview, change))
+
+    override fun restyleSelectionPens(preview: Boolean, change: (com.xnotes.core.history.PenLook) -> com.xnotes.core.history.PenLook) =
+        settleLook(penLook.apply(selection.items, preview, change))
+
+    private fun settleLook(step: com.xnotes.core.history.Command?) {
+        document.itemsChanged(selection.items)
+        step?.let { history.push(OnCanvas(document, it, selection.items)) }
+        markDirty()
+        refresh()
+        publishOverlay()
+    }
 
     override fun selectionTapePattern(): com.xnotes.core.model.TapePattern? =
         selection.items.firstNotNullOfOrNull { (it as? TapeItem)?.pattern }
@@ -1043,7 +1093,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
             centred = true,
         )
         editingField = f
-        textBar = com.xnotes.canvas.TextBar(f.screenBounds(), l.style.face, l.style.pointSize, l.style.rgba, editing = true)
+        textBar = com.xnotes.canvas.TextBar(f.screenBounds(), l.style.face, l.style.pointSize, editing = true)
     }
 
     override fun setSelectionCount(n: Int) {
@@ -1124,6 +1174,20 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         toolConfigs[forTool] = config
     }
 
+    /** The armed tool as a pencilcase item, or null when it is not one the pencilcase holds. */
+    fun pencilcaseSnapshot(): com.xnotes.core.tools.PencilcaseItem? = tool.takeIf { it in com.xnotes.core.tools.PencilcaseItem.TOOLS }
+        ?.let { com.xnotes.core.tools.PencilcaseItem.of(it, toolConfig(it), shapeConfig, inkColor) }
+
+    /** Arm [item]'s tool with its saved setup and ink; the ink goes through its swatch when one matches. */
+    fun armPencilcase(item: com.xnotes.core.tools.PencilcaseItem) {
+        if (item.tool == Tool.TABLE) return // a canvas has no tables
+        armTool(item.tool)
+        if (item.tool == Tool.SHAPE) updateShapeConfig(item.shape) else updateToolConfig(item.tool, item.config)
+        if (item.tool == Tool.ERASER) return
+        val swatch = toolbarColors.take(toolbarColorCount).indexOf(item.color)
+        if (swatch >= 0) pickColor(swatch) else armInkColor(item.color)
+    }
+
     fun armShapeConfig(config: ShapeConfig) {
         shapeConfig = config
     }
@@ -1146,6 +1210,9 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         toolConfigs[tool] = config
         onToolStyleChanged?.invoke()
     }
+
+    override val hostZoomLocked: Boolean get() = zoomLocked
+    override fun toggleHostZoomLock() = toggleZoomLock()
 
     override var snapHeldToShapes: Boolean
         get() = detectShapes
@@ -1187,7 +1254,9 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
 
     override val hostToolbarColors: List<Rgba> get() = toolbarColors
     override val hostActiveColorIndex: Int get() = activeColorIndex
-    override val hostRecentColors: List<Rgba> get() = recentColors
+    override val hostRecentColors: List<Rgba> get() = recentsWith(recentColors, toolbarColors)
+    override val hostPaperColor: Rgba get() = view.paperColor
+    override val hostZoom: Double get() = viewport.zoom
 
     /**
      * Recolour a swatch from the picker. The swatches belong to the host, which owns the settings
@@ -1681,12 +1750,13 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
             val shape = (selection.items.singleOrNull() as? ShapeItem)?.takeIf { interaction.showsEditDots }
             parts += OverlayTessellator.selection(
                 box, zoom, accent, StrokeTessellator.DEFAULT_TOLERANCE, devicePxPerDp,
-                handles = selection.handles(margin).map { it.content },
+                handles = selection.handles(margin, zoom).map { it.content },
                 vertexDots = shape?.vertexDots()?.map { it.at }.orEmpty(),
                 edgeDots = shape?.edgeDots(OverlayTessellator.EDGE_DOT_MIN_PX / zoom)?.map { it.at }.orEmpty(),
                 knobs = shape?.knobDots().orEmpty(),
                 moveGrip = selection.moveGrip(zoom, OverlayTessellator.GRIP_ARM_PX / zoom, margin),
                 onAccent = palette?.onSelectionAccent(view.paperColor) ?: com.xnotes.core.model.Rgba(255, 255, 255, 255),
+                grip = selection.turns,
             )
             val b = OverlayTessellator.selectionBounds(box, zoom)
             bounds = bounds?.union(b) ?: b
@@ -2317,6 +2387,13 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     fun zoomBy(factor: Double) {
         if (zoomLocked) return
         viewport.zoomAroundCenter(viewport.zoom * factor)
+        onViewChanged()
+        view.publish()
+    }
+
+    fun setZoom(scale: Float) {
+        if (zoomLocked) return
+        viewport.zoomAroundCenter(scale.toDouble())
         onViewChanged()
         view.publish()
     }

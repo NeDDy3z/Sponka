@@ -63,6 +63,19 @@ class ExplorerSortTest {
     }
 
     @Test
+    fun nameSortsNumbersNumerically() {
+        val items = arrayOf(
+            entry("Note 10", isDir = false),
+            entry("note 2", isDir = false),
+            entry("Note 1", isDir = false),
+            entry("note 1b", isDir = false),
+            entry("Note", isDir = false),
+        )
+        assertEquals(listOf("Note", "Note 1", "note 1b", "note 2", "Note 10"), order(ExplorerSortKey.NAME, descending = false, *items))
+        assertEquals(listOf("Note 10", "note 2", "note 1b", "Note 1", "Note"), order(ExplorerSortKey.NAME, descending = true, *items))
+    }
+
+    @Test
     fun sizeDescendingPutsLargestFirst() {
         assertEquals(
             listOf("big", "mid", "small"),

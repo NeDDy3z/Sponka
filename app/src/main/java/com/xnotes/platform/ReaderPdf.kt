@@ -10,7 +10,7 @@ import android.os.ParcelFileDescriptor
 import java.io.Closeable
 import java.io.File
 
-/** Read-only PDF pages for the reader, through the platform [PdfRenderer]. Not thread-safe: serialise calls per instance. */
+/** Read-only PDF pages, for reader file thumbnails, through the platform [PdfRenderer]. Not thread-safe: serialise calls per instance. */
 class ReaderPdf private constructor(
     private val pfd: ParcelFileDescriptor,
     private val renderer: PdfRenderer,
@@ -26,11 +26,6 @@ class ReaderPdf private constructor(
         val w = widthPx.coerceIn(1, MAX_PX)
         val h = (w.toLong() * page.height / page.width.coerceAtLeast(1)).toInt().coerceIn(1, MAX_PX)
         renderInto(page, w, 0, 0, w, h)
-    }
-
-    /** The [w] x [h] part at ([left], [top]) of page [index] laid out [pageWidthPx] wide, for sharp zoomed-in views. */
-    fun renderRegion(index: Int, pageWidthPx: Int, left: Int, top: Int, w: Int, h: Int): Bitmap = renderer.openPage(index).use { page ->
-        renderInto(page, pageWidthPx, left, top, w.coerceIn(1, MAX_PX), h.coerceIn(1, MAX_PX))
     }
 
     private fun renderInto(page: PdfRenderer.Page, pageWidthPx: Int, left: Int, top: Int, w: Int, h: Int): Bitmap {

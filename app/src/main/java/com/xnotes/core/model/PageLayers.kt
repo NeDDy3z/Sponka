@@ -1,16 +1,16 @@
 package com.xnotes.core.model
 
 /**
- * A note page's items either side of its typed text. The run of fills at the very bottom of the page
- * paints under the text, like colour on the paper; everything else paints over it in z-order. Every
+ * A note page's items either side of its typed text. The run of fills and paper images at the very bottom
+ * of the page paints under the text, like colour on the paper; everything else paints over it in z-order. Every
  * painter of a note page splits its items here, so the screen, thumbnails and exports agree.
  */
 object PageLayers {
 
-    /** How many of [items] are the fills at the very bottom, which paint under typed text. */
+    /** How many of [items] are the fills and paper images at the very bottom, which paint under typed text. */
     fun underText(items: List<CanvasItem>): Int {
         var n = 0
-        while (n < items.size && (items[n] as? ShapeItem)?.isFill == true) n++
+        while (n < items.size && ((items[n] as? ShapeItem)?.isFill == true || (items[n] as? ImageItem)?.paper == true)) n++
         return n
     }
 

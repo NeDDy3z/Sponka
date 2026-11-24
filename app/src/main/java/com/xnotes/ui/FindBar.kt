@@ -1,6 +1,7 @@
 package com.xnotes.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -12,11 +13,13 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
@@ -42,12 +45,22 @@ internal fun FindBar(
     onPrev: () -> Unit,
     onNext: () -> Unit,
     onClose: () -> Unit,
+    modifier: Modifier = Modifier.fillMaxWidth(),
+    /** A rounded field in the theme's corner style, for sitting among content rather than spanning a screen edge. */
+    inset: Boolean = false,
 ) {
     val palette = LocalPalette.current
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    val shape = MaterialTheme.shapes.small
     Row(
-        Modifier.fillMaxWidth().height(44.dp).background(palette.panel.toComposeColor()).padding(horizontal = 12.dp),
+        modifier
+            .height(if (inset) 40.dp else 44.dp)
+            .then(
+                if (inset) Modifier.clip(shape).background(palette.surface.toComposeColor()).border(1.dp, palette.border.toComposeColor(), shape)
+                else Modifier.background(palette.panel.toComposeColor()),
+            )
+            .padding(start = 12.dp, end = if (inset) 4.dp else 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(XnotesIcons.search, null, tint = palette.textDim.toComposeColor(), modifier = Modifier.size(18.dp))

@@ -1,6 +1,5 @@
 package com.xnotes.ui
 
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.background
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.border
@@ -14,6 +13,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
@@ -26,12 +26,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.TextButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.GridOff
 import androidx.compose.material.icons.outlined.TableChart
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
@@ -77,6 +74,9 @@ import com.xnotes.core.model.FunctionCurve
 import com.xnotes.core.model.FunctionSpec
 import com.xnotes.core.model.PageSize
 import com.xnotes.core.model.Rgba
+import com.xnotes.core.tools.SelectionAction
+import com.xnotes.core.tools.Tool
+import com.xnotes.core.tools.SelectionBarLayout
 import com.xnotes.core.tools.ToolConversions
 import com.xnotes.ui.icons.XnotesIcons
 import com.xnotes.ui.theme.LocalPalette
@@ -101,6 +101,18 @@ interface SelectionMenuHost : SwatchHost {
     /** Move the selection up or down the stack of items it sits in, as one undo step. */
     fun arrange(how: com.xnotes.core.model.Arrange)
     fun duplicateSelection()
+
+    /** The text box selected on its own, which the bar offers to open and to frame. */
+    fun selectedTextBox(): com.xnotes.core.model.TextItem? = null
+
+    /** Open [selectedTextBox] for typing, arming the Text box tool. */
+    fun editSelectedTextBox() {}
+
+    /**
+     * Give [selectedTextBox] the frame [style]. A [preview] call skips history, and the next call
+     * without it records everything since as one undo step.
+     */
+    fun setSelectedBoxStyle(style: com.xnotes.core.model.BoxStyle, preview: Boolean = false) {}
 
     /** The audio pill selected on its own, which the bar offers to play. */
     fun selectedAudio(): com.xnotes.core.model.AudioItem?
@@ -179,6 +191,23 @@ interface SelectionMenuHost : SwatchHost {
     /** The fills of the selected shapes that have one, for the restyle popup to open on. */
     fun selectionFills(): List<Rgba>
 
+    /** Which of dashed, neon and filled the selection can take, and whether it already has them. */
+    fun selectionEffects(): com.xnotes.core.history.Effects
+
+    /** Turn the non-null of [dashed], [neon] and [filled] on or off across the selection, as one undo step. */
+    fun setSelectionEffects(dashed: Boolean? = null, neon: Boolean? = null, filled: Boolean? = null)
+
+    /** Dash, glow and fill details of the selected shapes, and of the pen strokes: read off the first, set on all. */
+    fun selectionShapeLook(): com.xnotes.core.history.ShapeLook? = null
+    fun restyleSelectionShapes(preview: Boolean = false, change: (com.xnotes.core.history.ShapeLook) -> com.xnotes.core.history.ShapeLook) {}
+    fun selectionPenLook(): com.xnotes.core.history.PenLook? = null
+    fun restyleSelectionPens(preview: Boolean = false, change: (com.xnotes.core.history.PenLook) -> com.xnotes.core.history.PenLook) {}
+    fun selectionTableLook(): com.xnotes.core.model.TableLook? = null
+    fun selectionOnlyTables(): Boolean = false
+    fun restyleSelectionTables(preview: Boolean = false, change: (com.xnotes.core.model.TableLook) -> com.xnotes.core.model.TableLook) {}
+    fun selectionTableCells(): com.xnotes.core.model.CellStyle? = null
+    fun restyleSelectionCells(preview: Boolean = false, change: (com.xnotes.core.model.CellStyle) -> com.xnotes.core.model.CellStyle) {}
+
     /** The first selected tape's pattern, for the restyle popup to open on; null when no tape is selected. */
     fun selectionTapePattern(): com.xnotes.core.model.TapePattern?
 
@@ -222,6 +251,9 @@ interface SelectionMenuHost : SwatchHost {
     /** Put the selection, drawn alone over what lies beneath it and cut to its bounds, on the clipboard as a picture. */
     fun copySelectionAsImage()
 
+    /** Keep copies of the selection in the sticker library, to be placed again as editable items. */
+    fun saveSelectionAsSticker()
+
     /** That picture as a PNG ready for the share sheet, or null (with a message) when it could not be made. */
     fun selectionImageForShare(): java.io.File?
 
@@ -262,6 +294,7 @@ interface SelectionMenuHost : SwatchHost {
 @Composable
 fun SelectionMenu(
     host: SelectionMenuHost,
+    layout: SelectionBarLayout,
     onSaveAudio: ((com.xnotes.core.model.AudioItem) -> Unit)? = null,
     onShareAudio: ((com.xnotes.core.model.AudioItem) -> Unit)? = null,
     onShareImage: ((java.io.File) -> Unit)? = null,
@@ -270,19 +303,17 @@ fun SelectionMenu(
     val palette = LocalPalette.current
     val density = LocalDensity.current
     var overflowOpen by remember { mutableStateOf(false) }
-    var arrangeOpen by remember { mutableStateOf(false) }
+    var subOpen by remember { mutableStateOf<SelectionAction?>(null) }
     var styleOpen by remember { mutableStateOf(false) }
     var linkDialogOpen by remember { mutableStateOf(false) }
     var functionDialogOpen by remember { mutableStateOf(false) }
     var mathDialogOpen by remember { mutableStateOf(false) }
     var renamingAudio by remember { mutableStateOf<com.xnotes.core.model.AudioItem?>(null) }
     var sizeDialogOpen by remember { mutableStateOf(false) }
-    var mirrorOpen by remember { mutableStateOf(false) }
 
     val audio = host.selectedAudio()
-    val crops = host.canCropSelection()
     val size = host.selectionSize()
-    val mirrors = host.canMirrorSelection()
+    val textBox = host.selectedTextBox()
     val barHeightPx = with(density) { 48.dp.toPx() }
     val gap = with(density) { 10.dp.toPx() }
     val centerX = ((rect.left + rect.right) / 2.0).toFloat()
@@ -292,6 +323,89 @@ fun SelectionMenu(
     } else {
         rect.bottom.toFloat() + gap
     }
+
+    fun applies(a: SelectionAction): Boolean = when (a) {
+        SelectionAction.PLAY, SelectionAction.AUDIO_RENAME, SelectionAction.AUDIO_UNLINK -> audio != null
+        SelectionAction.AUDIO_SAVE -> audio != null && onSaveAudio != null
+        SelectionAction.AUDIO_SHARE -> audio != null && onShareAudio != null
+        SelectionAction.CROP -> host.canCropSelection()
+        SelectionAction.SIZE -> size != null
+        SelectionAction.MIRROR -> host.canMirrorSelection()
+        // Nothing selected carries ink, a fill or text colour: an image has nothing to restyle.
+        SelectionAction.CHANGE_STYLE -> host.selectionStyles().isNotEmpty() || host.selectionFills().isNotEmpty() || textBox != null
+        SelectionAction.EDIT_FUNCTION -> host.selectionFunction != null
+        SelectionAction.EDIT_TEXT -> host.selectionIsText
+        SelectionAction.CONVERT_TEXT -> host.selectionHasInk
+        SelectionAction.CONVERT_MATH -> host.selectionHasInk && host.canConvertToMath
+        SelectionAction.LINK -> host.selectionCanLink
+        SelectionAction.CAPTION -> host.selectionCanCaption
+        SelectionAction.LABEL -> host.canLabelSelection()
+        SelectionAction.REROUTE -> host.canRerouteSelection()
+        SelectionAction.GROUP -> host.canGroupSelection()
+        SelectionAction.UNGROUP -> host.canUngroupSelection()
+        SelectionAction.SHARE_IMAGE -> onShareImage != null
+        else -> true
+    }
+
+    val playing = audio != null && AudioPlayback.session?.let { it.item === audio && it.playing } == true
+    val label: @Composable (SelectionAction) -> String = { a ->
+        when (a) {
+            SelectionAction.PLAY -> stringResource(if (playing) R.string.audio_pause else R.string.audio_play)
+            SelectionAction.LINK -> stringResource(if (host.selectionLink != null) R.string.canvas_menu_edit_link else R.string.canvas_menu_add_link)
+            SelectionAction.CAPTION -> stringResource(if (host.selectionHasCaption) R.string.canvas_menu_edit_caption else R.string.canvas_menu_add_caption)
+            SelectionAction.LABEL -> stringResource(if (host.selectionHasLabel()) R.string.shape_label_edit else R.string.shape_label_add)
+            else -> stringResource(a.labelRes)
+        }
+    }
+
+    fun run(a: SelectionAction) {
+        when (a) {
+            SelectionAction.DELETE -> host.deleteSelection()
+            SelectionAction.CUT -> host.cutSelection()
+            SelectionAction.COPY -> { host.copySelection(); host.dismissSelectionMenu() }
+            SelectionAction.DUPLICATE -> host.duplicateSelection()
+            SelectionAction.ARRANGE, SelectionAction.MIRROR -> subOpen = a
+            SelectionAction.LOCK -> host.lockSelection()
+            SelectionAction.PLAY -> host.playSelectedAudio()
+            SelectionAction.CROP -> host.startCrop()
+            SelectionAction.SIZE -> sizeDialogOpen = true
+            SelectionAction.AUDIO_RENAME -> renamingAudio = audio
+            SelectionAction.AUDIO_SAVE -> audio?.let { onSaveAudio?.invoke(it) }
+            SelectionAction.AUDIO_SHARE -> audio?.let { onShareAudio?.invoke(it) }
+            SelectionAction.AUDIO_UNLINK -> host.unlinkSelectedAudio()
+            SelectionAction.CHANGE_STYLE -> styleOpen = true
+            SelectionAction.EDIT_FUNCTION -> functionDialogOpen = true
+            // A formula is edited as its LaTeX source, not in the text box editor.
+            SelectionAction.EDIT_TEXT -> if (host.selectionMath != null) mathDialogOpen = true else host.editSelectedTextBox()
+            SelectionAction.CONVERT_TEXT -> host.convertSelectionToText()
+            SelectionAction.CONVERT_MATH -> host.convertSelectionToMath()
+            SelectionAction.LINK -> linkDialogOpen = true
+            SelectionAction.CAPTION -> host.captionSelection()
+            SelectionAction.LABEL -> host.labelSelection()
+            SelectionAction.REROUTE -> host.rerouteSelection()
+            SelectionAction.GROUP -> host.groupSelection()
+            SelectionAction.UNGROUP -> host.ungroupSelection()
+            SelectionAction.COPY_IMAGE -> host.copySelectionAsImage()
+            SelectionAction.SHARE_IMAGE -> host.selectionImageForShare()?.let { onShareImage?.invoke(it) }
+            SelectionAction.SAVE_STICKER -> { host.saveSelectionAsSticker(); host.dismissSelectionMenu() }
+        }
+    }
+
+    /** The rows Arrange and Mirror open: a dropdown on the bar, inline rows in the 3-dot menu. */
+    val subRows: @Composable (SelectionAction) -> List<Pair<String, () -> Unit>>? = { a ->
+        when (a) {
+            SelectionAction.ARRANGE -> ARRANGE_ROWS.map { (how, res) -> stringResource(res) to { host.arrange(how) } }
+            SelectionAction.MIRROR -> listOf(
+                stringResource(R.string.mirror_left_right) to { host.mirrorSelection(upsideDown = false) },
+                stringResource(R.string.mirror_upside_down) to { host.mirrorSelection(upsideDown = true) },
+            )
+            else -> null
+        }
+    }
+
+    val styleOnBar = layout.bar.any { it.action == SelectionAction.CHANGE_STYLE && it.visible }
+    val barActions = layout.bar.filter { it.visible && applies(it.action) }.map { it.action }
+    val moreActions = layout.more.filter { it.visible && applies(it.action) }.map { it.action }
 
     CompositionLocalProvider(LocalTipSide provides tipSideFor(barAbove)) {
         Row(
@@ -303,207 +417,122 @@ fun SelectionMenu(
                     val x = (centerX - bar.width / 2f).roundToInt().coerceIn(margin, (constraints.maxWidth - bar.width - margin).coerceAtLeast(margin))
                     layout(bar.width, bar.height) { bar.place(x, yPx.roundToInt()) }
                 }
-                .clip(MaterialTheme.shapes.medium)
-                .background(palette.menuBg.toComposeColor())
-                .border(1.dp, palette.border.toComposeColor(), MaterialTheme.shapes.medium)
-                .horizontalScroll(rememberScrollState()),
+                .floatingBar()
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = BAR_END),
         ) {
-            ActionIcon(XnotesIcons.trash, stringResource(R.string.delete), shortcut = Keys.DELETE, tint = palette.danger.toComposeColor()) { host.deleteSelection() }
-            ActionIcon(XnotesIcons.cut, stringResource(R.string.cut)) { host.cutSelection() }
-            ActionIcon(XnotesIcons.copy, stringResource(R.string.copy)) { host.copySelection(); host.dismissSelectionMenu() }
-            ActionIcon(XnotesIcons.duplicate, stringResource(R.string.duplicate)) { host.duplicateSelection() }
-            Box {
-                ActionIcon(XnotesIcons.front, stringResource(R.string.arrange)) { arrangeOpen = true }
-                DropdownMenu(
-                    expanded = arrangeOpen,
-                    onDismissRequest = { arrangeOpen = false },
-                    properties = PopupProperties(focusable = false),
-                ) {
-                    for ((how, label) in ARRANGE_ROWS) {
-                        DropdownMenuItem(text = { Text(stringResource(label)) }, onClick = { arrangeOpen = false; host.arrange(how) })
+            for (a in barActions) Box {
+                ActionIcon(
+                    if (a == SelectionAction.PLAY && playing) XnotesIcons.pause else a.icon,
+                    label(a),
+                    shortcut = if (a == SelectionAction.DELETE) Keys.DELETE else null,
+                    tint = if (a == SelectionAction.DELETE) palette.danger.toComposeColor() else null,
+                ) { run(a) }
+                subRows(a)?.let { rows ->
+                    DropdownMenu(
+                        expanded = subOpen == a,
+                        onDismissRequest = { subOpen = null },
+                        properties = PopupProperties(focusable = false),
+                    ) {
+                        for ((text, onClick) in rows) MenuItem(text, onClick = { subOpen = null; onClick() })
                     }
                 }
-            }
-            ActionIcon(XnotesIcons.lock, stringResource(R.string.lock)) { host.lockSelection() }
-            if (audio != null) {
-                val playing = AudioPlayback.session?.let { it.item === audio && it.playing } == true
-                ActionIcon(if (playing) XnotesIcons.pause else XnotesIcons.play, stringResource(if (playing) R.string.audio_pause else R.string.audio_play)) { host.playSelectedAudio() }
-            }
-            if (crops) ActionIcon(XnotesIcons.crop, stringResource(R.string.crop)) { host.startCrop() }
-            if (size != null) ActionIcon(XnotesIcons.resize, stringResource(R.string.selection_size)) { sizeDialogOpen = true }
-            if (mirrors) Box {
-                ActionIcon(XnotesIcons.mirror, stringResource(R.string.mirror)) { mirrorOpen = true }
-                DropdownMenu(
-                    expanded = mirrorOpen,
-                    onDismissRequest = { mirrorOpen = false },
-                    properties = PopupProperties(focusable = false),
-                ) {
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.mirror_left_right)) },
-                        onClick = { mirrorOpen = false; host.mirrorSelection(upsideDown = false) },
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.mirror_upside_down)) },
-                        onClick = { mirrorOpen = false; host.mirrorSelection(upsideDown = true) },
-                    )
+                if (a == SelectionAction.CHANGE_STYLE && styleOpen) {
+                    // Closing settles any preview the slider left open.
+                    SelectionStylePopup(host) { host.restyleSelection(null, null); styleOpen = false }
                 }
             }
-            Box {
+            if (moreActions.isNotEmpty()) Box {
                 ActionIcon(XnotesIcons.more, stringResource(R.string.more)) { overflowOpen = true }
                 DropdownMenu(
                     expanded = overflowOpen,
                     onDismissRequest = { overflowOpen = false },
                     properties = PopupProperties(focusable = false),
                 ) {
-                    // A lone recording's own actions come first.
-                    if (audio != null) {
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.rename)) },
-                            onClick = { overflowOpen = false; renamingAudio = audio },
-                        )
-                        onSaveAudio?.let { save ->
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.audio_save)) },
-                                onClick = { overflowOpen = false; save(audio) },
-                            )
+                    for (a in moreActions) {
+                        val rows = subRows(a)
+                        if (rows != null) {
+                            for ((text, onClick) in rows) MenuItem(text, onClick = { overflowOpen = false; onClick() })
+                        } else {
+                            MenuItem(label(a), a.icon, danger = a == SelectionAction.DELETE, onClick = { overflowOpen = false; run(a) })
                         }
-                        onShareAudio?.let { share ->
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.audio_share)) },
-                                onClick = { overflowOpen = false; share(audio) },
-                            )
-                        }
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.audio_unlink)) },
-                            onClick = { overflowOpen = false; host.unlinkSelectedAudio() },
-                        )
-                        androidx.compose.material3.HorizontalDivider(color = palette.border.toComposeColor())
-                    }
-                    // Empty when nothing selected carries ink, a fill or text colour: an image
-                    // has nothing to restyle.
-                    val styles = host.selectionStyles()
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.change_style)) },
-                        enabled = styles.isNotEmpty() || host.selectionFills().isNotEmpty(),
-                        onClick = { overflowOpen = false; styleOpen = true },
-                    )
-                    androidx.compose.material3.HorizontalDivider(color = palette.border.toComposeColor())
-                    if (host.selectionFunction != null) {
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.canvas_menu_edit_function)) },
-                            onClick = { overflowOpen = false; functionDialogOpen = true },
-                        )
-                    }
-                    if (host.selectionIsText) {
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.canvas_menu_edit)) },
-                            // A formula is edited as its LaTeX source, not in the text box editor.
-                            onClick = { overflowOpen = false; if (host.selectionMath != null) mathDialogOpen = true else host.editSelectionText() },
-                        )
-                    }
-                    if (host.selectionHasInk) {
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.canvas_menu_convert_to_text)) },
-                            onClick = { overflowOpen = false; host.convertSelectionToText() },
-                        )
-                        if (host.canConvertToMath) {
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.canvas_menu_convert_to_math)) },
-                                onClick = { overflowOpen = false; host.convertSelectionToMath() },
-                            )
-                        }
-                    }
-                    if (host.selectionCanLink) {
-                        DropdownMenuItem(
-                            text = { Text(stringResource(if (host.selectionLink != null) R.string.canvas_menu_edit_link else R.string.canvas_menu_add_link)) },
-                            onClick = { overflowOpen = false; linkDialogOpen = true },
-                        )
-                    }
-                    if (host.selectionCanCaption) {
-                        DropdownMenuItem(
-                            text = { Text(stringResource(if (host.selectionHasCaption) R.string.canvas_menu_edit_caption else R.string.canvas_menu_add_caption)) },
-                            onClick = { overflowOpen = false; host.captionSelection() },
-                        )
-                    }
-                    if (host.canLabelSelection()) {
-                        DropdownMenuItem(
-                            text = { Text(stringResource(if (host.selectionHasLabel()) R.string.shape_label_edit else R.string.shape_label_add)) },
-                            onClick = { overflowOpen = false; host.labelSelection() },
-                        )
-                    }
-                    if (host.canRerouteSelection()) {
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.connector_reroute)) },
-                            onClick = { overflowOpen = false; host.rerouteSelection() },
-                        )
-                    }
-                    if (host.canGroupSelection()) {
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.group)) },
-                            onClick = { overflowOpen = false; host.groupSelection() },
-                        )
-                    }
-                    if (host.canUngroupSelection()) {
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.ungroup)) },
-                            onClick = { overflowOpen = false; host.ungroupSelection() },
-                        )
-                    }
-                    androidx.compose.material3.HorizontalDivider(color = palette.border.toComposeColor())
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.copy_as_image)) },
-                        onClick = { overflowOpen = false; host.copySelectionAsImage() },
-                    )
-                    onShareImage?.let { share ->
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.share_as_image)) },
-                            onClick = { overflowOpen = false; host.selectionImageForShare()?.let(share) },
-                        )
                     }
                 }
-                if (styleOpen) {
-                    // Closing settles any preview the slider left open.
+                if (!styleOnBar && styleOpen) {
                     SelectionStylePopup(host) { host.restyleSelection(null, null); styleOpen = false }
-                }
-                val latex = host.selectionMath
-                if (mathDialogOpen && latex != null) {
-                    LatexDialog(
-                        initial = latex,
-                        onConfirm = { if (host.setSelectionMath(it)) mathDialogOpen = false },
-                        onDismiss = { mathDialogOpen = false },
-                    )
-                }
-                val function = host.selectionFunction
-                if (functionDialogOpen && function != null) {
-                    FunctionDialog(
-                        initial = function,
-                        onConfirm = { if (host.setSelectionFunction(it)) functionDialogOpen = false },
-                        onDismiss = { functionDialogOpen = false },
-                    )
-                }
-                if (linkDialogOpen) {
-                    LinkDialog(
-                        initial = host.selectionLink ?: "",
-                        onConfirm = { host.setSelectionLink(it); linkDialogOpen = false },
-                        onRemove = { host.setSelectionLink(null); linkDialogOpen = false },
-                        onDismiss = { linkDialogOpen = false },
-                    )
-                }
-                if (sizeDialogOpen && size != null) {
-                    SizeDialog(
-                        initial = size,
-                        dpi = host.documentDpi(),
-                        onConfirm = { w, h -> sizeDialogOpen = false; host.resizeSelection(w, h) },
-                        onDismiss = { sizeDialogOpen = false },
-                    )
-                }
-                renamingAudio?.let { item ->
-                    AudioNameDialog(item.name, onConfirm = { renamingAudio = null; host.renameSelectedAudio(it) }) { renamingAudio = null }
                 }
             }
         }
+        val latex = host.selectionMath
+        if (mathDialogOpen && latex != null) {
+            LatexDialog(
+                initial = latex,
+                onConfirm = { if (host.setSelectionMath(it)) mathDialogOpen = false },
+                onDismiss = { mathDialogOpen = false },
+            )
+        }
+        val function = host.selectionFunction
+        if (functionDialogOpen && function != null) {
+            FunctionDialog(
+                initial = function,
+                onConfirm = { if (host.setSelectionFunction(it)) functionDialogOpen = false },
+                onDismiss = { functionDialogOpen = false },
+            )
+        }
+        if (linkDialogOpen) {
+            LinkDialog(
+                initial = host.selectionLink ?: "",
+                onConfirm = { host.setSelectionLink(it); linkDialogOpen = false },
+                onRemove = { host.setSelectionLink(null); linkDialogOpen = false },
+                onDismiss = { linkDialogOpen = false },
+            )
+        }
+        if (sizeDialogOpen && size != null) {
+            SizeDialog(
+                initial = size,
+                dpi = host.documentDpi(),
+                onConfirm = { w, h -> sizeDialogOpen = false; host.resizeSelection(w, h) },
+                onDismiss = { sizeDialogOpen = false },
+            )
+        }
+        renamingAudio?.let { item ->
+            AudioNameDialog(item.name, onConfirm = { renamingAudio = null; host.renameSelectedAudio(it) }) { renamingAudio = null }
+        }
     }
 }
+
+/** The icon an action shows on the selection bar and in the customizer. */
+val SelectionAction.icon: ImageVector
+    get() = when (this) {
+        SelectionAction.DELETE -> XnotesIcons.trash
+        SelectionAction.CUT -> XnotesIcons.cut
+        SelectionAction.COPY -> XnotesIcons.copy
+        SelectionAction.DUPLICATE -> XnotesIcons.duplicate
+        SelectionAction.ARRANGE -> XnotesIcons.front
+        SelectionAction.LOCK -> XnotesIcons.lock
+        SelectionAction.PLAY -> XnotesIcons.play
+        SelectionAction.CROP -> XnotesIcons.crop
+        SelectionAction.SIZE -> XnotesIcons.resize
+        SelectionAction.MIRROR -> XnotesIcons.mirror
+        SelectionAction.AUDIO_RENAME -> XnotesIcons.rename
+        SelectionAction.AUDIO_SAVE -> XnotesIcons.download
+        SelectionAction.AUDIO_SHARE -> XnotesIcons.share
+        SelectionAction.AUDIO_UNLINK -> XnotesIcons.unlink
+        SelectionAction.CHANGE_STYLE -> XnotesIcons.palette
+        SelectionAction.EDIT_FUNCTION -> XnotesIcons.function
+        SelectionAction.EDIT_TEXT -> XnotesIcons.edit
+        SelectionAction.CONVERT_TEXT -> XnotesIcons.convertText
+        SelectionAction.CONVERT_MATH -> XnotesIcons.sigma
+        SelectionAction.LINK -> XnotesIcons.link
+        SelectionAction.CAPTION -> XnotesIcons.caption
+        SelectionAction.LABEL -> XnotesIcons.tag
+        SelectionAction.REROUTE -> XnotesIcons.reroute
+        SelectionAction.GROUP -> XnotesIcons.group
+        SelectionAction.UNGROUP -> XnotesIcons.ungroup
+        SelectionAction.COPY_IMAGE -> XnotesIcons.copyImage
+        SelectionAction.SHARE_IMAGE -> XnotesIcons.share
+        SelectionAction.SAVE_STICKER -> XnotesIcons.sticker
+    }
 
 /** The Arrange menu's rows, top of the stack first. */
 private val ARRANGE_ROWS = listOf(
@@ -540,10 +569,15 @@ private fun SizeDialog(initial: Pair<Double, Double>, dpi: Int, onConfirm: (Doub
     }
     val number = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal)
     val unit = stringResource(if (mm) R.string.units_mm else R.string.units_px)
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.selection_size)) },
-        text = {
+    SheetDialog(
+        title = stringResource(R.string.selection_size),
+        onDismiss = onDismiss,
+        foot = {
+            ConfirmButtons(stringResource(R.string.apply), onDismiss, enabled = wPx != null && hPx != null) {
+                if (wPx != null && hPx != null) onConfirm(wPx, hPx)
+            }
+        },
+    ) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     ModeChip(stringResource(R.string.units_px), !mm) { switchUnits(false) }
@@ -576,37 +610,21 @@ private fun SizeDialog(initial: Pair<Double, Double>, dpi: Int, onConfirm: (Doub
                     }
                 }
             }
-        },
-        confirmButton = {
-            TextButton(enabled = wPx != null && hPx != null, onClick = { if (wPx != null && hPx != null) onConfirm(wPx, hPx) }) { Text(stringResource(R.string.apply)) }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
-    )
+    }
 }
 
 /** Rename a recording: its name, ready to type over. */
 @Composable
 private fun AudioNameDialog(initial: String, onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
     var text by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(initial, androidx.compose.ui.text.TextRange(0, initial.length))) }
-    val focus = remember { androidx.compose.ui.focus.FocusRequester() }
-    androidx.compose.runtime.LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.rename_recording)) },
-        text = {
-            OutlinedTextField(
-                value = text,
-                onValueChange = { text = it },
-                singleLine = true,
-                label = { Text(stringResource(R.string.audio_name)) },
-                modifier = Modifier.focusRequester(focus),
-            )
-        },
-        confirmButton = {
-            TextButton(onClick = { if (text.text.isBlank()) onDismiss() else onConfirm(text.text) }) { Text(stringResource(R.string.rename)) }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
-    )
+    val rename = { if (text.text.isBlank()) onDismiss() else onConfirm(text.text) }
+    SheetDialog(
+        title = stringResource(R.string.rename_recording),
+        onDismiss = onDismiss,
+        foot = { ConfirmButtons(stringResource(R.string.rename), onDismiss, onConfirm = rename) },
+    ) {
+        DialogField(text, { text = it }, label = stringResource(R.string.audio_name), autoFocus = true, onDone = rename, onEscape = onDismiss)
+    }
 }
 
 /**
@@ -623,10 +641,11 @@ private fun FunctionDialog(initial: FunctionSpec, onConfirm: (FunctionSpec) -> U
         val b = FunctionCurve.constant(to) ?: return@run null
         FunctionSpec(expr.trim(), a, b).takeIf { it.normalizedSamples() != null }
     }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.canvas_menu_function)) },
-        text = {
+    SheetDialog(
+        title = stringResource(R.string.canvas_menu_function),
+        onDismiss = onDismiss,
+        foot = { ConfirmButtons(stringResource(R.string.save), onDismiss, enabled = spec != null) { spec?.let(onConfirm) } },
+    ) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                     value = expr,
@@ -652,14 +671,7 @@ private fun FunctionDialog(initial: FunctionSpec, onConfirm: (FunctionSpec) -> U
                     )
                 }
             }
-        },
-        confirmButton = {
-            TextButton(enabled = spec != null, onClick = { spec?.let(onConfirm) }) { Text(stringResource(R.string.save)) }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
-        },
-    )
+    }
 }
 
 /** Put [template] at the cursor, wrapping the selection at its `#`, and leave the cursor there. */
@@ -684,12 +696,13 @@ private fun LatexDialog(initial: String, onConfirm: (String) -> Unit, onDismiss:
     var value by remember { mutableStateOf(TextFieldValue(initial, TextRange(initial.length))) }
     var mathKeys by remember { mutableStateOf(true) }
     val focus = remember { androidx.compose.ui.focus.FocusRequester() }
-    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
-    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     val scope = rememberCoroutineScope()
-    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
     val shape = MaterialTheme.shapes.large
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        // Read inside the dialog so they act on its window, not the activity's.
+        val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+        val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+        LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
         Column(
             verticalArrangement = Arrangement.spacedBy(12.dp),
             modifier = Modifier
@@ -805,28 +818,19 @@ private fun formatBound(v: Double): String {
 @Composable
 private fun LinkDialog(initial: String, onConfirm: (String) -> Unit, onRemove: () -> Unit, onDismiss: () -> Unit) {
     var text by remember { mutableStateOf(initial) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.insert_group_link)) },
-        text = {
-            OutlinedTextField(
-                value = text,
-                onValueChange = { text = it },
-                singleLine = true,
-                placeholder = { Text("https://example.com") },
-            )
-        },
-        confirmButton = {
-            TextButton(onClick = { onConfirm(text.trim()) }) { Text(stringResource(R.string.save)) }
-        },
-        dismissButton = {
-            if (initial.isNotEmpty()) {
-                TextButton(onClick = onRemove) { Text(stringResource(R.string.remove)) }
-            } else {
-                TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+    SheetDialog(
+        title = stringResource(R.string.insert_group_link),
+        onDismiss = onDismiss,
+        foot = {
+            DialogButtons {
+                if (initial.isNotEmpty()) DialogButton(stringResource(R.string.remove), ButtonKind.DISCARD, onClick = onRemove)
+                else DialogButton(stringResource(R.string.cancel), onClick = onDismiss)
+                DialogButton(stringResource(R.string.save), ButtonKind.CONFIRM) { onConfirm(text.trim()) }
             }
         },
-    )
+    ) {
+        DialogField(text, { text = it }, placeholder = "https://example.com", autoFocus = true, onDone = { onConfirm(text.trim()) }, onEscape = onDismiss)
+    }
 }
 
 /**
@@ -845,125 +849,244 @@ private fun SelectionStylePopup(host: SelectionMenuHost, onDismiss: () -> Unit) 
     var color by remember { mutableStateOf(shared ?: first?.color ?: Rgba(0, 0, 0)) }
     val sized = opened.firstOrNull { it.width != DrawStyle.NO_WIDTH }
     var width by remember { mutableStateOf((sized?.width ?: 1.0).toFloat()) }
-    val fills = remember { host.selectionFills() }
+    var effects by remember { mutableStateOf(host.selectionEffects()) }
+    val fills = remember(effects) { host.selectionFills() }
     // Only dropped colours selected: they have a fill and nothing else to restyle.
     val fillsOnly = first == null
-    if (fillsOnly && fills.isEmpty()) return
+    val textBox = remember { host.selectedTextBox() }
+    if (fillsOnly && fills.isEmpty() && textBox == null) return
+    var boxStyle by remember { mutableStateOf(textBox?.box) }
+    var look by remember { mutableStateOf(host.selectionShapeLook()) }
+    var pen by remember { mutableStateOf(host.selectionPenLook()) }
+    var table by remember { mutableStateOf(host.selectionTableLook()) }
+    val onlyTables = remember { host.selectionOnlyTables() }
+    val cells = remember { host.selectionTableCells() }
+    if (cells != null) return CellStylePopup(host, cells, color, onDismiss)
+    fun restyleShapes(preview: Boolean = false, change: (com.xnotes.core.history.ShapeLook) -> com.xnotes.core.history.ShapeLook = { it }) {
+        host.restyleSelectionShapes(preview, change)
+        look = host.selectionShapeLook()
+    }
+    fun restylePens(preview: Boolean = false, change: (com.xnotes.core.history.PenLook) -> com.xnotes.core.history.PenLook = { it }) {
+        host.restyleSelectionPens(preview, change)
+        pen = host.selectionPenLook()
+    }
+    // Closing settles whatever a box slider left as a preview.
+    val close = {
+        boxStyle?.let { host.setSelectedBoxStyle(it, preview = false) }
+        if (look != null) restyleShapes()
+        if (pen != null) restylePens()
+        if (table != null) host.restyleSelectionTables { it }
+        onDismiss()
+    }
 
-    DropdownMenu(expanded = true, onDismissRequest = onDismiss, properties = PopupProperties(focusable = false)) {
-        Column(Modifier.width(250.dp).padding(horizontal = 14.dp, vertical = 8.dp)) {
-            PopupTitle(stringResource(R.string.title_change_style))
-            if (!fillsOnly) StyleCaption(stringResource(R.string.caption_colour))
-            if (!fillsOnly) FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                host.hostToolbarColors.forEach { c ->
-                    ColorDot(c.toComposeColor(), selected = color == c) {
-                        color = c
-                        host.restyleSelection(c, null)
-                    }
-                }
-                ColorPickerDot(
-                    color,
-                    custom = color !in host.hostToolbarColors,
-                    onPick = { color = it; host.restyleSelection(it, null) },
-                    dismissOnPick = false,
-                ) { dismiss, pick ->
-                    ColorPickerPopup(
-                        initial = color,
-                        recents = host.hostRecentColors,
-                        onDismiss = dismiss,
-                        onPick = pick,
-                    )
+    ToolMenu(stringResource(R.string.title_change_style), close, focusable = false) {
+        boxStyle?.let { style ->
+            BoxStyleCard(style, host.hostRecentColors) { next, preview ->
+                boxStyle = next
+                host.setSelectedBoxStyle(next, preview)
+            }
+        }
+        pen?.let { p ->
+            PanelCard(padding = PaddingValues(6.dp)) {
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    for (t in Tool.PENS) MenuTile(penIcon(t), stringResource(t.labelRes), t == p.tool, 44.dp) { if (t != p.tool) restylePens { it.asPen(t) } }
                 }
             }
+        }
+        val colourGroup: MenuGroup = {
+                Column(Modifier.padding(10.dp)) {
+                    PanelCaption(stringResource(R.string.caption_colour))
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        host.hostToolbarColors.forEach { c ->
+                            ColorDot(c.toComposeColor(), selected = color == c) {
+                                color = c
+                                host.restyleSelection(c, null)
+                            }
+                        }
+                        ColorPickerDot(
+                            color,
+                            custom = color !in host.hostToolbarColors,
+                            onPick = { color = it; host.restyleSelection(it, null) },
+                            dismissOnPick = false,
+                        ) { dismiss, pick ->
+                            ColorPickerPopup(
+                                initial = color,
+                                recents = host.hostRecentColors,
+                                onDismiss = dismiss,
+                                onPick = pick,
+                            )
+                        }
+                    }
+                }
+        }
+        // Tables alone get their own cards, the colour among them; beside other items they add theirs after.
+        if (onlyTables) table?.let { t ->
+            val tableColour: MenuGroup = {
+                MenuRow(stringResource(R.string.caption_colour)) {
+                    ColorPickerDot(color, custom = true, onPick = { color = it; host.restyleSelection(it, null) }, dismissOnPick = false) { d, p ->
+                        ColorPickerPopup(color, host.hostRecentColors, d, p)
+                    }
+                }
+            }
+            t.groups(color, host.hostRecentColors, tableColour, emptyList()) { next, preview ->
+                table = next
+                host.restyleSelectionTables(preview) { next }
+            }.forEach { MenuCard(it) }
+        }
+        if (!onlyTables) MenuCard(buildList<MenuGroup> {
+            if (!fillsOnly) add(colourGroup)
             host.selectionTapePattern()?.let { opened ->
-                var pattern by remember { mutableStateOf(opened) }
-                StyleCaption(stringResource(R.string.caption_pattern))
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    for (p in com.xnotes.core.model.TapePattern.entries) {
-                        ModeChip(stringResource(p.labelRes), selected = pattern == p) {
-                            pattern = p
-                            host.setSelectionTapePattern(p)
+                add {
+                    var pattern by remember { mutableStateOf(opened) }
+                    val patterns = com.xnotes.core.model.TapePattern.entries
+                    Column(Modifier.padding(10.dp)) {
+                        PanelCaption(stringResource(R.string.caption_pattern))
+                        PanelSegmented(patterns.map { stringResource(it.labelRes) }, patterns.indexOf(pattern), { pattern = patterns[it]; host.setSelectionTapePattern(patterns[it]) })
+                    }
+                }
+            }
+            pen?.let { p ->
+                val c = p.config
+                if (p.tool == Tool.DASHED) {
+                    add { MenuSlider(stringResource(R.string.caption_dash), c.dashLength.toFloat(), 2f..40f, onChangeFinished = { restylePens() }) { v -> restylePens(true) { it.copy(config = it.config.copy(dashLength = v.toDouble())) } } }
+                    add { MenuSlider(stringResource(R.string.caption_gap), c.dashGap.toFloat(), 2f..40f, onChangeFinished = { restylePens() }) { v -> restylePens(true) { it.copy(config = it.config.copy(dashGap = v.toDouble())) } } }
+                }
+                // Neon paints at full strength whatever the opacity, so opacity hides under it, as on the pen.
+                if (!c.neon) add {
+                    MenuSwitch(stringResource(R.string.caption_opacity), c.opacityEnabled) { on -> restylePens { it.copy(config = it.config.copy(opacityEnabled = on)) } }
+                    if (c.opacityEnabled) {
+                        MenuSlider(stringResource(R.string.caption_intensity), ToolConversions.opacityToPercent(c.opacity).toFloat(), 10f..100f, step = 1f, child = true, onChangeFinished = { restylePens() }) { v ->
+                            restylePens(true) { it.copy(config = it.config.copy(opacity = ToolConversions.percentToOpacity(v.toDouble()))) }
+                        }
+                    }
+                }
+                if (p.tool != Tool.DASHED) add {
+                    MenuSwitch(stringResource(R.string.caption_neon), c.neon) { on -> restylePens { it.copy(config = it.config.copy(neon = on)) } }
+                    if (c.neon) {
+                        MenuSlider(stringResource(R.string.caption_glow_intensity), ToolConversions.neonStrengthToIntensity(c.neonStrength).toFloat(), 0f..100f, child = true, onChangeFinished = { restylePens() }) { v ->
+                            restylePens(true) { it.copy(config = it.config.copy(neonStrength = ToolConversions.intensityToNeonStrength(v.toDouble()))) }
                         }
                     }
                 }
             }
-            if (fills.isNotEmpty()) {
+            effects.dashed?.let { on ->
+                add {
+                    MenuSwitch(stringResource(R.string.caption_dashed), on) { host.setSelectionEffects(dashed = it); effects = host.selectionEffects() }
+                    val l = look
+                    if (on && l != null) {
+                        MenuSlider(stringResource(R.string.caption_dash), l.dashLength.toFloat(), 2f..40f, child = true, onChangeFinished = { restyleShapes() }) { v -> restyleShapes(true) { it.copy(dashLength = v.toDouble()) } }
+                        MenuSlider(stringResource(R.string.caption_gap), l.dashGap.toFloat(), 2f..40f, child = true, onChangeFinished = { restyleShapes() }) { v -> restyleShapes(true) { it.copy(dashGap = v.toDouble()) } }
+                    }
+                }
+            }
+            effects.neon?.let { on ->
+                add {
+                    MenuSwitch(stringResource(R.string.caption_neon), on) { host.setSelectionEffects(neon = it); effects = host.selectionEffects() }
+                    val l = look
+                    if (on && l != null) {
+                        MenuSlider(stringResource(R.string.caption_glow_intensity), ToolConversions.neonStrengthToIntensity(l.neonStrength).toFloat(), 0f..100f, child = true, onChangeFinished = { restyleShapes() }) { v ->
+                            restyleShapes(true) { it.copy(neonStrength = ToolConversions.intensityToNeonStrength(v.toDouble())) }
+                        }
+                    }
+                }
+            }
+            effects.filled?.let { on ->
+                add {
+                    MenuSwitch(stringResource(R.string.caption_fill), on) { host.setSelectionEffects(filled = it); effects = host.selectionEffects(); look = host.selectionShapeLook() }
+                    val alpha = look?.fill?.a
+                    if (on && alpha != null) {
+                        val minPct = (com.xnotes.core.tools.ShapeConfig.FILL_ALPHA_MIN * 100).toFloat()
+                        MenuSlider(stringResource(R.string.caption_opacity), alpha / 2.55f, minPct..100f, step = 1f, child = true, onChangeFinished = { restyleShapes() }) { v ->
+                            restyleShapes(true) { it.copy(fill = it.fill?.copy(a = (v * 2.55f).roundToInt().coerceIn(0, 255))) }
+                        }
+                    }
+                }
+            }
+            if (fills.isNotEmpty()) add {
                 var fill by remember { mutableStateOf<Rgba?>(fills.first().copy(a = 255)) }
                 var editingFill by remember { mutableStateOf<Int?>(null) }
                 val outline = color
-                StyleCaption(stringResource(R.string.caption_fill_colour))
-                // The toolbar's own swatches; tapping the chosen one again opens the picker on it, as the toolbar does.
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (!fillsOnly) {
-                        MatchDot(outline, selected = fill == null || fill == outline) {
-                            fill = null
-                            host.refillSelection(null)
-                        }
-                    }
-                    host.shownSwatches.forEachIndexed { i, c ->
-                        val on = fill == c
-                        Box {
-                            ColorDot(c.toComposeColor(), selected = on) {
-                                if (on) {
-                                    editingFill = i
-                                } else {
-                                    fill = c
-                                    host.refillSelection(c)
-                                }
+                Column(Modifier.padding(10.dp)) {
+                    PanelCaption(stringResource(R.string.caption_fill_colour))
+                    // The toolbar's own swatches; tapping the chosen one again opens the picker on it, as the toolbar does.
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        if (!fillsOnly) {
+                            MatchDot(outline, selected = fill == null || fill == outline) {
+                                fill = null
+                                host.refillSelection(null)
                             }
-                            if (editingFill == i) {
-                                // However the picker closes, the drag through it settles as one undo step.
-                                val latest by rememberUpdatedState(fill)
-                                DisposableEffect(Unit) { onDispose { host.refillSelection(latest) } }
-                                ColorPickerPopup(
-                                    initial = c,
-                                    recents = host.hostRecentColors,
-                                    onDismiss = {
-                                        host.rememberSwatchColor(i)
-                                        editingFill = null
-                                    },
-                                    onPick = { picked ->
-                                        host.recolorSwatch(i, picked)
-                                        fill = picked
-                                        host.refillSelection(picked, preview = true)
-                                    },
-                                )
+                        }
+                        host.shownSwatches.forEachIndexed { i, c ->
+                            val on = fill == c
+                            Box {
+                                ColorDot(c.toComposeColor(), selected = on) {
+                                    if (on) {
+                                        editingFill = i
+                                    } else {
+                                        fill = c
+                                        host.refillSelection(c)
+                                    }
+                                }
+                                if (editingFill == i) {
+                                    // However the picker closes, the drag through it settles as one undo step.
+                                    val latest by rememberUpdatedState(fill)
+                                    DisposableEffect(Unit) { onDispose { host.refillSelection(latest) } }
+                                    ColorPickerPopup(
+                                        initial = c,
+                                        recents = host.hostRecentColors,
+                                        onDismiss = {
+                                            host.rememberSwatchColor(i)
+                                            editingFill = null
+                                        },
+                                        onPick = { picked ->
+                                            host.recolorSwatch(i, picked)
+                                            fill = picked
+                                            host.refillSelection(picked, preview = true)
+                                        },
+                                    )
+                                }
                             }
                         }
                     }
                 }
             }
             host.selectionCount()?.let { sc ->
-                val count = sc.n
-                val range = sc.range
-                Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    StyleCaption(stringResource(countLabel(sc.kind)))
-                    Spacer(Modifier.width(12.dp))
-                    StepDot("\u2212", stringResource(R.string.count_fewer), enabled = count > range.first) { host.setSelectionCount(count - 1) }
-                    Text("$count", color = palette.text.toComposeColor(), fontSize = 14.sp, modifier = Modifier.padding(horizontal = 10.dp))
-                    StepDot("+", stringResource(R.string.count_more), enabled = count < range.last) { host.setSelectionCount(count + 1) }
+                add {
+                    MenuRow(stringResource(countLabel(sc.kind))) {
+                        MenuStepper(
+                            "${sc.n}", stringResource(R.string.count_fewer), stringResource(R.string.count_more), Modifier.width(116.dp),
+                            canLess = sc.n > sc.range.first, canMore = sc.n < sc.range.last,
+                            onLess = { host.setSelectionCount(sc.n - 1) }, onMore = { host.setSelectionCount(sc.n + 1) },
+                        )
+                    }
                 }
             }
-            if (fillsOnly || sized == null) return@Column
-            Spacer(Modifier.size(8.dp))
             // The drag previews live and commits on release, so it is one undo step, not fifty.
-            SliderRow(
-                stringResource(R.string.caption_thickness),
-                width,
-                DrawStyle.MIN_WIDTH.toFloat()..DrawStyle.MAX_WIDTH.toFloat(),
-                step = ToolConversions.WIDTH_STEP.toFloat(),
-                onChangeFinished = { host.restyleSelection(null, null) },
-            ) { w ->
-                width = w
-                host.restyleSelection(null, w.toDouble(), preview = true)
+            if (!fillsOnly && sized != null) add {
+                MenuSlider(
+                    stringResource(R.string.caption_thickness),
+                    width,
+                    DrawStyle.MIN_WIDTH.toFloat()..DrawStyle.MAX_WIDTH.toFloat(),
+                    step = ToolConversions.WIDTH_STEP.toFloat(),
+                    onChangeFinished = { host.restyleSelection(null, null) },
+                ) { w ->
+                    width = w
+                    host.restyleSelection(null, w.toDouble(), preview = true)
+                }
             }
+        })
+        if (!onlyTables) table?.let { t ->
+            t.groups(color, host.hostRecentColors, null, emptyList()) { next, preview ->
+                table = next
+                host.restyleSelectionTables(preview) { next }
+            }.forEach { MenuCard(it) }
+        }
+        if (!fillsOnly) {
             Text(
                 stringResource(R.string.change_style_hint),
                 color = palette.textDim.toComposeColor(),
-                fontSize = 11.sp,
+                fontSize = 12.sp,
+                modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 2.dp),
             )
         }
     }
@@ -997,20 +1120,6 @@ private fun MatchDot(outline: Rgba, selected: Boolean, onClick: () -> Unit) {
     }
 }
 
-@Composable
-private fun StepDot(glyph: String, label: String, enabled: Boolean, onClick: () -> Unit) {
-    val palette = LocalPalette.current
-    Tooltip(label) {
-        Box(
-            Modifier.size(30.dp).clip(CircleShape).border(1.dp, palette.border.toComposeColor(), CircleShape)
-                .clickable(enabled = enabled, onClick = onClick),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(glyph, color = (if (enabled) palette.text else palette.textDim).toComposeColor(), fontSize = 16.sp)
-        }
-    }
-}
-
 /**
  * The screenshot tool's floating action, shown above the frozen capture rectangle: a single
  * "Copy as image" button that renders the region and puts it on the system clipboard.
@@ -1022,7 +1131,7 @@ fun ScreenshotMenu(editor: Editor, onShare: (java.io.File) -> Unit) {
     val density = LocalDensity.current
 
     val barHeightPx = with(density) { 44.dp.toPx() }
-    val barWidthPx = with(density) { 216.dp.toPx() }
+    val barWidthPx = with(density) { 224.dp.toPx() }
     val gap = with(density) { 10.dp.toPx() }
     val centerX = ((rect.left + rect.right) / 2.0).toFloat()
     val xPx = (centerX - barWidthPx / 2f).coerceAtLeast(with(density) { 8.dp.toPx() })
@@ -1034,9 +1143,8 @@ fun ScreenshotMenu(editor: Editor, onShare: (java.io.File) -> Unit) {
     Row(
         modifier = Modifier
             .offset(with(density) { xPx.toDp() }, with(density) { yPx.toDp() })
-            .clip(MaterialTheme.shapes.medium)
-            .background(palette.menuBg.toComposeColor())
-            .border(1.dp, palette.border.toComposeColor(), MaterialTheme.shapes.medium),
+            .floatingBar()
+            .padding(horizontal = BAR_END),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Row(
@@ -1115,24 +1223,16 @@ fun LongPressMenu(host: LongPressMenuHost, onInsertImageAt: (com.xnotes.core.geo
         DropdownMenu(expanded = true, onDismissRequest = { host.dismissContextMenu() }) {
             val locked = target.locked
             if (locked != null) {
-                DropdownMenuItem(text = { Text(stringResource(R.string.unlock)) }, onClick = {
-                    host.unlockItem(locked); host.dismissContextMenu()
-                })
+                MenuItem(stringResource(R.string.unlock), XnotesIcons.unlock) { host.unlockItem(locked); host.dismissContextMenu() }
                 return@DropdownMenu
             }
             if (host.hasClipboardItems) {
-                DropdownMenuItem(text = { Text(stringResource(R.string.paste_here)) }, onClick = {
-                    host.pasteItemsAt(target.content); host.dismissContextMenu()
-                })
+                MenuItem(stringResource(R.string.paste_here), XnotesIcons.paste) { host.pasteItemsAt(target.content); host.dismissContextMenu() }
             }
             if (host.clipboardHasImage) {
-                DropdownMenuItem(text = { Text(stringResource(R.string.paste_image)) }, onClick = {
-                    host.pasteClipboardImageAt(target.content); host.dismissContextMenu()
-                })
+                MenuItem(stringResource(R.string.paste_image), XnotesIcons.image) { host.pasteClipboardImageAt(target.content); host.dismissContextMenu() }
             }
-            DropdownMenuItem(text = { Text(stringResource(R.string.insert_image_ellipsis)) }, onClick = {
-                onInsertImageAt(target.content); host.dismissContextMenu()
-            })
+            MenuItem(stringResource(R.string.insert_image_ellipsis), XnotesIcons.plus) { onInsertImageAt(target.content); host.dismissContextMenu() }
         }
     }
 }
@@ -1154,7 +1254,7 @@ fun FlowEditMenu(editor: Editor) {
     var pasteOpen by remember { mutableStateOf(false) }
 
     val barHeightPx = with(density) { 48.dp.toPx() }
-    val barWidthPx = with(density) { (4 * 46).dp.toPx() }
+    val barWidthPx = with(density) { (4 * 46 + 8).dp.toPx() }
     val gap = with(density) { 10.dp.toPx() }
     // When pushed below the selection, also clear the teardrop handles hanging there.
     val handleClearance = with(density) { (2 * com.xnotes.canvas.TextHandles.RADIUS_DP).dp.toPx() }
@@ -1171,9 +1271,8 @@ fun FlowEditMenu(editor: Editor) {
         Row(
             modifier = Modifier
                 .offset(with(density) { xPx.toDp() }, with(density) { yPx.toDp() })
-                .clip(MaterialTheme.shapes.medium)
-                .background(palette.menuBg.toComposeColor())
-                .border(1.dp, palette.border.toComposeColor(), MaterialTheme.shapes.medium),
+                .floatingBar()
+                .padding(horizontal = BAR_END),
         ) {
             ActionIcon(XnotesIcons.cut, stringResource(R.string.cut), enabled = hasSelection, shortcut = Keys.CUT) {
                 editor.flowCut(); editor.dismissFlowContextMenu()
@@ -1188,16 +1287,16 @@ fun FlowEditMenu(editor: Editor) {
                     onDismissRequest = { pasteOpen = false },
                     properties = PopupProperties(focusable = false),
                 ) {
-                    DropdownMenuItem(text = { Text(stringResource(R.string.paste)) }, onClick = {
+                    MenuItem(stringResource(R.string.paste), onClick = {
                         pasteOpen = false; editor.pasteAtCaret(); editor.dismissFlowContextMenu()
                     })
-                    DropdownMenuItem(text = { Text(stringResource(R.string.paste_plain)) }, onClick = {
+                    MenuItem(stringResource(R.string.paste_plain), onClick = {
                         pasteOpen = false; editor.pastePlainAtCaret(); editor.dismissFlowContextMenu()
                     })
-                    DropdownMenuItem(text = { Text(stringResource(R.string.paste_markdown)) }, onClick = {
+                    MenuItem(stringResource(R.string.paste_markdown), onClick = {
                         pasteOpen = false; editor.pasteMarkdownAtCaret(); editor.dismissFlowContextMenu()
                     })
-                    DropdownMenuItem(text = { Text(stringResource(R.string.paste_code)) }, onClick = {
+                    MenuItem(stringResource(R.string.paste_code), onClick = {
                         pasteOpen = false; editor.pasteAsCodeAtCaret(); editor.dismissFlowContextMenu()
                     })
                 }
@@ -1221,10 +1320,11 @@ fun PdfSelectionMenu(editor: Editor) {
     val density = LocalDensity.current
     val actions = remember { editor.pdfTextActions() }
     var overflowOpen by remember { mutableStateOf(false) }
-    val marks = if (editor.readerMode) emptyList() else PDF_MARKS
+    // A read-only note's text is copied or handed on, never marked.
+    val marks = if (editor.readOnly) emptyList() else PDF_MARKS
 
     val barHeightPx = with(density) { 48.dp.toPx() }
-    val barWidthPx = with(density) { ((1 + marks.size + if (actions.isEmpty()) 0 else 1) * 46).dp.toPx() }
+    val barWidthPx = with(density) { ((1 + marks.size + if (actions.isEmpty()) 0 else 1) * 46 + 8).dp.toPx() }
     val gap = with(density) { 10.dp.toPx() }
     val margin = with(density) { 8.dp.toPx() }
     // When pushed below the selection, also clear the teardrop handles hanging there.
@@ -1242,9 +1342,8 @@ fun PdfSelectionMenu(editor: Editor) {
         Row(
             modifier = Modifier
                 .offset(with(density) { xPx.toDp() }, with(density) { yPx.toDp() })
-                .clip(MaterialTheme.shapes.medium)
-                .background(palette.menuBg.toComposeColor())
-                .border(1.dp, palette.border.toComposeColor(), MaterialTheme.shapes.medium),
+                .floatingBar()
+                .padding(horizontal = BAR_END),
         ) {
             ActionIcon(XnotesIcons.copy, stringResource(R.string.copy), shortcut = Keys.COPY) { editor.copyPdfText() }
             for ((type, icon, label) in marks) {
@@ -1259,7 +1358,7 @@ fun PdfSelectionMenu(editor: Editor) {
                         properties = PopupProperties(focusable = false),
                     ) {
                         for ((label, app) in actions) {
-                            DropdownMenuItem(text = { Text(label) }, onClick = {
+                            MenuItem(label, onClick = {
                                 overflowOpen = false
                                 editor.processPdfText(app)
                             })
@@ -1274,6 +1373,7 @@ fun PdfSelectionMenu(editor: Editor) {
 /**
  * A markup's tap menu: its colour and kind (each a small list), its note, Copy (the text it marks),
  * Delete, and Open link when the tap was on a link. Placed like the selection bar, by the markup.
+ * On a read-only note it keeps only Copy and Open link.
  */
 @Composable
 fun MarkupMenu(editor: Editor) {
@@ -1282,9 +1382,10 @@ fun MarkupMenu(editor: Editor) {
     val density = LocalDensity.current
     var colorsOpen by remember { mutableStateOf(false) }
     var kindsOpen by remember { mutableStateOf(false) }
-    val icons = 5 + if (menu.openLink != null) 1 else 0
+    val reading = editor.readOnly
+    val icons = (if (reading) 1 else 5) + if (menu.openLink != null) 1 else 0
     val barHeightPx = with(density) { 48.dp.toPx() }
-    val barWidthPx = with(density) { (icons * 46).dp.toPx() }
+    val barWidthPx = with(density) { (icons * 46 + 8).dp.toPx() }
     val gap = with(density) { 10.dp.toPx() }
     val margin = with(density) { 8.dp.toPx() }
     val rect = menu.anchor
@@ -1299,12 +1400,11 @@ fun MarkupMenu(editor: Editor) {
         Row(
             modifier = Modifier
                 .offset(with(density) { xPx.toDp() }, with(density) { yPx.toDp() })
-                .clip(MaterialTheme.shapes.medium)
-                .background(palette.menuBg.toComposeColor())
-                .border(1.dp, palette.border.toComposeColor(), MaterialTheme.shapes.medium),
+                .floatingBar()
+                .padding(horizontal = BAR_END),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box {
+            if (!reading) Box {
                 val colourLabel = stringResource(R.string.markup_colour)
                 Tooltip(colourLabel) {
                     IconButton(onClick = { colorsOpen = true }, modifier = Modifier.size(46.dp).semantics { contentDescription = colourLabel }) {
@@ -1322,13 +1422,14 @@ fun MarkupMenu(editor: Editor) {
                     }
                 }
             }
-            Box {
+            if (!reading) Box {
                 ActionIcon(markIcon(m.type), stringResource(R.string.markup_kind)) { kindsOpen = true }
                 DropdownMenu(expanded = kindsOpen, onDismissRequest = { kindsOpen = false }, properties = PopupProperties(focusable = false)) {
                     for ((type, icon, label) in PDF_MARKS) {
                         DropdownMenuItem(
                             text = { Text(stringResource(label)) },
-                            leadingIcon = { Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                            leadingIcon = { Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                            selected = type == m.type,
                             onClick = {
                                 kindsOpen = false
                                 if (type != m.type) editor.retypeMarkup(type)
@@ -1337,9 +1438,9 @@ fun MarkupMenu(editor: Editor) {
                     }
                 }
             }
-            ActionIcon(XnotesIcons.note, stringResource(R.string.markup_note)) { editor.editMarkupNote() }
+            if (!reading) ActionIcon(XnotesIcons.note, stringResource(R.string.markup_note)) { editor.editMarkupNote() }
             ActionIcon(XnotesIcons.copy, stringResource(R.string.copy)) { editor.copyMarkupText() }
-            ActionIcon(XnotesIcons.trash, stringResource(R.string.delete)) { editor.deleteMarkup() }
+            if (!reading) ActionIcon(XnotesIcons.trash, stringResource(R.string.delete)) { editor.deleteMarkup() }
             if (menu.openLink != null) ActionIcon(XnotesIcons.link, stringResource(R.string.open_link)) { editor.openMarkupLink() }
         }
     }
@@ -1371,9 +1472,7 @@ fun MarkupNotePeek(editor: Editor) {
             }
             .widthIn(max = 300.dp)
             .heightIn(max = maxHeight)
-            .clip(MaterialTheme.shapes.medium)
-            .background(palette.menuBg.toComposeColor())
-            .border(1.dp, palette.border.toComposeColor(), MaterialTheme.shapes.medium)
+            .floatingBar()
             .verticalScroll(scroll)
             .padding(horizontal = 12.dp, vertical = 10.dp),
     ) {
@@ -1389,28 +1488,19 @@ private const val NOTE_PEEK_MAX_HEIGHT = 0.4f
 fun MarkupNoteDialog(editor: Editor) {
     val target = editor.markupNote ?: return
     var text by remember(target) { mutableStateOf(target.markup.note.orEmpty()) }
-    AlertDialog(
-        onDismissRequest = { editor.dismissMarkupNote() },
-        title = { Text(stringResource(R.string.markup_note)) },
-        text = {
-            OutlinedTextField(
-                value = text,
-                onValueChange = { text = it },
-                placeholder = { Text(stringResource(R.string.markup_note_hint)) },
-                minLines = 3,
-                maxLines = 10,
-            )
-        },
-        confirmButton = { TextButton(onClick = { editor.saveMarkupNote(text) }) { Text(stringResource(R.string.save)) } },
-        dismissButton = {
-            Row {
-                if (target.markup.note != null) {
-                    TextButton(onClick = { editor.saveMarkupNote("") }) { Text(stringResource(R.string.delete)) }
-                }
-                TextButton(onClick = { editor.dismissMarkupNote() }) { Text(stringResource(R.string.cancel)) }
+    SheetDialog(
+        title = stringResource(R.string.markup_note),
+        onDismiss = { editor.dismissMarkupNote() },
+        foot = {
+            DialogButtons {
+                if (target.markup.note != null) DialogButton(stringResource(R.string.delete), ButtonKind.DISCARD) { editor.saveMarkupNote("") }
+                DialogButton(stringResource(R.string.cancel)) { editor.dismissMarkupNote() }
+                DialogButton(stringResource(R.string.save), ButtonKind.CONFIRM) { editor.saveMarkupNote(text) }
             }
         },
-    )
+    ) {
+        DialogField(text, { text = it }, placeholder = stringResource(R.string.markup_note_hint), lines = 3)
+    }
 }
 
 @Composable
@@ -1447,7 +1537,7 @@ private fun tableBarRect(editor: Editor, table: com.xnotes.core.text.FlowTable, 
     editor.tableChromeTick
     val (pi, frag) = editor.tableFrags(table).firstOrNull() ?: return null
     val t = editor.pageRectToViewport(pi, frag.rect) ?: return null
-    val w = with(density) { (TABLE_BAR_ICONS * 46).dp.toPx() }
+    val w = with(density) { (TABLE_BAR_ICONS * 46 + 8).dp.toPx() }
     val h = with(density) { 48.dp.toPx() }
     val margin = with(density) { 8.dp.toPx() }
     val gap = with(density) { 10.dp.toPx() }
@@ -1475,9 +1565,8 @@ fun FlowTableMenu(editor: Editor) {
         Row(
             modifier = Modifier
                 .offset(with(density) { bar.left.toDp() }, with(density) { bar.top.toDp() })
-                .clip(MaterialTheme.shapes.medium)
-                .background(palette.menuBg.toComposeColor())
-                .border(1.dp, palette.border.toComposeColor(), MaterialTheme.shapes.medium),
+                .floatingBar()
+                .padding(horizontal = BAR_END),
         ) {
             ActionIcon(XnotesIcons.tableEdit, stringResource(R.string.edit_table)) { editor.startTableEdit(table) }
             ActionIcon(XnotesIcons.magicWand, stringResource(R.string.fit_columns)) { editor.tableAutoFit(table) }

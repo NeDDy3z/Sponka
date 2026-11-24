@@ -21,7 +21,8 @@ enum class ViewingMode(val id: String) {
 /**
  * A complete set of View-menu settings. Used in two roles: the app-wide **defaults**
  * (saved via the menu's "Default for all notes" checkbox, persisted in
- * [com.xnotes.settings.Settings]) and the **resolved** effective settings of the open
+ * [com.xnotes.settings.Settings], one set for light and one for dark and OLED, sharing their
+ * layout) and the **resolved** effective settings of the open
  * note ([ViewOverrides.resolve]). The colour filters follow CSS filter semantics and are
  * applied to the PDF page raster only, in the fixed order contrast, invert, brightness, sepia,
  * multiply, screen.
@@ -30,10 +31,8 @@ data class ViewSettings(
     val mode: ViewingMode = ViewingMode.SINGLE,
     /** True = continuous vertical scroll; false = paginated horizontal page-flip. */
     val verticalScroll: Boolean = true,
-    /** Paginated only: pages move up and down freely and pinches never snap to a fit. */
+    /** Pinches never snap to a fit. Vertical scroll: any page edge can reach the viewport centre. Paginated: pages move up and down freely. */
     val freeMovement: Boolean = false,
-    /** Continuous only: the page can slide sideways until just its edge stays on screen. */
-    val freeHorizontalScroll: Boolean = false,
     val contrast: Int = 100, // 0..200, 100 = untouched
     val invert: Int = 0, // 0..100
     val brightness: Int = 100, // 0..200, 100 = untouched
@@ -49,12 +48,54 @@ data class ViewSettings(
     /** Whether the canvas-area scrollbar is shown (off by default). */
     val scrollbar: Boolean = false,
 ) {
+    /** Whether any colour filter changes the PDF page. */
+    val filtersOn: Boolean
+        get() = contrast != 100 || invert != 0 || brightness != 100 || sepia != 0 ||
+            multiply != PdfColorFilter.MULTIPLY_OFF || screen != PdfColorFilter.SCREEN_OFF
+
+    /** These filters with [o]'s layout, the half both themes share. */
+    fun withLayoutOf(o: ViewSettings): ViewSettings = copy(
+        mode = o.mode,
+        verticalScroll = o.verticalScroll,
+        freeMovement = o.freeMovement,
+        rotation = o.rotation,
+        scrollbar = o.scrollbar,
+    )
+
     companion object {
         val ROTATIONS = listOf(0, 90, 180, 270)
+
+        /** The defaults until the user saves their own: dark and OLED invert PDF pages, and images keep their colours. */
+        fun factory(dark: Boolean): ViewSettings = ViewSettings(invert = if (dark) 95 else 0, keepImages = true)
 
         /** Snap any degree value onto the supported quarter turns. */
         fun normalizeRotation(deg: Int): Int = (((deg % 360) + 360) % 360) / 90 * 90
     }
+}
+
+/** How reader mode moves between pages. */
+enum class ReaderPageMode(val id: String) {
+    VERTICAL("vertical"),
+    HORIZONTAL("horizontal"),
+
+    /** One page at a time, turned by a swipe, a tap at the side or a key, like an e-ink reader. */
+    SINGLE("single");
+
+    companion object {
+        fun fromId(id: String?): ReaderPageMode = entries.firstOrNull { it.id == id } ?: VERTICAL
+    }
+}
+
+/** Reader mode's own display settings, kept apart from the View settings notes are edited with. */
+data class ReaderSettings(
+    /** Its [ViewSettings.verticalScroll] is ignored: [pageMode] decides. */
+    val view: ViewSettings = ViewSettings(),
+    val pageMode: ReaderPageMode = ReaderPageMode.VERTICAL,
+    val turnAnimation: Boolean = true,
+    val tapToTurn: Boolean = true,
+) {
+    /** The settings the canvas runs on while reading. */
+    val resolved: ViewSettings get() = view.copy(verticalScroll = pageMode != ReaderPageMode.SINGLE)
 }
 
 /**
@@ -68,7 +109,6 @@ data class ViewOverrides(
     val mode: ViewingMode? = null,
     val verticalScroll: Boolean? = null,
     val freeMovement: Boolean? = null,
-    val freeHorizontalScroll: Boolean? = null,
     val contrast: Int? = null,
     val invert: Int? = null,
     val brightness: Int? = null,
@@ -84,7 +124,6 @@ data class ViewOverrides(
         mode = mode ?: defaults.mode,
         verticalScroll = verticalScroll ?: defaults.verticalScroll,
         freeMovement = freeMovement ?: defaults.freeMovement,
-        freeHorizontalScroll = freeHorizontalScroll ?: defaults.freeHorizontalScroll,
         contrast = contrast ?: defaults.contrast,
         invert = invert ?: defaults.invert,
         brightness = brightness ?: defaults.brightness,

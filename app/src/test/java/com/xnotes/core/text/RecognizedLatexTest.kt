@@ -22,6 +22,12 @@ class RecognizedLatexTest {
         assertEquals("\\operatorname{sgn}x", c("\\operatorname { s g n } x"))
     }
 
+    @Test fun dropsDisplayDelimiters() {
+        assertEquals("y=2x-3", c("\\[y=2x-3\\]"))
+        assertEquals("x+1", c("$$ x + 1 $$"))
+        assertEquals("x+1", c("\\mathrm { x } + \\mathrm { \\boldmath ~ 1 }"))
+    }
+
     @Test fun dropsPrintedFontWrappers() {
         assertEquals("\\frac{1}{X+1}", c("\\frac { 1 } { \\mathrm { X + 1 } }"))
         assertEquals("x^{2}", c("\\mathbf { x } ^ { \\mathbf { 2 } }"))

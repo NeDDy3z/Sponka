@@ -10,11 +10,11 @@ import com.xnotes.core.pal.TextMeasurer
  */
 fun CanvasItem.deepCopy(measurer: TextMeasurer): CanvasItem = when (this) {
     is Stroke -> Stroke(this)
-    is ImageItem -> ImageItem(image, rect, orientation, angle, flip, part)
+    is ImageItem -> ImageItem(image, rect, orientation, angle, flip, part).also { it.paper = paper }
     is AudioItem -> AudioItem(audio, rect, name, rid, measurer)
     // The shape is immutable, so the copy can share it; a copy starts covered.
     is TapeItem -> TapeItem(shape, rgba, pattern)
-    is TextItem -> TextItem(pos, width, height, text, rgba, pointSize, face, measurer, bold, italic, underline, strike, align, math)
+    is TextItem -> copy()
     is ShapeItem ->
         ShapeItem(
             shape, start, end, strokeRgba, strokeWidth, fillRgba, neon, neonStrength, path,
@@ -33,7 +33,7 @@ fun CanvasItem.deepCopy(measurer: TextMeasurer): CanvasItem = when (this) {
             it.labelAt = labelAt
         }
     is TableItem ->
-        TableItem(rect, colFractions.toList(), rowFractions.toList(), strokeRgba, strokeWidth)
+        TableItem(rect, colFractions.toList(), rowFractions.toList(), strokeRgba, strokeWidth).also { it.box = box; it.lines = lines; it.cells.putAll(cells) }
     else -> this
     // Carried, not reset: autosave snapshots the document through this, so dropping the lock here
     // would quietly unlock everything on the next save.

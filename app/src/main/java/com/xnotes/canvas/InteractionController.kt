@@ -16,6 +16,7 @@ import com.xnotes.core.model.sourceWidth
 import com.xnotes.core.text.FlowLayout
 import com.xnotes.core.text.PageBox
 import com.xnotes.core.history.AddItem
+import com.xnotes.core.history.EditText
 import com.xnotes.core.history.AddItems
 import com.xnotes.core.history.Command
 import com.xnotes.core.history.CompositeCommand
@@ -23,7 +24,6 @@ import com.xnotes.core.history.EraseItems
 import com.xnotes.core.history.History
 import com.xnotes.core.history.LockItems
 import com.xnotes.core.history.EditLabel
-import com.xnotes.core.history.EditText
 import com.xnotes.core.history.MoveItems
 import com.xnotes.core.history.RefillShapes
 import com.xnotes.core.history.ReorderItems
@@ -35,10 +35,11 @@ import com.xnotes.core.history.RemoveMarkup
 import com.xnotes.core.history.ReplacePageItems
 import com.xnotes.core.history.ResizeItem
 import com.xnotes.core.history.RestyleItems
-import com.xnotes.core.history.RestyleText
+import com.xnotes.core.history.RestyleBox
 import com.xnotes.core.history.TransferItems
 import com.xnotes.core.history.TransformItems
 import com.xnotes.core.model.CanvasItem
+import com.xnotes.core.model.MathOrigin
 import com.xnotes.core.model.ConnectorDraft
 import com.xnotes.core.model.ConnectorEdit
 import com.xnotes.core.model.ConnectorItem
@@ -69,7 +70,8 @@ import com.xnotes.core.model.TapeItem
 import com.xnotes.core.model.TapeMode
 import com.xnotes.core.model.TapePattern
 import com.xnotes.core.tape.TapeGeometry
-import com.xnotes.core.model.TextHandle
+import com.xnotes.core.model.BoxDefaults
+import com.xnotes.core.model.BoxStyle
 import com.xnotes.core.model.TextItem
 import com.xnotes.core.model.TextMarkup
 import com.xnotes.core.model.TextStyle
@@ -84,9 +86,8 @@ import com.xnotes.core.stroke.Scribble
 import com.xnotes.core.stroke.Sample
 import com.xnotes.core.stroke.ShapeRecognizer
 import com.xnotes.core.stroke.Stabilizer
-import com.xnotes.core.stroke.SteadyReadout
-import com.xnotes.core.stroke.SteadyTrace
 import com.xnotes.core.stroke.StrokeSimplify
+import com.xnotes.core.text.FlowRange
 import com.xnotes.core.tools.EraseMode
 import com.xnotes.core.tools.InkPalette
 import com.xnotes.core.tools.ShapeConfig
@@ -95,7 +96,6 @@ import com.xnotes.core.tools.SelectKind
 import com.xnotes.core.tools.MarkupMode
 import com.xnotes.core.tools.Tool
 import com.xnotes.core.tools.ToolConfig
-import com.xnotes.core.tools.ToolConversions
 import com.xnotes.core.tools.ToolDefaults
 import com.xnotes.ui.theme.Palette
 import kotlin.math.abs
@@ -111,11 +111,11 @@ import com.xnotes.core.model.sourcePoint
 enum class PointerMode {
     IDLE, DRAW, ERASE, BAND, LASSO_DRAW, SHOT, SHAPE, MOVE, RESIZE, TRANSFORM, PAN, PINCH, FLOW_TEXT,
     TEXT_DRAG, RULER_MOVE, RULER_TRANSFORM, RULER_ROTATE, PDF_TEXT, VERTEX, POLYGON, CONNECT, JOINT, SLIDE, TAPE, ROOM,
-    ROOM_BUTTON, TABLE_LINE, TABLE_GRIP, TABLE_PICK, TABLE_DRAW,
+    ROOM_BUTTON, TABLE_LINE, TABLE_GRIP, TABLE_PICK, TABLE_DRAW, SHOT_RESIZE, SHOT_MOVE,
 }
 
 /** Column/row counts and line width for the next table drawn with the table tool. */
-data class TableToolDefaults(val cols: Int, val rows: Int, val width: Double, val color: Rgba? = null)
+data class TableToolDefaults(val cols: Int, val rows: Int, val look: com.xnotes.core.model.TableLook, val color: Rgba? = null)
 
 /**
  * Geometry of the live text editor field: [x]/[y] place its top-left in viewport pixels, while
@@ -137,11 +137,6 @@ data class EditingField(
     val rotation: Double = 0.0,
     /** Every line centred, as a shape's label sets. */
     val centred: Boolean = false,
-    val bold: Boolean = false,
-    val italic: Boolean = false,
-    val underline: Boolean = false,
-    val strike: Boolean = false,
-    val align: com.xnotes.core.pal.HAlign = com.xnotes.core.pal.HAlign.LEFT,
 ) {
     /** The field's on-screen bounding box, turned corners and all. */
     fun screenBounds(): Rect {
@@ -159,14 +154,8 @@ data class TextBar(
     val rect: Rect,
     val face: FontFace,
     val pointSize: Double,
-    val rgba: Rgba,
     /** True while the keyboard field is up (vs the box merely being selected). */
     val editing: Boolean,
-    val bold: Boolean = false,
-    val italic: Boolean = false,
-    val underline: Boolean = false,
-    val strike: Boolean = false,
-    val align: com.xnotes.core.pal.HAlign = com.xnotes.core.pal.HAlign.LEFT,
 )
 
 /**
@@ -204,6 +193,9 @@ class InteractionController(
     /** Whether the system clipboard currently holds an image (provided by the host). */
     var clipboardHasImage: () -> Boolean = { false }
 
+    /** A formula the math add-on made was edited from one LaTeX to another (or back, by undo). */
+    var onMathRelearn: ((MathOrigin, String, String) -> Unit)? = null
+
     /** The inline-flow caret controller; TEXT-tool gestures route here (installed by the Editor). */
     var flowText: FlowTextController? = null
 
@@ -221,6 +213,12 @@ class InteractionController(
     /** The view was panned or pinched by hand, as distinct from moved by the app. */
     var onUserMovedView: (() -> Unit)? = null
 
+    /** A hand pan or pinch moved the view past tap range: once a gesture, unlike [onUserMovedView]. */
+    var onUserDraggedView: (() -> Unit)? = null
+
+    /** A pan tap that nothing on the page took: no link, tape, pill, markup, note or selection. */
+    var onBareTap: ((Pt) -> Unit)? = null
+
     /** A finger tap that may land on an audio pill, at [pageLocal] on page [pageIndex]; true when one took it. */
     var onAudioTap: ((pageIndex: Int, pageLocal: Pt) -> Boolean)? = null
 
@@ -230,8 +228,8 @@ class InteractionController(
      */
     var onMarkupTap: ((at: Pt, withLink: Boolean) -> Boolean)? = null
 
-    /** A pan tap or a markup tool tap at viewport point [at], told before anything acts on it. */
-    var onTap: ((at: Pt) -> Unit)? = null
+    /** A pan tap or a markup tool tap at viewport point [at], told before anything acts on it; true when it put something away. */
+    var onTap: ((at: Pt) -> Boolean)? = null
 
     /** PDF text selection: a free pointer's long press on a PDF page selects there (installed by the Editor). */
     var pdfText: PdfTextController? = null
@@ -258,6 +256,31 @@ class InteractionController(
     /** Whether a finger draws (true) or pans (false). The stylus always uses the armed tool. */
     var fingerDraws: Boolean = false
 
+    /**
+     * While true the note is only read: every pointer acts as a panning finger, so a drag scrolls, a
+     * tap follows a link or peels tape and a long press selects PDF text, and nothing else changes.
+     * Turning it on lets go of whatever was being edited.
+     */
+    var readOnly: Boolean
+        get() = state.readOnly
+        set(value) {
+            if (value == state.readOnly) return
+            if (value) {
+                if (hoverActionTool != null) endHoverAction()
+                if (tool == Tool.INSERT_SPACE) insertSpace.hoverAt(null)
+                commitTextEdit()
+                flowText?.endSession()
+                abortGesture()
+                finishPolygonDraft()
+                clearSelection()
+                clearScreenshot()
+                eraserCursor = null
+                connectHot = emptyList()
+            }
+            state.readOnly = value
+            requestRender()
+        }
+
     /** Panning allowed while zoom is locked: "single" (default) | "double" | "none". */
     var zoomLockPan: String = "single"
 
@@ -269,9 +292,6 @@ class InteractionController(
 
     /** Tool the stylus side button activates while held, or null to ignore the button. */
     var penButtonTool: Tool? = Tool.ERASER
-
-    /** Reader mode: every pointer pans and follows links, and a long press only selects PDF text. */
-    var readOnly: Boolean = false
 
     /** The side button, latched as on the infinite canvas; read only at touch-down, so a press
      *  after the pen is already down does not activate the mapped tool. */
@@ -310,14 +330,6 @@ class InteractionController(
     /** The live stroke's stabilization, or null while its pen draws the nib as is. */
     private var steadier: Stabilizer? = null
 
-    /** Debug HUD: what stabilization did to the last stroke. */
-    val steadyReadout = SteadyReadout()
-
-    /** Whether strokes are measured for [steadyReadout]; true only while the debug HUD is up. */
-    var measureSteadying: () -> Boolean = { false }
-
-    private val steadyTrace = SteadyTrace()
-    private var tracing = false
     private var drawingPointerId = -1
     private var drawingIsStylus = false
 
@@ -347,6 +359,7 @@ class InteractionController(
     private var panDownViewport = Pt.ZERO // where the current pan began (viewport px), for tap-to-dismiss
     private var panFromPenButton = false // a side-button pan parks where the pen lifted: no glide
     private var downStoppedFling = false // this touch landed on a moving glide, so its lift isn't a dismiss tap
+    private var viewDragged = false // this touch has panned or pinched the view past tap range
     private var panMayCommitText = false // pan begun off an open text box: a tap commits it, a drag scrolls
     private var downView: CanvasState.ViewSnapshot? = null // the view as this touch went down, put back if Android takes the touch back
     private var touchTakenBack = false // Android took back a finger of this touch, so the rest of it is ignored
@@ -354,6 +367,7 @@ class InteractionController(
     // the controller's selection/edit logic stays constructible — and unit-testable — off-device.
     private val choreographer by lazy { Choreographer.getInstance() }
     private var flinging = false
+    val isFlinging: Boolean get() = flinging
     private var flingVel = Pt.ZERO // scroll-space velocity, viewport px/s
     private var lastFlingMs = 0L
     private val flingFrame = Choreographer.FrameCallback { frameTimeNanos -> stepFling(frameTimeNanos) }
@@ -376,6 +390,7 @@ class InteractionController(
 
     // PINCH
     private var pinchInitDist = 1.0
+    private var pinchInitMid = Pt.ZERO
     private var pinchInitZoom = 1.0
     private var pinchAnchorContent = Pt.ZERO
 
@@ -408,6 +423,7 @@ class InteractionController(
     // SELECTION
     private val selection = mutableListOf<Selected>()
     private val lassoPoints = mutableListOf<Pt>()
+    private var lassoErasing = false
     private var bandRect: Rect? = null
     private var moveOrigin = Pt.ZERO
     private var moveOffset = Pt.ZERO
@@ -426,6 +442,11 @@ class InteractionController(
     var screenshotRect: Rect? = null
         private set
     private var screenshotOrigin = Pt.ZERO
+    /** The frozen capture as it was when an adjust started, so a cancel can put it back. */
+    private var shotStart: Rect? = null
+    /** The handle being dragged on the frozen capture, and where the pen grabbed it. */
+    private var shotGrab: HandleId? = null
+    private var shotGrabAt = Pt.ZERO
 
     // ERASE
     private val eraseRemovals = mutableListOf<Pair<Page, CanvasItem>>()
@@ -444,9 +465,8 @@ class InteractionController(
     /** Tool armed just before the screenshot tool, to return to after a capture is copied. */
     private var toolBeforeScreenshot: Tool? = null
     /** Tool armed just before the text tool, to return to once an edit is committed. */
-    private var toolBeforeText: Tool? = null
     /** Insert space's gesture, its live room and what it lifts out of the page's cache. */
-    private val insertSpace = InsertSpaceGesture(state, history, { requestRender() }) { page, rect -> repairRegion(page, rect) }
+    private val insertSpace = InsertSpaceGesture(state, history, { requestRender() }, { configFor(Tool.INSERT_SPACE).colorOverride }) { page, rect -> repairRegion(page, rect) }
     /** Whether the live erase is finger-driven (vs the stylus eraser tip / side button): a finger
      *  erase yields to a two-finger pinch, a stylus erase ignores incidental finger/palm contact. */
     private var erasingWithFinger = false
@@ -499,7 +519,7 @@ class InteractionController(
     private var shapePageIndex: Int? = null
 
     // TABLE (drawn like a shape). The defaults come from the editor's table-tool settings, read live.
-    var tableToolDefaults: () -> TableToolDefaults = { TableToolDefaults(3, 3, 2.0) }
+    var tableToolDefaults: () -> TableToolDefaults = { TableToolDefaults(3, 3, com.xnotes.core.model.TableLook(2.0, BoxStyle.NONE, com.xnotes.core.model.TableLines())) }
     private var pendingTable: TableItem? = null
     private var tableDrawPageIndex: Int? = null
     private var tableDrawStart = Pt.ZERO
@@ -557,6 +577,10 @@ class InteractionController(
     private var txCenter = Pt.ZERO
     private var txGrabAngle = 0.0
     private var txStartAngle = 0.0
+    /** Where the pen is during a rotate drag, for the angle readout beside it. */
+    private var txPointer: Pt? = null
+    /** Snapping for the rotate or line-end drag in progress. */
+    private val angleSnap = AngleSnap()
 
     // LONG-PRESS GRAB
     private val handler by lazy { Handler(Looper.getMainLooper()) } // lazy: see [choreographer]
@@ -582,14 +606,33 @@ class InteractionController(
     // TEXT EDITING
     private var editingText: TextItem? = null
     private var editingIsNew = false
-    private var editingOldText = ""
     /** The image or shape a new draft captions: on commit the two join one group. */
     private var editingCaptionOf: CanvasItem? = null
     private var editingPageIndex = -1
+    private var editingSurface: BoxSurface? = null
+
+    /** The step that put a box typed for the first time on its page, dropped again if it ends empty. */
+    private var editingAdd: Command? = null
+
+    /** What the box being typed in painted over when the typing began. */
+    private var editingWas: Rect? = null
     val editingItem: TextItem? get() = editingText
 
-    /** True while a text box or a shape's label is open in the overlay. */
+    /** True while a text box is being typed in, or a shape's label is open in the overlay. */
     val isEditingText: Boolean get() = editingText != null || editingLabel != null
+
+    /** Told when typing in a text box begins and ends. */
+    var onBoxTyping: (Boolean) -> Unit = {}
+
+    /** Which formula of a paragraph shows its source under the caret, for the box being typed in. */
+    var boxReveal: (com.xnotes.core.text.Paragraph) -> Int = { -1 }
+
+    /** What a new text box starts as: the Text box tool's defaults. */
+    var boxDefaults: BoxDefaults = BoxDefaults()
+
+    /** A press on the selected text box: lifted where it went down, it opens the box for typing. */
+    private var textTapEdits = false
+    private var textTapAt = Pt.ZERO
 
     /** True while a shape's label is open in the overlay. */
     val isEditingLabel: Boolean get() = editingLabel != null
@@ -667,7 +710,6 @@ class InteractionController(
         if (t == Tool.ERASER) toolBeforeEraser = tool
         if (t == Tool.SELECT) toolBeforeSelect = tool
         if (t == Tool.SCREENSHOT) toolBeforeScreenshot = tool
-        if (t == Tool.TEXT_BOX) toolBeforeText = tool
         if (tool == Tool.INSERT_SPACE) insertSpace.hoverAt(null)
         commitTextEdit()
         if (t != Tool.TEXT) flowText?.endSession()
@@ -764,6 +806,7 @@ class InteractionController(
     }
 
     fun onHover(e: MotionEvent): Boolean {
+        if (readOnly) return false
         if (handleHoverAction(e)) return true
         if (hoverConnect(e)) return true
         if (tool == Tool.INSERT_SPACE && mode == PointerMode.IDLE) {
@@ -853,6 +896,7 @@ class InteractionController(
         if (!state.verticalScroll) clearFlipPull()
         stopOverscrollSettle() // ...and lets a re-grab take over the elastic mid-spring
         panMayCommitText = false // a fresh gesture; the editing branch below re-arms it if it applies
+        viewDragged = false
         lockedPressAt = null
         dismissPressAt = null
         markupPressAt = null
@@ -868,7 +912,7 @@ class InteractionController(
         //  - the stylus eraser end, or the held side button, force the eraser/side-button tool;
         //  - a finger pans unless finger-draw is enabled;
         //  - otherwise the armed tool.
-        val buttonHeld = stylusButtons.heldFor(e)
+        val buttonHeld = stylusButtons.heldFor(e) && !readOnly
         val effectiveTool: Tool = when {
             readOnly -> Tool.PAN
             toolType == MotionEvent.TOOL_TYPE_ERASER -> Tool.ERASER
@@ -883,32 +927,42 @@ class InteractionController(
             // off the selection it still pans.
             toolType == MotionEvent.TOOL_TYPE_FINGER && !fingerDraws && tool.fingerPansWhenOff &&
                 fingerHitsSelection(content) -> Tool.SELECT
+            // Likewise a frozen capture: a finger on a handle or inside it adjusts it.
+            toolType == MotionEvent.TOOL_TYPE_FINGER && !fingerDraws && tool == Tool.SCREENSHOT &&
+                fingerHitsCapture(content) -> Tool.SCREENSHOT
             // A finger otherwise pans instead of drawing/selecting/shaping/erasing (text stays usable by finger).
             toolType == MotionEvent.TOOL_TYPE_FINGER && !fingerDraws && tool.fingerPansWhenOff -> Tool.PAN
             else -> tool
         }
         val isFinger = toolType == MotionEvent.TOOL_TYPE_FINGER
-        val free = FreePointer.isFree(tool, effectiveTool, isFinger)
+        val free = readOnly || FreePointer.isFree(tool, effectiveTool, isFinger)
 
         // A press off the box while editing. With a finger we defer: a tap commits (re-arming the
         // prior tool), a drag scrolls the page with the edit kept live (decided in handleUp's PAN
         // branch). A stylus / side-button / eraser press commits now and proceeds as usual. A Text
         // press never spawns a new box on the same gesture (that double-create was a bug).
         if (editingText != null || editingLabel != null) {
+            // On the box being typed in the press is the caret's: a tap places it, a hold selects.
+            if (pressTypes(content, Pt(vx, vy))) {
+                mode = PointerMode.FLOW_TEXT
+                flowText?.pressAt(content, Pt(vx, vy))
+                return
+            }
             if (toolType == MotionEvent.TOOL_TYPE_FINGER && (effectiveTool == Tool.TEXT_BOX || editingLabel != null)) {
                 panMayCommitText = true
                 beginPan(vx, vy)
                 return
             }
-            commitTextEdit(restoreTool = true)
-            if (effectiveTool == Tool.TEXT_BOX) {
+            val typedBox = editingText != null
+            commitTextEdit(select = true)
+            if (typedBox || effectiveTool == Tool.TEXT_BOX) {
                 mode = PointerMode.IDLE
                 return
             }
         }
 
         // A room's close button takes a press from a pen or a finger alike, and acts once it lifts there.
-        if (tool == Tool.INSERT_SPACE && toolType != MotionEvent.TOOL_TYPE_ERASER) {
+        if (tool == Tool.INSERT_SPACE && toolType != MotionEvent.TOOL_TYPE_ERASER && !readOnly) {
             insertSpace.buttonAt(Pt(vx, vy))?.let { button ->
                 roomButton = button
                 roomButtonAt = Pt(vx, vy)
@@ -920,7 +974,7 @@ class InteractionController(
         // Touching the ruler grabs it before the normal tool dispatch — for the stylus too, so a
         // pen-down ON the body moves it. A pen-down OFF the body falls through to drawing, where the
         // magnet snaps the in-progress stroke to the edge. Its buttons toggle; its body moves it.
-        if (ruler.visible) {
+        if (ruler.visible && !readOnly) {
             val v = Pt(vx, vy)
             val hi = ruler.hitHandle(v, rulerHandleDist(), (RULER_HANDLE_HIT * state.devicePxPerDp).coerceAtLeast(ruler.handleRadiusPx()))
             if (hi != null && !ruler.lockAngle) {
@@ -962,7 +1016,7 @@ class InteractionController(
         val selected = hasSelection
 
         // With a connector armed, a press on a point it can glue to starts one, or only dismisses what is selected.
-        val inks = toolType != MotionEvent.TOOL_TYPE_FINGER || fingerDraws
+        val inks = (toolType != MotionEvent.TOOL_TYPE_FINGER || fingerDraws) && !readOnly
         if (connecting && inks && !buttonHeld && toolType != MotionEvent.TOOL_TYPE_ERASER && glueHitAt(content) != null) {
             cancelLongPress()
             if (polygonDraft != null) finishPolygonDraft()
@@ -981,9 +1035,9 @@ class InteractionController(
             if (effectiveTool != Tool.PAN) text.clear()
         }
 
-        // Zoom-lock pan preference: swallow a single-finger pan when locked and set to "double"/"none".
+        // Zoom-lock pan preference, or both pan axes locked: swallow a single-finger pan.
         // The pointer stays free, so a long press still picks up an item or selects text.
-        if (effectiveTool == Tool.PAN && !singleFingerPanAllowed()) {
+        if (effectiveTool == Tool.PAN && (!singleFingerPanAllowed() || panCfg().lockPanX && panCfg().lockPanY)) {
             mode = PointerMode.IDLE
             lockedPressAt = Pt(vx, vy)
             armLongPress(Pt(vx, vy), content, isFinger, free)
@@ -1004,7 +1058,7 @@ class InteractionController(
             }
             effectiveTool == Tool.SELECT -> beginSelect(content)
             effectiveTool == Tool.LASSO -> beginLasso(content)
-            effectiveTool == Tool.SCREENSHOT -> beginScreenshot(content)
+            effectiveTool == Tool.SCREENSHOT -> beginScreenshotGesture(content)
             effectiveTool == Tool.SHAPE && selected -> dismissFirst(content)
             effectiveTool == Tool.SHAPE && shapeConfig.placesCorners -> beginPolygonTap(content)
             effectiveTool == Tool.SHAPE && shapeConfig.connector != null -> beginConnector(content)
@@ -1019,9 +1073,12 @@ class InteractionController(
         }
         // The flow caret owns its own long press (word selection), mid text-drag it is suppressed so
         // a hold-then-drag still sizes a box, and a markup drag held still is just a slow drag; room
-        // held still under the pen is just room opened slowly.
+        // held still under the pen is just room opened slowly, and so is a capture adjusted slowly.
         if (mode != PointerMode.FLOW_TEXT && mode != PointerMode.TEXT_DRAG && mode != PointerMode.PDF_TEXT &&
-            mode != PointerMode.POLYGON && mode != PointerMode.ROOM
+            mode != PointerMode.POLYGON && mode != PointerMode.ROOM &&
+            mode != PointerMode.SHOT_RESIZE && mode != PointerMode.SHOT_MOVE &&
+            // The Text box tool already holds the box it pressed: a hold there is a slow drag, not a grab.
+            !(effectiveTool == Tool.TEXT_BOX && (mode == PointerMode.MOVE || mode == PointerMode.TRANSFORM))
         ) {
             armLongPress(Pt(vx, vy), content, isFinger, free)
         }
@@ -1117,6 +1174,8 @@ class InteractionController(
             PointerMode.BAND -> extendBand(content)
             PointerMode.LASSO_DRAW -> extendLasso(content)
             PointerMode.SHOT -> extendScreenshot(content)
+            PointerMode.SHOT_RESIZE -> extendScreenshotResize(content)
+            PointerMode.SHOT_MOVE -> extendScreenshotMove(content)
             PointerMode.MOVE -> extendMove(content)
             PointerMode.RESIZE -> extendResize(content)
             PointerMode.TABLE_LINE -> extendTableLine(content)
@@ -1171,13 +1230,13 @@ class InteractionController(
                 mode = PointerMode.IDLE
                 val upViewport = Pt(e.getX(idx).toDouble(), e.getY(idx).toDouble())
                 val tap = !downStoppedFling && upViewport.distanceTo(panDownViewport) <= TAP_SLOP
-                if (tap) onTap?.invoke(upViewport)
+                val putAway = tap && onTap?.invoke(upViewport) == true
                 if (panMayCommitText) {
                     // Press off the box while editing: only a tap commits (and re-arms the prior tool);
                     // a drag just scrolled with the edit kept live. Either way settle any elastic/glide.
                     panMayCommitText = false
                     when {
-                        tap -> commitTextEdit(restoreTool = true)
+                        tap -> commitTextEdit(select = true)
                         state.overscrollY > 0.0 -> releaseOverscroll()
                         !state.verticalScroll -> endPanPaginated()
                         else -> startPanFling()
@@ -1189,6 +1248,7 @@ class InteractionController(
                     // A finger tap (no drag) that didn't just halt a glide, landing off the current
                     // selection, dismisses it — the finger's counterpart to the stylus's empty-tap clear.
                     val linkHandled = !textCleared && tap && state.overscrollY <= 0.0 && tryLinkTap(content)
+                    if (tap && !putAway && !textCleared && !linkHandled && !hasSelection && e.eventTime - e.downTime < LONG_PRESS_MS) onBareTap?.invoke(upViewport)
                     when {
                         textCleared || linkHandled -> Unit
                         state.overscrollY > 0.0 -> releaseOverscroll()
@@ -1203,6 +1263,8 @@ class InteractionController(
             PointerMode.BAND -> endBand()
             PointerMode.LASSO_DRAW -> endLasso()
             PointerMode.SHOT -> endScreenshot()
+            PointerMode.SHOT_RESIZE -> endScreenshotAdjust()
+            PointerMode.SHOT_MOVE -> endScreenshotAdjust()
             PointerMode.MOVE -> endMove(content)
             PointerMode.RESIZE -> endResize()
             PointerMode.TABLE_LINE, PointerMode.TABLE_GRIP -> endTableLine()
@@ -1328,8 +1390,6 @@ class InteractionController(
         stroke.addSample(Sample(first.x, first.y, pressure)) // first sample: t = 0
         steadier = Stabilizer.forStroke(cfg.stabilize && !straight, cfg.stabilizeTrail, cfg.stabilizeCrossover, speedScale)
         steadier?.start(down.x, down.y, 0.0)
-        tracing = measureSteadying()
-        if (tracing) steadyTrace.start(down.x, down.y)
         liveStroke = stroke
         strokePageIndex = pageIndex
         mode = PointerMode.DRAW
@@ -1390,7 +1450,6 @@ class InteractionController(
                 Pt(steady.x, steady.y)
             }
         }
-        if (tracing && steady != null) steadyTrace.add(nib.x, nib.y, content.x, content.y)
         // The pen has walked onto another page: carry the stroke over rather than let it slide
         // under the paper. A straight line is one segment by definition and never hands over.
         if (!stroke.straight) {
@@ -1542,7 +1601,6 @@ class InteractionController(
         val stroke = liveStroke
         val pi = strokePageIndex
         if (stroke != null && pi != null && !stroke.isEmpty) {
-            if (tracing && !tapCandidate) recordSteadying(stroke)
             // The pen is up: rebuild with lift-time rules on (a dot-sized calligraphy stroke
             // takes the nib's broad face) before the stroke is committed or held for fading.
             stroke.finished = true
@@ -1582,14 +1640,6 @@ class InteractionController(
             refreshSelectionMenu()
         }
         requestRender()
-    }
-
-    /** Debug HUD: log what stabilization did to the stroke just lifted, or that it was off. */
-    private fun recordSteadying(stroke: Stroke) {
-        val cfg = stroke.config
-        val effect = if (steadier != null) steadyTrace.measure(stroke.speedScale * SteadyTrace.MM_PER_DP) else null
-        steadyReadout.last =
-            SteadyReadout.Row(ToolConversions.trailToStrength(cfg.stabilizeTrail), ToolConversions.dpPerSToCrossover(cfg.stabilizeCrossover), effect)
     }
 
     /** Pen-up sample reduction: like the capture gate, the tolerance is screen-space — viewport
@@ -1736,12 +1786,15 @@ class InteractionController(
         eraseMarkups.clear()
         eraseUnfilled.clear()
         mode = PointerMode.ERASE
+        lassoErasing = configFor(Tool.ERASER).eraseMode == EraseMode.LASSO
+        if (lassoErasing) lassoPoints.clear()
         eraseAt(vx, vy)
     }
 
     private fun eraseAt(vx: Double, vy: Double) {
-        eraserCursor = Pt(vx, vy)
         val content = state.viewportToContent(Pt(vx, vy))
+        if (lassoErasing) return extendLasso(content)
+        eraserCursor = Pt(vx, vy)
         val radius = eraserRadius()
         val eraserBox = Rect(content.x - radius, content.y - radius, radius * 2, radius * 2)
         val area = areaErase()
@@ -1856,6 +1909,7 @@ class InteractionController(
     }
 
     private fun endErase() {
+        if (lassoErasing) return endLassoErase()
         val cmds = ArrayList<Command>()
         // A fill came off before any cut or removal of its shape, so it goes back after them.
         if (eraseUnfilled.isNotEmpty()) cmds += RefillShapes(eraseUnfilled.toList())
@@ -1929,12 +1983,29 @@ class InteractionController(
         if (singleSelectedTable() != null) return emptyList()
         val endpoint = singleEndpointShape()
         if (endpoint != null) return endpointHandles(endpoint)
-        val all = selectionChromeBox()?.let { ResizeMath.obbHandles(it) } ?: return emptyList()
+        val box = selectionChromeBox() ?: return emptyList()
+        if (ResizeMath.obbCrowded(box, state.zoom)) return emptyList()
+        val all = ResizeMath.obbHandles(box)
         // A pill scales by its corners and lengthens by its sides; nothing stretches it upright.
-        if (selection.all { it.item is AudioItem }) return all.filter { it.id != HandleId.T && it.id != HandleId.B }
+        // Nor does a text box have a height to drag: its text decides that.
+        if (selection.all { it.item is AudioItem } || selection.all { it.item is TextItem }) {
+            return all.filter { it.id != HandleId.T && it.id != HandleId.B }
+        }
         val square = (selection.singleOrNull()?.item as? ShapeItem)?.shape?.keepsAspect == true
         return if (square || loneTapeBox() != null) all.filter { it.id in CORNER_HANDLES } else all
     }
+
+    /** The lone selected text box, which shows a hairline frame and round handles. */
+    private fun loneTextBox(): TextItem? = selection.singleOrNull()?.item as? TextItem
+
+    /** A text box's frame around content rect [b]: its corners gently rounded, one size on screen. */
+    private fun boxFrame(b: Rect): List<Pt> {
+        val radius = (BOX_FRAME_CORNER_DP * state.devicePxPerDp / state.zoom).coerceAtMost(minOf(b.w, b.h) / 2.0)
+        return if (radius <= 0.0) listOf(Pt(b.left, b.top), Pt(b.right, b.top), Pt(b.right, b.bottom), Pt(b.left, b.bottom)) else TextItem.roundedRect(b, radius)
+    }
+
+    /** The hairline that frame is drawn in: thin and low in contrast, so the text reads through it. */
+    private fun boxFramePen(): Pen = Pen(state.palette.accent.withAlpha(BOX_FRAME_ALPHA), 1.0, cosmetic = true)
 
     /** The lone selected connector, whose chrome is its own handles rather than a box. */
     private fun loneConnector(): Selected? = selection.singleOrNull()?.takeIf { it.item is ConnectorItem }
@@ -2032,6 +2103,7 @@ class InteractionController(
         if (state.pageRects.getOrNull(lone.pageIndex) == null) return false
         val tol = HANDLE_HIT / state.zoom
         selectionRotatePoint()?.let { if (it.distanceTo(content) <= tol) return true }
+        selectionMoveGrip()?.let { if (it.distanceTo(content) <= tol) return true }
         if (ResizeMath.hitHandle(selectionResizeHandles(), content, tol) != null) return true
         val local = state.toPageSpace(lone.pageIndex, content)
         val shape = lone.item as ShapeItem
@@ -2103,7 +2175,11 @@ class InteractionController(
         val pageIndex = state.pageIndexAtContent(content)
         if (pageIndex != null) {
             val local = state.toPageSpace(pageIndex, content)
-            val hit = state.document.pages[pageIndex].items.lastOrNull { !it.locked && it.contains(local) }
+            // A table is grabbed by its lines, so a press inside a cell can start a band over what's in it.
+            val slop = TAP_SLOP / state.zoom
+            val hit = SelectionMath.pick(state.document.pages[pageIndex].items, local, pickReach()) {
+                !it.locked && (it !is TableItem || it.intersectsCircle(local.x, local.y, slop))
+            }
             if (hit != null) {
                 if (selection.none { it.item === hit }) setSelection(listOf(Selected(pageIndex, hit)))
                 beginMove(content)
@@ -2137,6 +2213,23 @@ class InteractionController(
     }
 
     // --- LASSO ---
+
+    private fun endLassoErase() {
+        lassoErasing = false
+        mode = PointerMode.IDLE
+        if (lassoPoints.size >= 3) {
+            val drawable = state.drawablePageRange()
+            val members = SelectionMath.lassoMembers(state.document.pages, state.pageRects, lassoPoints, configFor(Tool.LASSO).selectWholeItems, configFor(Tool.ERASER).erasableKinds) { i, p ->
+                state.toPageSpace(i, p)
+            }.filter { it.pageIndex in drawable }
+            if (members.isNotEmpty()) {
+                setSelection(members)
+                deleteSelection()
+            }
+        }
+        lassoPoints.clear()
+        requestRender()
+    }
 
     private fun beginLasso(content: Pt) {
         // A tap on the settled selection grabs it (a resize/rotate handle, or a move when inside the
@@ -2180,6 +2273,84 @@ class InteractionController(
     }
 
     // --- SCREENSHOT ---
+
+    /**
+     * A press with the screenshot tool. On a capture that is already frozen, a press on one of its
+     * handles resizes it and a press inside it moves it; anywhere else starts a fresh capture, so a
+     * drag still replaces the old one.
+     */
+    private fun beginScreenshotGesture(content: Pt) {
+        val rect = screenshotRect
+        if (rect != null) {
+            val grab = ResizeMath.hitHandle(ResizeMath.boxHandles(rect), content, HANDLE_HIT / state.zoom)
+            if (grab != null) {
+                shotStart = rect
+                shotGrab = grab
+                onScreenshotMenu(null) // hidden while the pen is down, so it never sits under it
+                mode = PointerMode.SHOT_RESIZE
+                return
+            }
+            if (rect.contains(content)) {
+                shotStart = rect
+                shotGrabAt = content
+                onScreenshotMenu(null)
+                mode = PointerMode.SHOT_MOVE
+                return
+            }
+        }
+        beginScreenshot(content)
+    }
+
+    /** Whether [content] lands on the frozen capture's handles or inside it. */
+    private fun fingerHitsCapture(content: Pt): Boolean {
+        val rect = screenshotRect ?: return false
+        return ResizeMath.hitHandle(ResizeMath.boxHandles(rect), content, HANDLE_HIT / state.zoom) != null || rect.contains(content)
+    }
+
+    /** Drag a handle of the frozen capture: the edge it moves follows the pen, the opposite one stays. */
+    private fun extendScreenshotResize(content: Pt) {
+        val start = shotStart ?: return
+        val grab = shotGrab ?: return
+        var left = start.left
+        var top = start.top
+        var right = start.right
+        var bottom = start.bottom
+        val dir = ResizeMath.handleDirection(grab)
+        // Floored at SHOT_MIN, so a capture can't be dragged across itself into nothing.
+        if (dir.x < 0) left = min(content.x, right - SHOT_MIN)
+        if (dir.x > 0) right = max(content.x, left + SHOT_MIN)
+        if (dir.y < 0) top = min(content.y, bottom - SHOT_MIN)
+        if (dir.y > 0) bottom = max(content.y, top + SHOT_MIN)
+        screenshotRect = Rect(left, top, right - left, bottom - top)
+        requestRender()
+    }
+
+    /** Drag inside the frozen capture: it moves whole, keeping the size it was adjusted to. */
+    private fun extendScreenshotMove(content: Pt) {
+        val start = shotStart ?: return
+        val d = content - shotGrabAt
+        screenshotRect = Rect(start.left + d.x, start.top + d.y, start.w, start.h)
+        requestRender()
+    }
+
+    /** The pen lifted off an adjust: the capture stays where it was left, with its menu on it. */
+    private fun endScreenshotAdjust() {
+        mode = PointerMode.IDLE
+        shotGrab = null
+        shotStart = null
+        refreshScreenshotMenu()
+        requestRender()
+    }
+
+    /** A cut-short adjust: the capture goes back where it was, with its menu on it. */
+    private fun abandonScreenshotAdjust() {
+        val start = shotStart ?: return
+        screenshotRect = start
+        shotGrab = null
+        shotStart = null
+        onScreenshotMenu(screenshotRectViewport(start))
+        requestRender()
+    }
 
     private fun beginScreenshot(content: Pt) {
         clearScreenshot() // drop any previous frozen capture + its menu
@@ -2231,6 +2402,7 @@ class InteractionController(
     // --- MOVE ---
 
     private fun beginMove(content: Pt) {
+        textTapEdits = false
         mode = PointerMode.MOVE
         moveOrigin = content
         moveOffset = Pt.ZERO
@@ -2289,6 +2461,13 @@ class InteractionController(
         looseBefore = null
         endFollow()
         mode = PointerMode.IDLE
+        val opens = textTapEdits && !moved
+        textTapEdits = false
+        val lone = selection.singleOrNull()
+        if (opens && lone != null && lone.item is TextItem) {
+            startEditing(lone.item, lone.pageIndex, isNew = false, at = textTapAt)
+            return
+        }
         refreshSelectionMenu()
         requestRender()
         if (moved) maybeSwitchBackAfterSelect()
@@ -2330,6 +2509,7 @@ class InteractionController(
     private fun beginResize(sel: Selected, handle: HandleId) {
         resizeItem = sel.item
         resizeHandle = handle
+        angleSnap.reset()
         resizePageIndex = sel.pageIndex
         resizeOldGeom = (sel.item as Resizable).geometry()
         mode = PointerMode.RESIZE
@@ -2343,11 +2523,6 @@ class InteractionController(
         val local = state.toPageSpace(resizePageIndex, content)
         when (item) {
             is ImageItem -> item.setGeometry(RectHandle(ResizeMath.resizeImage(item.rect, handle, local)))
-            is TextItem -> {
-                // Resize against the displayed bounds (grown-to-fit height) so handles track the box.
-                val (pos, w, h) = ResizeMath.resizeText(item.pos, item.width, item.bounds().h, handle, local)
-                item.setGeometry(TextHandle(pos, w, h))
-            }
             is TapeItem -> {
                 val s = item.shape
                 val (a, b) = ResizeMath.resizeOpenShape(s.points[0], s.points[1], handle, local)
@@ -2357,7 +2532,7 @@ class InteractionController(
             }
             is ShapeItem -> {
                 val (s, en) = when {
-                    item.shape.isEndpointShape -> ResizeMath.resizeOpenShape(item.start, item.end, handle, local)
+                    item.shape.isEndpointShape -> ResizeMath.snapOpenEnd(item.start, item.end, handle, local, angleSnap)
                     item.shape.keepsAspect -> ResizeMath.resizeSquareShape(item.start, item.end, handle, local)
                     else -> ResizeMath.resizeClosedShape(item.start, item.end, handle, local)
                 }
@@ -2498,31 +2673,7 @@ class InteractionController(
         requestRender()
     }
 
-    // --- TABLE_LINE (drag an interior row/column boundary of the selected table) ---
-
-    /** If [content] grabs an interior grid line of the single selected table, start dragging it. */
-    private fun tryGrabTableLine(content: Pt): Boolean {
-        val sel = selection.singleOrNull() ?: return false
-        val t = sel.item as? TableItem ?: return false
-        if (state.pageRects.getOrNull(sel.pageIndex) == null) return false
-        val local = state.toPageSpace(sel.pageIndex, content)
-        val tol = HANDLE_HIT / state.zoom
-        val col = t.columnLineNear(local, tol)
-        val row = t.rowLineNear(local, tol)
-        if (col < 0 && row < 0) return false
-        tableLineItem = t
-        tableLinePageIndex = sel.pageIndex
-        tableLineBefore = t.snapshotGeometry()
-        // When a press is near both a column and a row line, take the nearer one.
-        if (col >= 0 && (row < 0 || abs(local.x - t.colX(col)) <= abs(local.y - t.rowY(row)))) {
-            tableLineIsColumn = true; tableLineIndex = col
-        } else {
-            tableLineIsColumn = false; tableLineIndex = row
-        }
-        mode = PointerMode.TABLE_LINE
-        onSelectionMenu(null)
-        return true
-    }
+    // --- TABLE_LINE (drag one interior row/column line by its tick on the handle bar) ---
 
     private fun extendTableLine(content: Pt) {
         val t = tableLineItem ?: return
@@ -2574,6 +2725,9 @@ class InteractionController(
     }
 
     private fun dotReach(): Double = com.xnotes.core.infinite.OverlayTessellator.DOT_TOUCH_PX / state.zoom
+
+    /** How near a shape's outline a select press or a held finger picks it, in page units. */
+    private fun pickReach(): Double = SelectionMath.PICK_REACH_DP * state.devicePxPerDp / state.zoom
 
     /** A lone shape's point dots over its chrome: faint ones halfway along edges, solid ones on vertices. */
     private fun drawEditDots(r: Renderer) {
@@ -2651,7 +2805,7 @@ class InteractionController(
 
     /**
      * Handle a press on the selected table's chrome: a -/+ button, a bar-end grip (resize the picked
-     * columns or rows), the bar itself (pick columns or rows), or an interior line. Returns false when
+     * columns or rows), a line's tick on a bar (move that line), or the bar itself (pick columns or rows). Returns false when
      * the press missed all of them, so the caller moves or reselects as usual.
      */
     private fun beginTableChrome(content: Pt): Boolean {
@@ -2692,6 +2846,14 @@ class InteractionController(
             beginTableDrag(t, PointerMode.TABLE_GRIP)
             return true
         }
+        val tickCol = if (c.topBar.contains(local)) t.columnLineNear(Pt(local.x, t.rect.top), tol / 2) else -1
+        val tickRow = if (c.leftBar.contains(local)) t.rowLineNear(Pt(t.rect.left, local.y), tol / 2) else -1
+        if (tickCol >= 0 || tickRow >= 0) {
+            tableLineIsColumn = tickCol >= 0
+            tableLineIndex = if (tableLineIsColumn) tickCol else tickRow
+            beginTableDrag(t, PointerMode.TABLE_LINE)
+            return true
+        }
         if (c.topBar.contains(local) || c.leftBar.contains(local)) {
             tableLineIsColumn = c.topBar.contains(local)
             tablePickPrior = if (tableLineIsColumn) tableColPick else tableRowPick
@@ -2700,7 +2862,7 @@ class InteractionController(
             beginTableDrag(t, PointerMode.TABLE_PICK)
             return true
         }
-        return tryGrabTableLine(content)
+        return false
     }
 
     private fun beginTableDrag(t: TableItem, dragMode: PointerMode) {
@@ -2777,6 +2939,14 @@ class InteractionController(
         val tickPen = Pen(sel, 1.3, cosmetic = true)
         for (i in 0..t.cols) r.strokePolyline(listOf(at(Pt(t.colX(i), c.barY - tick)), at(Pt(t.colX(i), c.barY + tick))), tickPen)
         for (j in 0..t.rows) r.strokePolyline(listOf(at(Pt(c.barX - tick, t.rowY(j))), at(Pt(c.barX + tick, t.rowY(j)))), tickPen)
+        // Interior ticks drag their line, so they get a knob like the grips, only smaller.
+        for (i in 1 until t.cols) r.fillCircle(at(Pt(t.colX(i), c.barY)), grip * 0.85, sel)
+        for (j in 1 until t.rows) r.fillCircle(at(Pt(c.barX, t.rowY(j))), grip * 0.85, sel)
+        if (mode == PointerMode.TABLE_LINE && tableLineItem === t) {
+            val guide = Pen(sel, 2.0, cosmetic = true)
+            if (tableLineIsColumn) r.strokePolyline(listOf(at(Pt(t.colX(tableLineIndex), c.barY)), at(Pt(t.colX(tableLineIndex), t.rect.bottom))), guide)
+            else r.strokePolyline(listOf(at(Pt(c.barX, t.rowY(tableLineIndex))), at(Pt(t.rect.right, t.rowY(tableLineIndex)))), guide)
+        }
         r.strokePolyline(listOf(at(c.colStart), at(c.colEnd)), Pen(sel, 4.0, cosmetic = true))
         r.strokePolyline(listOf(at(c.rowStart), at(c.rowEnd)), Pen(sel, 4.0, cosmetic = true))
         for (p in listOf(c.colStart, c.colEnd, c.rowStart, c.rowEnd)) r.fillCircle(at(p), grip, sel)
@@ -2806,6 +2976,8 @@ class InteractionController(
         txStartObb = selObb
         txMargin = selectionChromeMargin()
         txHandle = handle
+        txPointer = null
+        angleSnap.reset()
         if (handle == null) {
             val c = selObb?.center ?: content
             txCenter = c
@@ -2832,17 +3004,9 @@ class InteractionController(
             selObb = res.obb
             world = res.transform
         } else {
+            txPointer = content
             val raw = atan2(content.y - txCenter.y, content.x - txCenter.x) - txGrabAngle
-            // A sticky zone around each 90-degree step, not a hard quantiser: the box clings to the
-            // nearest quarter turn only while within ROTATE_SNAP_STICK of it, and turns freely otherwise.
-            val theta = if (snapRotation90) {
-                val quarter = Math.PI / 2.0
-                val target = txStartAngle + raw
-                val nearest = Math.round(target / quarter) * quarter
-                if (Math.abs(target - nearest) <= ROTATE_SNAP_STICK_RAD) nearest - txStartAngle else raw
-            } else {
-                raw
-            }
+            val theta = angleSnap.snap(txStartAngle + raw, snapRotation90) - txStartAngle
             selObb = obb0.copy(angle = txStartAngle + theta)
             world = Affine.rotateAbout(txCenter, theta)
         }
@@ -2852,8 +3016,9 @@ class InteractionController(
             if (state.pageRects.getOrNull(sel.pageIndex) == null) continue
             sel.item.applyTransform(state.affineToPageSpace(sel.pageIndex, world))
         }
-        // A pill stops at its smallest by itself, so its box is read back from it.
-        if (txItems.isNotEmpty() && txItems.all { it.item is AudioItem }) selObb = selectionBox()
+        // A pill stops at its smallest by itself, so its box is read back from it; and a text
+        // box is as tall as its text sets, whatever the handle asked for.
+        if (txItems.isNotEmpty() && (txItems.all { it.item is AudioItem } || txItems.all { it.item is TextItem })) selObb = selectionBox()
         for ((pi, f) in follows) {
             if (state.pageRects.getOrNull(pi) == null) continue
             f.follow(state.affineToPageSpace(pi, world))
@@ -3252,7 +3417,7 @@ class InteractionController(
         clearSelection()
         val d = tableToolDefaults()
         tableDrawStart = state.toPageSpace(pageIndex, content)
-        pendingTable = TableItem.create(Rect(tableDrawStart.x, tableDrawStart.y, 0.0, 0.0), d.cols, d.rows, d.color ?: inkColor, d.width)
+        pendingTable = TableItem.create(Rect(tableDrawStart.x, tableDrawStart.y, 0.0, 0.0), d.cols, d.rows, d.color ?: inkColor).also { d.look.applyTo(it) }
         tableDrawPageIndex = pageIndex
         mode = PointerMode.TABLE_DRAW
         requestRender()
@@ -3299,26 +3464,34 @@ class InteractionController(
     }
 
     /**
-     * A press with the Text box tool (and no edit already open). Tapping an existing box
-     * edits it; otherwise this begins a tap-or-drag to create a new one ([endTextDrag]
-     * decides which).
+     * A press with the Text box tool while nothing is being typed. The selected box's handles and
+     * body come first: a handle resizes, a drag on it moves it, a tap on it opens it for typing.
+     * Another box is selected and moves with the drag. Off every box a press only puts a selection
+     * away, and with none it begins a tap-or-drag for a new box ([endTextDrag] decides which).
      */
     private fun beginTextBoxGesture(content: Pt) {
-        val pi = state.pageIndexAtContent(content) ?: return
-        val local = state.toPageSpace(pi, content)
-        val page = state.document.pages[pi]
-        val existing = page.items.lastOrNull { it is TextItem && it.contains(local) } as? TextItem
-        if (existing != null) {
-            // A formula is edited as LaTeX from its selection menu, so a tap selects it instead.
-            if (existing.math) {
-                selectSingle(pi, existing)
-                mode = PointerMode.IDLE
-                return
-            }
-            startEditing(existing, pi, isNew = false)
+        if (tryGrabSelectionHandle(content)) return
+        if (selectionChromeBox()?.contains(content) == true) {
+            // A formula is edited as LaTeX from its selection menu, so a tap on it only moves it.
+            val opens = (selection.singleOrNull()?.item as? TextItem)?.math == false
+            beginMove(content)
+            textTapEdits = opens
+            textTapAt = content
             return
         }
-        clearSelection()
+        val pi = state.pageIndexAtContent(content)
+        val hit = pi?.let { textBoxAt(it, state.toPageSpace(it, content)) }
+        if (pi != null && hit != null) {
+            setSelection(listOf(Selected(pi, hit)))
+            beginMove(content)
+            return
+        }
+        if (selection.isNotEmpty()) {
+            clearSelection()
+            mode = PointerMode.IDLE
+            return
+        }
+        pi ?: return
         mode = PointerMode.TEXT_DRAG
         textDragPageIndex = pi
         textDragStart = content
@@ -3326,174 +3499,230 @@ class InteractionController(
         requestRender()
     }
 
+    /** The topmost text box at page point [local] that can be picked up. */
+    private fun textBoxAt(pi: Int, local: Pt): TextItem? =
+        state.document.pages[pi].items.lastOrNull { it is TextItem && !it.locked && it.contains(local) } as? TextItem
+
     private fun extendTextDrag(content: Pt) {
         textDragRect = Rect.fromPoints(textDragStart, content)
         requestRender()
     }
 
-    /** Finish a tap-or-drag: a real drag (either axis) sizes the box; a tap makes a default one. */
+    /**
+     * Finish a tap-or-drag. A tap starts a box that hugs its text, its first line where the tap
+     * landed. A drag across draws the box itself: its text wraps at that width from then on.
+     */
     private fun endTextDrag(content: Pt) {
         val pi = textDragPageIndex
         textDragRect = null
         mode = PointerMode.IDLE
         if (state.pageRects.getOrNull(pi) == null) return
-        val page = state.document.pages[pi]
+        val d = boxDefaults
         val startLocal = state.toPageSpace(pi, textDragStart)
         val rect = Rect.fromPoints(startLocal, state.toPageSpace(pi, content))
-        val draggedX = rect.w * state.zoom >= TEXT_DRAG_SLOP
-        val draggedY = rect.h * state.zoom >= TEXT_DRAG_SLOP
-        // Measured to the paper's right edge, margins included: a box may be dropped in one.
-        val pageRight = state.footprint(page).right
-        val item = if (draggedX || draggedY) {
-            // Use the drawn rectangle for whichever axis was actually dragged.
-            val left = if (draggedX) rect.left else startLocal.x
-            val maxW = (pageRight - left - 8.0).coerceAtLeast(40.0)
-            val w = if (draggedX) rect.w.coerceIn(40.0, maxW) else defaultTextWidth(pageRight, left)
-            val h = if (draggedY) rect.h else 0.0
-            newTextItem(Pt(left, rect.top), w, h)
+        val item = if (rect.w * state.zoom >= TEXT_DRAG_SLOP) {
+            val w = (rect.w - 2 * TextItem.PAD_X).coerceAtLeast(MIN_BOX_TEXT_WIDTH)
+            TextItem(Pt(rect.left + TextItem.PAD_X, rect.top + TextItem.PAD_Y), w, "", d.color, d.sizePt, d.face, textMeasurer)
         } else {
-            newTextItem(startLocal, defaultTextWidth(pageRight, startLocal.x), 0.0)
+            val line = textMeasurer.lineHeight(com.xnotes.core.pal.FontSpec(d.sizePt, d.face))
+            TextItem(Pt(startLocal.x, startLocal.y - line / 2.0), text = "", rgba = d.color, pointSize = d.sizePt, face = d.face, measurer = textMeasurer, autoWidth = true)
         }
-        startEditing(item, pi, isNew = true)
-    }
-
-    private fun defaultTextWidth(pageRight: Double, left: Double): Double =
-        (pageRight - left - 14.0).coerceIn(80.0, 300.0)
-
-    private fun newTextItem(pos: Pt, width: Double, height: Double): TextItem =
-        TextItem(pos, width, height, "", inkColor, textPointSize, textFace, measurer = textMeasurer)
-
-    /** Open the in-place editor on [item] (a new draft, or an existing box being re-edited). */
-    private fun startEditing(item: TextItem, pi: Int, isNew: Boolean) {
-        editingText = item
-        editingIsNew = isNew
-        editingOldText = item.text
-        editingPageIndex = pi
-        // The style bar / next new box follow the box being edited.
-        textFace = item.face
-        textPointSize = item.pointSize
-        // An existing box is lifted out of the cache (isLiftedItem) while edited, so only the field
-        // shows it. Repair just its region in place — a full invalidatePage flickered the ink layer.
-        if (!isNew) repairTextRegion(state.document.pages[pi], item)
-        onTextEditStart(editingField())
-        requestRender()
-    }
-
-    /** Keep the model in sync with the live editor field (for auto-grow / commit). */
-    fun updateEditingText(text: String) {
-        editingLabel?.let { shape ->
-            shape.label = shape.label?.withText(text)
-            // The lines stay centred on the shape, so the field moves as they wrap.
-            onTextEditStart(editingField())
-            return
-        }
-        editingText?.text = text
+        item.box = d.box
+        startEditing(item, pi, isNew = true, at = null)
     }
 
     /**
-     * Pan the document while a text edit stays open: a one-finger drag over the editor scrolls the
-     * page (the overlay re-tracks the box through [editingField]) instead of scrolling the field's
+     * Begin typing in [item]: the caret goes to content point [at], or to the end of the text. A
+     * new box goes on its page now, so each stretch of typing in it is a step undo can take back.
+     */
+    private fun startEditing(item: TextItem, pi: Int, isNew: Boolean, at: Pt?) {
+        val ft = flowText ?: return
+        val page = state.document.pages.getOrNull(pi) ?: return
+        commitTextEdit()
+        ft.endSession() // the note's own text, if its caret was open
+        val wasSelected = selection.any { it.item === item }
+        editingText = item
+        editingIsNew = isNew
+        editingPageIndex = pi
+        editingWas = item.paintBounds()
+        editingAdd = null
+        if (isNew) {
+            page.items.add(item)
+            editingAdd = AddItem(page, item).also { history.push(it) }
+            state.document.dirty = true
+        }
+        val surface = BoxSurface(state, item, pi) { onBoxEdited() }
+        editingSurface = surface
+        item.revealedMath = boxReveal
+        // Typing shows no selection: the box is lifted as the one being typed in instead.
+        clearSelection()
+        if (!isNew && !wasSelected) repairTextRegion(page, item)
+        ft.retarget(surface)
+        if (at != null) ft.tapAt(at) else ft.startSession(FlowRange.caret(item.flow.endPos()))
+        onBoxTyping(true)
+        requestRender()
+    }
+
+    /** An edit landed in the box being typed in, which has set its text again. */
+    private fun onBoxEdited() {
+        state.document.dirty = true
+        requestRender()
+    }
+
+    /** Whether a press at [content] belongs to the caret of the box being typed in: on the box, or on a handle of its selection. */
+    private fun pressTypes(content: Pt, viewport: Pt): Boolean {
+        val item = editingText ?: return false
+        if (flowText?.grabsHandle(viewport) == true) return true
+        if (state.pageIndexAtContent(content) != editingPageIndex) return false
+        return item.bounds().contains(state.toPageSpace(editingPageIndex, content))
+    }
+
+    /** Keep the model in sync with the live editor field of a label (for auto-grow / commit). */
+    fun updateEditingText(text: String) {
+        val shape = editingLabel ?: return
+        shape.label = shape.label?.withText(text)
+        // The lines stay centred on the shape, so the field moves as they wrap.
+        onTextEditStart(editingField())
+    }
+
+    /**
+     * Pan the document while a label edit stays open: a one-finger drag over the editor scrolls the
+     * page (the overlay re-tracks the label through [editingField]) instead of scrolling the field's
      * own text. [dxFinger]/[dyFinger] are viewport-space finger deltas; the content follows the
      * finger, as in [extendPan]. A plain drag with no fling/overscroll.
      */
     fun panWhileEditing(dxFinger: Double, dyFinger: Double) {
-        if (editingText == null && editingLabel == null) return
+        if (editingLabel == null) return
         state.scrollBy(-dxFinger, -dyFinger)
         onViewChanged()
         requestRender()
     }
 
-    /** Current on-screen geometry of the editor field, or null when not editing. */
-    fun editingField(): EditingField? {
-        editingLabel?.let { return labelField(it) }
-        val item = editingText ?: return null
-        if (state.pageRects.getOrNull(editingPageIndex) == null) return null
-        // Anchor at the box's page-space top-left corner; a rotated view spins the overlay
-        // around that anchor (EditingField.rotation) so it stays glued to the baked text.
-        val topLeft = state.contentToViewport(state.fromPageSpace(editingPageIndex, item.pos))
-        return EditingField(
-            x = topLeft.x,
-            y = topLeft.y,
-            width = item.width,
-            height = item.bounds().h,
-            fontPx = item.pointSize * com.xnotes.platform.AndroidText.POINTS_TO_PX,
-            zoom = state.zoom,
-            face = item.face,
-            rgba = item.rgba,
-            text = item.text,
-            rotation = state.rotationDeg.toDouble(),
-            bold = item.bold,
-            italic = item.italic,
-            underline = item.underline,
-            strike = item.strike,
-            align = item.align,
-        )
-    }
+    /** Current on-screen geometry of the label's editor field, or null when none is open. */
+    fun editingField(): EditingField? = editingLabel?.let { labelField(it) }
 
     /**
-     * Commit (tap outside / Escape / done / tool switch) using the model's current text.
-     * An empty box is *deleted* (a new draft is simply dropped; an existing box is removed);
-     * a box with content is kept and its change recorded. The single source of truth for
-     * ending an edit — the field no longer commits itself, so there is no double-commit.
+     * End the typing (a press off the box, Back, a tool switch) with the text as it stands. A box
+     * left empty is dropped: a new one as if it had never been, one that held text in a single
+     * step that undo puts back with its words. With [select] the box is left selected, so it can
+     * be moved or resized at once. The single source of truth for ending an edit.
      */
-    fun commitTextEdit(finalText: String? = null, restoreTool: Boolean = false) {
+    fun commitTextEdit(finalText: String? = null, select: Boolean = false) {
         if (editingLabel != null) return commitLabelEdit(finalText)
         val item = editingText ?: return
-        finalText?.let { item.text = it }
+        val surface = editingSurface
+        val add = editingAdd
+        val was = editingWas
         val pi = editingPageIndex
-        val page = state.document.pages.getOrNull(pi)
-        val empty = item.text.trim().isEmpty()
-        if (editingIsNew) {
-            if (!empty && page != null) {
-                page.items.add(item)
-                val target = editingCaptionOf?.takeIf { t -> page.items.any { it === t } }
-                val grouped = target?.let {
-                    val id = it.group ?: com.xnotes.core.model.Groups.nextId(state.document.pages.flatMap { p -> p.items })
-                    Regroup(listOf(it, item), id).also { r -> r.redo() }
-                }
-                history.push(if (grouped == null) AddItem(page, item) else CompositeCommand(listOf(AddItem(page, item), grouped)))
-                state.document.dirty = true
-                onContentChanged()
-            }
-        } else if (page != null) {
-            if (empty) {
-                page.items.remove(item)
-                history.push(EraseItems(listOf(page to item)))
-                state.document.dirty = true
-                onContentChanged()
-            } else if (item.text != editingOldText) {
-                // A box that grew or shrank takes the connectors glued to it along.
-                val present = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<CanvasItem, Boolean>()).apply { addAll(page.items) }
-                val follow = GlueFollow.of(listOf(item), page.items, { it in present }, rigid = false, pin = false)
-                val was = follow.items.map { it.paintBounds() }
-                follow.follow(Affine.IDENTITY)
-                val joined = if (follow.isEmpty) null else TransformItems(follow.items, follow.startSnapshots, follow.items.map { it.snapshotGeometry() })
-                val cmds = listOfNotNull(EditText(item, editingOldText, item.text), joined)
-                history.push(cmds.singleOrNull() ?: CompositeCommand(cmds))
-                for ((i, c) in follow.items.withIndex()) repairRegion(page, was[i].union(c.paintBounds()))
-                state.document.dirty = true
-                onContentChanged()
-            }
-        }
+        val isNew = editingIsNew
+        val captionOf = editingCaptionOf
+        // Let go first: ending the session reports back, and must find nothing left to end.
         editingText = null
         editingIsNew = false
         editingCaptionOf = null
         editingPageIndex = -1
-        editingOldText = ""
-        // Repaint just the box's region in place (it is now unlifted, so it bakes back in) rather
-        // than rebuilding the whole page — the same smart path selection uses, so no ink flicker.
-        page?.let { repairTextRegion(it, item) }
-        onTextEditEnd()
-        requestRender()
-        // Finishing an edit (tap outside / Escape / Back) re-arms whatever tool the text tool replaced,
-        // so the pen/highlighter/pan is back without a manual switch. Skipped when the commit is itself
-        // a tool switch (setTool passes restoreTool = false), which already arms the chosen tool.
-        if (restoreTool) {
-            val back = toolBeforeText
-            toolBeforeText = null
-            if (back != null && back != Tool.TEXT_BOX && tool == Tool.TEXT_BOX) setTool(back)
+        editingSurface = null
+        editingAdd = null
+        editingWas = null
+        // Ends the session, which records the typing still open as its last step.
+        flowText?.retarget(null)
+        // With the caret gone every formula closes over its source again.
+        item.revealedMath = { -1 }
+        item.reflow()
+        val page = state.document.pages.getOrNull(pi)
+        val onPage = page != null && page.items.any { it === item }
+        var selected = false
+        if (page != null && onPage) {
+            if (item.text.isBlank()) {
+                val steps = history.takeLastWhile { it === add || (surface != null && it in surface.recorded) }
+                page.items.removeAll { it === item }
+                if (!isNew) history.push(CompositeCommand(steps + EraseItems(listOf(page to item))))
+            } else {
+                followTyped(page, item, was)
+                // A new caption joins the image or shape it was made for in one group.
+                val target = captionOf?.takeIf { isNew && page.items.any { t -> t === it } }
+                if (target != null) {
+                    val id = target.group ?: com.xnotes.core.model.Groups.nextId(state.document.pages.flatMap { p -> p.items })
+                    history.push(Regroup(listOf(target, item), id).also { it.redo() })
+                }
+                selected = select
+            }
+            state.document.dirty = true
+            onContentChanged()
         }
+        // It is unlifted now, so it bakes back in where it stands and off where it stood.
+        page?.let {
+            val region = (was?.union(item.paintBounds()) ?: item.paintBounds()).outset(REPAIR_PAD)
+            if (!state.repairRegion(it, region)) state.invalidatePage(it)
+        }
+        onBoxTyping(false)
+        if (selected) {
+            setSelection(listOf(Selected(pi, item)))
+            refreshSelectionMenu()
+        }
+        requestRender()
     }
+
+    /** A box that grew or shrank as it was typed in takes the connectors glued to it along. */
+    private fun followTyped(page: Page, item: TextItem, was: Rect?) {
+        if (was == null || was == item.paintBounds()) return
+        val present = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<CanvasItem, Boolean>()).apply { addAll(page.items) }
+        val follow = GlueFollow.of(listOf(item), page.items, { it in present }, rigid = false, pin = false)
+        if (follow.isEmpty) return
+        val before = follow.items.map { it.paintBounds() }
+        follow.follow(Affine.IDENTITY)
+        history.push(TransformItems(follow.items, follow.startSnapshots, follow.items.map { it.snapshotGeometry() }))
+        for ((i, c) in follow.items.withIndex()) repairRegion(page, before[i].union(c.paintBounds()))
+    }
+
+    /** Typing was cut short by undo taking the box itself away: let go of it without a trace. */
+    fun dropTypingIfGone() {
+        val item = editingText ?: return
+        val page = state.document.pages.getOrNull(editingPageIndex)
+        if (page != null && page.items.any { it === item }) return
+        editingText = null
+        editingIsNew = false
+        editingPageIndex = -1
+        editingSurface = null
+        editingAdd = null
+        editingWas = null
+        flowText?.retarget(null)
+        item.revealedMath = { -1 }
+        item.reflow()
+        onBoxTyping(false)
+        requestRender()
+    }
+
+    /** Open the lone selected text box for typing, arming the Text box tool: the selection menu's pencil. */
+    fun editSelectedText() {
+        val sel = selection.singleOrNull() ?: return
+        val item = sel.item as? TextItem ?: return
+        if (item.locked) return
+        setTool(Tool.TEXT_BOX)
+        startEditing(item, sel.pageIndex, isNew = false, at = null)
+    }
+
+    private var boxStyleWas: BoxStyle? = null
+
+    /**
+     * Give the lone selected text box the frame [style]. A [preview] call skips history; the next
+     * one without it records everything since as one undo step, so a slider drag is a single edit.
+     */
+    fun restyleSelectedBox(style: BoxStyle, preview: Boolean = false) {
+        val item = selection.singleOrNull()?.item as? TextItem ?: return
+        val was = boxStyleWas ?: item.box
+        item.box = style
+        boxStyleWas = if (preview) was else null
+        if (!preview && style != was) {
+            history.push(RestyleBox(item, was, style))
+            state.document.dirty = true
+            onContentChanged()
+        }
+        requestRender()
+    }
+
+    /** Whether the selection is one text box, which the pencil opens. */
+    fun canEditSelectedText(): Boolean = (selection.singleOrNull()?.item as? TextItem)?.locked == false
 
     /**
      * Repaint only the text box's region of the ink cache in place — the eraser/selection smart
@@ -3505,68 +3734,55 @@ class InteractionController(
         if (!state.repairRegion(page, box.paintBounds().outset(REPAIR_PAD))) state.invalidatePage(page)
     }
 
-    // --- text styling (driven by the floating style bar + the toolbar colour swatches) ---
+    // --- text boxes and labels: what the style controls act on ---
 
-    /** The text box currently being edited, or the lone selected one — what the style bar targets. */
+    /** The text box being typed in, or the lone selected one: what the format strip styles. */
     fun activeTextItem(): TextItem? = editingText ?: (selection.singleOrNull()?.item as? TextItem)
 
-    /** Where to anchor the style bar and the box's current style, or null when no box is active. */
+    /** The page [activeTextItem] is on. */
+    fun activeTextPage(): Int = if (editingText != null) editingPageIndex else selection.singleOrNull()?.pageIndex ?: -1
+
+    /** Where to anchor a label's style bar and the label's current style, or null when none is being typed. */
     fun computeTextBar(): TextBar? {
-        editingLabel?.let { shape ->
-            val f = editingField() ?: return null
-            val l = shape.label ?: return null
-            return TextBar(f.screenBounds(), l.style.face, l.style.pointSize, l.style.rgba, editing = true)
-        }
-        val editing = editingText
-        if (editing != null) {
-            val f = editingField() ?: return null
-            return TextBar(
-                Rect(f.x, f.y, f.width * f.zoom, f.height * f.zoom), editing.face, editing.pointSize, editing.rgba,
-                editing = true, bold = editing.bold, italic = editing.italic,
-                underline = editing.underline, strike = editing.strike, align = editing.align,
-            )
-        }
-        if (mode != PointerMode.IDLE) return null
-        val sel = selection.singleOrNull()?.item as? TextItem ?: return null
-        val rect = selectionBoundsViewport() ?: return null
-        return TextBar(
-            rect, sel.face, sel.pointSize, sel.rgba, editing = false,
-            bold = sel.bold, italic = sel.italic, underline = sel.underline, strike = sel.strike, align = sel.align,
-        )
-    }
-
-    fun toggleTextBold() = restyleActive { it.bold = !it.bold }
-    fun toggleTextItalic() = restyleActive { it.italic = !it.italic }
-    fun toggleTextUnderline() = restyleActive { it.underline = !it.underline }
-    fun toggleTextStrike() = restyleActive { it.strike = !it.strike }
-
-    /** Cycle a box's alignment left -> center -> right -> left. */
-    fun cycleTextAlign() = restyleActive {
-        it.align = when (it.align) {
-            com.xnotes.core.pal.HAlign.LEFT -> com.xnotes.core.pal.HAlign.CENTER
-            com.xnotes.core.pal.HAlign.CENTER -> com.xnotes.core.pal.HAlign.RIGHT
-            com.xnotes.core.pal.HAlign.RIGHT -> com.xnotes.core.pal.HAlign.LEFT
-        }
+        val shape = editingLabel ?: return null
+        val f = editingField() ?: return null
+        val l = shape.label ?: return null
+        return TextBar(f.screenBounds(), l.style.face, l.style.pointSize, editing = true)
     }
 
     fun setTextFace(face: FontFace) {
         textFace = face
-        if (restyleLabel { it.copy(face = face) }) return
-        restyleActive { it.face = face }
+        restyleLabel { it.copy(face = face) }
     }
 
     fun setTextPointSize(size: Double) {
         val s = size.coerceIn(TEXT_MIN_PT, TEXT_MAX_PT)
         textPointSize = s
-        if (restyleLabel { it.copy(pointSize = s) }) return
-        restyleActive { it.pointSize = s }
+        restyleLabel { it.copy(pointSize = s) }
     }
 
-    /** Set the ink colour (for new strokes/boxes) and recolour the active text box or label, if any. */
+    /** Set the ink colour (for new strokes) and recolour the label being typed, if any. */
     fun pickInk(c: Rgba) {
         inkColor = c
-        if (restyleLabel { it.copy(rgba = c) }) return
-        restyleActive { it.rgba = c }
+        restyleLabel { it.copy(rgba = c) }
+    }
+
+    /**
+     * Record [edit], already applied to [item]'s text or frame from outside a typing session (the
+     * format strip on a selected box, its Style menu), and repaint where the box was and is.
+     */
+    fun recordBoxChange(item: TextItem, pageIndex: Int, was: Rect, edit: Command) {
+        val page = state.document.pages.getOrNull(pageIndex) ?: return
+        history.push(edit)
+        state.document.dirty = true
+        if (selection.any { it.item === item }) {
+            selObb = selectionBox()
+            refreshSelectionMenu()
+        } else {
+            repairRegion(page, was.union(item.paintBounds()).outset(REPAIR_PAD))
+        }
+        onContentChanged()
+        requestRender()
     }
 
     /** Restyle the label being typed, false when none is; the whole edit is one undo step, taken at commit. */
@@ -3969,6 +4185,7 @@ class InteractionController(
     }
 
     private fun onDoubleTap(viewport: Pt, toolType: Int, selectedBefore: Set<CanvasItem>) {
+        if (readOnly) return
         val fingerPans = toolType == MotionEvent.TOOL_TYPE_FINGER && !fingerDraws && tool.fingerPansWhenOff
         if (tool != Tool.SHAPE && tool != Tool.SELECT && !fingerPans) return
         // The free polygon's own double tap closes its outline.
@@ -3983,29 +4200,6 @@ class InteractionController(
         startLabelEdit(shape, pi)
     }
 
-    /**
-     * Apply a style change to the active text box. A *new draft* mutates directly (its final
-     * style is captured by the AddItem on commit); a committed/selected box records a [RestyleText]
-     * so it is undoable. Both editing and selected boxes are lifted, so a render shows the change.
-     */
-    private inline fun restyleActive(mutate: (TextItem) -> Unit) {
-        val item = activeTextItem() ?: return
-        val isDraft = item === editingText && editingIsNew
-        val old = TextStyle.of(item)
-        mutate(item)
-        if (!isDraft && TextStyle.of(item) != old) {
-            history.push(RestyleText(item, old, TextStyle.of(item)))
-            state.document.dirty = true
-            onContentChanged()
-        }
-        if (item === editingText) {
-            onTextEditStart(editingField()) // refresh the live field's metrics/colour
-        } else {
-            refreshSelectionMenu() // a size change moved the box; re-anchor its menu
-        }
-        requestRender()
-    }
-
     // --- LONG-PRESS GRAB ---
 
     private fun armLongPress(viewport: Pt, content: Pt, isFinger: Boolean, free: Boolean) {
@@ -4018,8 +4212,7 @@ class InteractionController(
             tool == Tool.LASSO || tool == Tool.SHAPE || tool == Tool.TEXT || tool == Tool.TEXT_BOX || tool == Tool.TAPE)
         val pageIndex = state.pageIndexAtContent(content)
         val hit = if (pageIndex != null) {
-            val local = state.toPageSpace(pageIndex, content)
-            state.document.pages[pageIndex].items.lastOrNull { it.contains(local) }
+            SelectionMath.pick(state.document.pages[pageIndex].items, state.toPageSpace(pageIndex, content), pickReach())
         } else {
             null
         }
@@ -4030,9 +4223,10 @@ class InteractionController(
         longPressLocked = hit?.takeIf { it.locked && !readOnly }
         longPressCandidate =
             if (grabEligible && hit != null && !hit.locked) Selected(pageIndex!!, hit) else null
-        // An item on top wins; a free pointer on the bare PDF selects its text.
+        // An item on top wins; a free pointer on the bare PDF selects its text. Read-only, nothing
+        // can be picked up, so the text under ink is selected too.
         val text = pdfText
-        if (free && text != null && hit == null && pageIndex != null && state.document.pages[pageIndex].pdfPage != null) {
+        if (free && text != null && (hit == null || readOnly) && pageIndex != null && state.document.pages[pageIndex].pdfPage != null) {
             longPressTextPage = pageIndex
             text.prefetch(pageIndex)
         }
@@ -4154,7 +4348,9 @@ class InteractionController(
             return false
         }
         item.mathBox()?.let { item.width = it.width }
-        history.push(EditText(item, old, latex))
+        val relearn = item.ocr?.let { origin -> onMathRelearn?.let { f -> { from: String, to: String -> f(origin, from, to) } } }
+        history.push(EditText(item, old, latex, relearn))
+        relearn?.invoke(old, latex)
         state.document.dirty = true
         selObb = selectionBox()
         onContentChanged()
@@ -4182,7 +4378,7 @@ class InteractionController(
     /** Edit the selected item's caption, or open a centred draft under it that joins the item's group once typed. */
     fun captionSelection() {
         captionedSelection()?.let { (sel, text) ->
-            if (state.pageRects.getOrNull(sel.pageIndex) != null) startEditing(text, sel.pageIndex, isNew = false)
+            if (state.pageRects.getOrNull(sel.pageIndex) != null) startEditing(text, sel.pageIndex, isNew = false, at = null)
             return
         }
         if (!canCaptionSelection()) return
@@ -4190,21 +4386,16 @@ class InteractionController(
         if (state.pageRects.getOrNull(sel.pageIndex) == null) return
         val b = sel.item.bounds()
         val w = b.w.coerceAtLeast(80.0)
-        val item = newTextItem(Pt(b.center.x - w / 2.0, b.bottom + CAPTION_GAP), w, 0.0).apply { align = com.xnotes.core.pal.HAlign.CENTER }
-        startEditing(item, sel.pageIndex, isNew = true)
+        val d = boxDefaults
+        val item = TextItem(Pt(b.center.x - w / 2.0, b.bottom + CAPTION_GAP), w, "", d.color, d.sizePt, d.face, textMeasurer)
+        item.flow.paragraphs.first().align = com.xnotes.core.text.ParaAlign.CENTER
+        item.reflow()
+        startEditing(item, sel.pageIndex, isNew = true, at = null)
         editingCaptionOf = sel.item
     }
 
-    /** Reopen the editor on the single selected text box (from the selection menu Edit action). */
-    fun editSelectedText() {
-        val sel = selection.singleOrNull() ?: return
-        val item = sel.item as? TextItem ?: return
-        if (state.pageRects.getOrNull(sel.pageIndex) == null) return
-        startEditing(item, sel.pageIndex, isNew = false)
-    }
-
-    /** The selected handwriting on one page, captured for an async convert-to-text. */
-    class InkSelection(val pageIndex: Int, val strokes: List<Stroke>, val bounds: Rect)
+    /** The selected handwriting on one page for an async convert; [strokes] may include [shapes]' outlines. */
+    class InkSelection(val pageIndex: Int, val strokes: List<Stroke>, val bounds: Rect, val shapes: List<ShapeItem> = emptyList())
 
     /**
      * The selected ink strokes on the primary selected page, or null when nothing selected is a
@@ -4220,6 +4411,26 @@ class InteractionController(
     }
 
     /**
+     * [inkSelection] for maths: selected shapes count too, since shape recognition and hold-to-shape
+     * turn a fraction bar, root or arrow into one. Their outlines join the strokes as pen lines.
+     */
+    fun mathInkSelection(): InkSelection? {
+        val ink = inkSelection() ?: return null
+        val shapes = selection.filter { it.pageIndex == ink.pageIndex }.mapNotNull { it.item as? ShapeItem }
+        if (shapes.isEmpty()) return ink
+        val outlines = shapes.flatMap { shape ->
+            shape.paths().flatMap { path ->
+                path.contours.map { c ->
+                    val pts = com.xnotes.core.vector.PathFlattener.flatten(c, 0.5).let { if (c.closed) it + c.start else it }
+                    Stroke(Tool.PEN, ToolConfig(), pts.map { Sample(it.x, it.y, 1.0) })
+                }
+            }
+        }
+        val bounds = shapes.map { it.bounds() }.fold(ink.bounds) { a, b -> a.union(b) }
+        return InkSelection(ink.pageIndex, ink.strokes + outlines, bounds, shapes)
+    }
+
+    /**
      * Replace [sel]'s strokes with a text box holding [text], as one undoable step. The box sits at
      * the ink's top-left and wraps to its width. Strokes gone since the snapshot are simply skipped.
      */
@@ -4230,21 +4441,26 @@ class InteractionController(
         val pageRight = state.footprint(page).right
         val maxW = (pageRight - sel.bounds.left - 8.0).coerceAtLeast(40.0)
         val width = sel.bounds.w.coerceIn(40.0, maxW)
-        val box = TextItem(Pt(sel.bounds.left, sel.bounds.top), width, 0.0, text, inkColor, textPointSize, textFace, measurer = textMeasurer)
+        val box = TextItem(Pt(sel.bounds.left, sel.bounds.top), width, text, inkColor, boxDefaults.sizePt, boxDefaults.face, textMeasurer)
         swapInk(page, strokes, box)
     }
 
     /** Replace the selected handwriting with a formula box set about as tall as the writing was. */
-    fun replaceInkWithMath(sel: InkSelection, latex: String) {
-        val page = state.document.pages.getOrNull(sel.pageIndex) ?: return
-        val strokes = sel.strokes.filter { s -> page.items.any { it === s } }
-        if (strokes.isEmpty()) return
-        val box = TextItem(Pt(sel.bounds.left, sel.bounds.top), sel.bounds.w, 0.0, latex, inkColor, textPointSize, textFace, measurer = textMeasurer, math = true)
+    /** The formula box made, selected, or null when the ink is gone. Shapes in [sel] go with the ink. */
+    fun replaceInkWithMath(sel: InkSelection, latex: String, origin: MathOrigin? = null): TextItem? {
+        val page = state.document.pages.getOrNull(sel.pageIndex) ?: return null
+        val strokes = (sel.strokes + sel.shapes).filter { s -> page.items.any { it === s } }
+        if (strokes.none { it is Stroke }) return null
+        val box = TextItem(Pt(sel.bounds.left, sel.bounds.top), sel.bounds.w, latex, inkColor, textPointSize, textFace, measurer = textMeasurer, math = true)
+        box.ocr = origin
         box.mathBox()?.let { m ->
             if (m.height > 0.0) box.pointSize = (textPointSize * sel.bounds.h / m.height).coerceIn(textPointSize, textPointSize * 6.0)
         }
         box.mathBox()?.let { box.width = it.width }
         swapInk(page, strokes, box)
+        selectSingle(sel.pageIndex, box)
+        refreshSelectionMenu()
+        return box
     }
 
     private fun swapInk(page: Page, strokes: List<CanvasItem>, box: TextItem) {
@@ -4471,7 +4687,9 @@ class InteractionController(
             val page = state.document.pages.getOrNull(pageIndex) ?: continue
             val picked = sels.mapTo(HashSet()) { it.item }
             val old = page.items.toList()
-            val new = arrangeOrder(old, { it in picked }, how) { it.paintBounds() }
+            // The page's own image stays the bottom, so nothing is sent under the paper.
+            val paper = old.takeWhile { (it as? ImageItem)?.paper == true && it !in picked }
+            val new = paper + arrangeOrder(old.drop(paper.size), { it in picked }, how) { it.paintBounds() }
             if (sameOrder(old, new)) continue
             cmds.add(ReorderItems(page, old, new))
             page.items.clear()
@@ -4519,6 +4737,63 @@ class InteractionController(
 
     /** The fills of the selected shapes that have one. */
     fun selectionFills(): List<Rgba> = selection.mapNotNull { (it.item as? ShapeItem)?.fillRgba }
+
+    fun selectionEffects(): com.xnotes.core.history.Effects = com.xnotes.core.history.RestyleEffects.effects(selection.map { it.item })
+
+    fun setSelectionEffects(dashed: Boolean?, neon: Boolean?, filled: Boolean?) {
+        val entries = com.xnotes.core.history.RestyleEffects.of(selection.map { it.item }, dashed, neon, filled)
+        if (entries.isEmpty()) return
+        val command = com.xnotes.core.history.RestyleEffects(entries)
+        command.redo()
+        history.push(command)
+        state.document.dirty = true
+        onContentChanged()
+        requestRender()
+    }
+
+    private val shapeLook = com.xnotes.core.history.LiveRestyle.shapes()
+    private val penLook = com.xnotes.core.history.LiveRestyle.pens()
+    private val tableBox = com.xnotes.core.history.LiveRestyle.tables()
+
+    fun selectionTableLook() = tableBox.first(selection.map { it.item })
+    fun selectionOnlyTables() = selection.isNotEmpty() && selection.all { it.item is TableItem }
+    fun restyleSelectionTables(preview: Boolean, change: (com.xnotes.core.model.TableLook) -> com.xnotes.core.model.TableLook) =
+        settleLook(tableBox.apply(selection.map { it.item }, preview, change))
+
+    private var cellsBefore: GeometrySnapshot? = null
+
+    /** The first picked cell's own style when the lone selected table has columns or rows picked on its bars, else null. */
+    fun selectionTableCells(): com.xnotes.core.model.CellStyle? {
+        val t = singleSelectedTable() ?: return null
+        if (tableColPick == null && tableRowPick == null) return null
+        return t.cells[rowPick(t).first to colPick(t).first] ?: com.xnotes.core.model.CellStyle()
+    }
+
+    /** Apply [change] to each picked cell; a [preview] skips history and the next settled call records one step. */
+    fun restyleSelectionCells(preview: Boolean, change: (com.xnotes.core.model.CellStyle) -> com.xnotes.core.model.CellStyle) {
+        val t = singleSelectedTable() ?: return
+        val before = cellsBefore ?: t.snapshotGeometry()
+        for (r in rowPick(t)) for (c in colPick(t)) t.setCell(r, c, change(t.cells[r to c] ?: com.xnotes.core.model.CellStyle()))
+        cellsBefore = if (preview) before else null
+        val after = t.snapshotGeometry()
+        settleLook(if (preview || after == before) null else TransformItems(listOf(t), listOf(before), listOf(after)))
+    }
+
+    fun selectionShapeLook() = shapeLook.first(selection.map { it.item })
+    fun selectionPenLook() = penLook.first(selection.map { it.item })
+
+    fun restyleSelectionShapes(preview: Boolean, change: (com.xnotes.core.history.ShapeLook) -> com.xnotes.core.history.ShapeLook) =
+        settleLook(shapeLook.apply(selection.map { it.item }, preview, change))
+
+    fun restyleSelectionPens(preview: Boolean, change: (com.xnotes.core.history.PenLook) -> com.xnotes.core.history.PenLook) =
+        settleLook(penLook.apply(selection.map { it.item }, preview, change))
+
+    private fun settleLook(step: com.xnotes.core.history.Command?) {
+        step?.let { history.push(it) }
+        state.document.dirty = true
+        onContentChanged()
+        requestRender()
+    }
 
     /** The first selected tape's pattern, or null when no tape is selected. */
     fun selectionTapePattern(): TapePattern? = selection.firstNotNullOfOrNull { (it.item as? TapeItem)?.pattern }
@@ -4613,13 +4888,18 @@ class InteractionController(
     }
 
     fun escape() {
+        // Out of a box being typed in, which is left selected as a press off it leaves it.
+        if (editingText != null) {
+            commitTextEdit(select = true)
+            return
+        }
         val flow = flowText
         if (flow != null && flow.active) {
             flow.endSession()
             requestRender()
             return
         }
-        commitTextEdit(restoreTool = true)
+        commitTextEdit()
         clearSelection()
         requestRender()
     }
@@ -4691,9 +4971,16 @@ class InteractionController(
         pasteOnPage(pageIndex, centre, centred = true)
     }
 
+    /** Land copies of [items] (from a document at [dpi]) centred in the view, without touching the clipboard. */
+    fun pasteItemsAtViewCentre(items: List<CanvasItem>, dpi: Int) {
+        val centre = state.viewportToContent(Pt(state.viewportW / 2.0, state.viewportH / 2.0))
+        val pageIndex = state.pageIndexAtContent(centre) ?: state.currentPageIndex()
+        pasteOnPage(pageIndex, centre, centred = true, ItemClipboard.Clip(items, dpi, Any(), cut = false))
+    }
+
     /** Land fresh copies of the clipboard's items on page [pageIndex], their box's top-left (or centre, when [centred]) at [target]. */
-    private fun pasteOnPage(pageIndex: Int, target: Pt, centred: Boolean) {
-        val clip = ItemClipboard.clip ?: return
+    private fun pasteOnPage(pageIndex: Int, target: Pt, centred: Boolean, from: ItemClipboard.Clip? = ItemClipboard.clip) {
+        val clip = from ?: return
         if (state.pageRects.getOrNull(pageIndex) == null) return
         val clones = ItemClipboard.copiesFor(clip, state.document.dpi, clip.isFrom(state.document), textMeasurer)
         // Collective bounds (page-local) of the clones.
@@ -4733,6 +5020,11 @@ class InteractionController(
         onSelectionMenu(if (selection.isNotEmpty() && mode == PointerMode.IDLE) selectionBoundsViewport() else null)
     }
 
+    /** Re-anchor the selection menu after a pan or zoom so it moves with the selection. */
+    fun followSelectionMenu() {
+        if (selection.isNotEmpty() && (mode == PointerMode.IDLE || mode == PointerMode.PAN || mode == PointerMode.PINCH)) onSelectionMenu(selectionBoundsViewport())
+    }
+
     private fun selectionBoundsViewport(): Rect? {
         val content = selectionBoundsContent() ?: return null
         val tl = state.contentToViewport(content.topLeft)
@@ -4759,6 +5051,7 @@ class InteractionController(
     // viewport: "single" keeps both, "double" drops the single finger, "none" freezes the page.
     private fun singleFingerPanAllowed(): Boolean = !(state.zoomLocked && zoomLockPan != "single")
     private fun pinchPanAllowed(): Boolean = !(state.zoomLocked && zoomLockPan == "none")
+    private fun panCfg() = configFor(Tool.PAN)
 
     private fun beginPan(vx: Double, vy: Double, fromPenButton: Boolean = false) {
         mode = PointerMode.PAN
@@ -4770,8 +5063,10 @@ class InteractionController(
     private fun extendPan(vx: Double, vy: Double) {
         trackVelocity(vx, vy)
         onUserMovedView?.invoke()
-        val dx = -(vx - lastPan.x)
-        var dy = -(vy - lastPan.y)
+        val pan = panCfg().panDelta(-(vx - lastPan.x), -(vy - lastPan.y))
+        noteViewDragged(Pt(vx, vy).distanceTo(panDownViewport) > TAP_SLOP)
+        val dx = pan.x
+        var dy = pan.y
         if (!state.verticalScroll) {
             extendPanPaginated(dx, dy)
             lastPan = Pt(vx, vy)
@@ -4800,7 +5095,7 @@ class InteractionController(
         // spuriously arming add-page (seen on first open, even on long PDFs). isDocumentEndVisible()
         // checks the last page's bottom against the viewport through the same transform that draws the
         // frame, so the affordance can never appear while the user can still see more document below.
-        if (leftoverY > 0.0 && state.isDocumentEndVisible()) {
+        if (leftoverY > 0.0 && !readOnly && state.isDocumentEndVisible()) {
             state.overscrollY = (state.overscrollY + leftoverY * OVERSCROLL_RESIST).coerceAtMost(OVERSCROLL_MAX)
             updateOverscrollArmed()
         }
@@ -4870,14 +5165,14 @@ class InteractionController(
         val pull = state.flipOffsetX
         // A finger that stopped before lifting has no flick left, however fast it moved earlier.
         val stopped = System.nanoTime() / 1_000_000L - lastMoveMs > PaginatedFlipPolicy.RELEASE_MOTION_MAX_AGE_MS
-        val v = if (stopped) Pt.ZERO else panVel
+        val v = if (stopped) Pt.ZERO else panCfg().panDelta(panVel.x, panVel.y)
         val deliberate = PaginatedFlipPolicy.shouldCommitOnRelease(
             pull, state.viewportW, state.devicePxPerDp, v.x, v.y, state.zoom,
         )
         when {
             // Appending a new page remains distance-only to avoid unintended document edits.
             pull >= PaginatedFlipPolicy.addPageThreshold(state.viewportW, state.devicePxPerDp) &&
-                state.currentRow >= rows - 1 -> {
+                state.currentRow >= rows - 1 && !readOnly -> {
                 stopPageFlipAnimation()
                 clearFlipPull()
                 onAddPageAtEnd()
@@ -4897,9 +5192,33 @@ class InteractionController(
         }
     }
 
+    /** Whether paginated turns slide; off, a turn lands at once, the e-ink way. */
+    var animateTurns: Boolean = true
+
+    /** Turn the paginated view to [rowIndex]: a slide to a neighbouring row, a jump to any other. */
+    fun turnToRow(rowIndex: Int) {
+        if (state.verticalScroll) return
+        if (pageFlipAnimating) finishPageFlip()
+        val rows = state.rowRanges()
+        if (rowIndex !in rows.indices || rowIndex == state.currentRow) return
+        if (abs(rowIndex - state.currentRow) == 1) {
+            flipTo(rowIndex)
+        } else {
+            state.goToPage(rows[rowIndex].first)
+            onViewChanged()
+            requestRender()
+        }
+    }
+
     /** Continue the existing drag until the linked neighbouring row fully occupies the viewport. */
     private fun flipTo(rowIndex: Int) {
         stopFling()
+        if (!animateTurns) {
+            stopPageFlipAnimation()
+            pageFlipDestinationRow = rowIndex
+            finishPageFlip()
+            return
+        }
         val direction = if (rowIndex > state.currentRow) 1.0 else -1.0
         val target = direction * state.linkedPageTravel(rowIndex)
         beginPageFlipAnimation(state.flipOffsetX, target, rowIndex)
@@ -4985,8 +5304,9 @@ class InteractionController(
     }
 
     private fun startFling(fingerVel: Pt) {
-        if (fingerVel.length() < FLING_MIN_START) return
-        flingVel = Pt(-fingerVel.x, -fingerVel.y) // scroll moves opposite the finger
+        val vel = panCfg().panDelta(-fingerVel.x, -fingerVel.y) // scroll moves opposite the finger
+        if (!panCfg().panGlide || vel.length() < FLING_MIN_START) return
+        flingVel = vel
         flinging = true
         lastFlingMs = System.nanoTime() / 1_000_000L
         choreographer.postFrameCallback(flingFrame)
@@ -5160,6 +5480,7 @@ class InteractionController(
         bandRect = null
         lassoPoints.clear()
         if (mode == PointerMode.SHOT) clearScreenshot() // a second finger turns the drag into a zoom
+        if (mode == PointerMode.SHOT_RESIZE || mode == PointerMode.SHOT_MOVE) abandonScreenshotAdjust()
         clearOverscroll() // a second finger ends any bottom-pull; the elastic snaps away
         clearFlipPull() // ...and any paginated edge-pull folds back into the scroll
         mode = PointerMode.PINCH
@@ -5169,7 +5490,15 @@ class InteractionController(
         pinchInitDist = a.distanceTo(b).coerceAtLeast(1.0)
         pinchInitZoom = state.zoom
         pinchAnchorContent = state.viewportToContent(mid)
+        pinchInitMid = mid
         startTrackingVelocity(mid.x, mid.y)
+    }
+
+    /** Tells [onUserDraggedView] the first time this touch has [moved] the view past tap range. */
+    private fun noteViewDragged(moved: Boolean) {
+        if (!moved || viewDragged) return
+        viewDragged = true
+        onUserDraggedView?.invoke()
     }
 
     private fun updatePinch(e: MotionEvent) {
@@ -5181,6 +5510,7 @@ class InteractionController(
         if (dist < 1e-3) return
         val mid = (a + b) * 0.5
         trackVelocity(mid.x, mid.y)
+        noteViewDragged(abs(dist - pinchInitDist) > TAP_SLOP || mid.distanceTo(pinchInitMid) > TAP_SLOP)
         // Zoom lock: pan only (keep the initial zoom).
         val raw = (pinchInitZoom * (dist / pinchInitDist)).coerceIn(state.minZoom, state.maxZoom)
         val wasFit = state.fitWidthActive || state.fitHeightActive
@@ -5198,8 +5528,8 @@ class InteractionController(
             else if (wasFit && !nowFit) onFitWidthReleased()
         }
         if (pinchPanAllowed()) {
-            val targetX = pinchAnchorContent.x * z - mid.x
-            val targetY = pinchAnchorContent.y * z - mid.y
+            val targetX = if (panCfg().lockPanX) state.scrollX else pinchAnchorContent.x * z - mid.x
+            val targetY = if (panCfg().lockPanY) state.scrollY else pinchAnchorContent.y * z - mid.y
             state.scrollX = targetX
             state.scrollY = targetY
             state.clampScroll()
@@ -5293,6 +5623,8 @@ class InteractionController(
         textDragRect = null
         // Cancel an in-progress capture drag; a frozen capture (mode IDLE) survives.
         if (mode == PointerMode.SHOT) { screenshotRect = null; onScreenshotMenu(null) }
+        // A cancelled adjust puts the frozen capture back where it was.
+        if (mode == PointerMode.SHOT_RESIZE || mode == PointerMode.SHOT_MOVE) abandonScreenshotAdjust()
         if (mode == PointerMode.PINCH && state.zoomingInProgress) {
             state.zoomingInProgress = false
             state.invalidateCachesForZoom()
@@ -5335,6 +5667,20 @@ class InteractionController(
                 }
             }
 
+            // The text box being typed in, out of the cache and drawn here as it changes.
+            editingText?.let { box ->
+                val pr = state.pageRects.getOrNull(editingPageIndex)
+                if (pr != null) {
+                    r.withSave {
+                        r.translate(pr.left, pr.top)
+                        state.applyPageTransform(r, state.document.pages[editingPageIndex])
+                        state.paintItem(box, r)
+                    }
+                    // Only a box with a width of its own shows where its lines will wrap.
+                    if (!box.autoWidth) r.strokePolygon(boxFrame(state.fromPageSpaceRect(editingPageIndex, box.bounds())), boxFramePen())
+                }
+            }
+
             // A shape whose label is being typed, out of the cache and drawn here without its words.
             editingLabel?.let { shape ->
                 val pr = state.pageRects.getOrNull(labelPageIndex)
@@ -5370,7 +5716,16 @@ class InteractionController(
             }
 
             // Screenshot capture region: the live drag rect, kept frozen until "copy as image" is used.
-            screenshotRect?.let { r.strokeRect(it, chromePen(1.6)) }
+            screenshotRect?.let { shot ->
+                r.strokeRect(shot, chromePen(1.6))
+                // Once frozen, its handles stay on screen: the capture can be adjusted, not redrawn.
+                if (mode != PointerMode.SHOT) {
+                    val side = HANDLE_SIZE / state.zoom
+                    for (h in ResizeMath.boxHandles(shot)) {
+                        r.fillRect(Rect(h.content.x - side / 2, h.content.y - side / 2, side, side), state.palette.accent)
+                    }
+                }
+            }
 
             // Selection chrome.
             val accent = chromePen(1.3)
@@ -5381,12 +5736,14 @@ class InteractionController(
 
             when {
                 mode == PointerMode.BAND -> bandRect?.let { r.strokeRect(it, accent) }
-                mode == PointerMode.TEXT_DRAG -> textDragRect?.let { r.strokeRect(it, accent) }
-                mode == PointerMode.LASSO_DRAW && lassoPoints.size >= 2 ->
+                mode == PointerMode.TEXT_DRAG -> textDragRect?.let { r.strokePolygon(boxFrame(it), boxFramePen()) }
+                (mode == PointerMode.LASSO_DRAW || lassoErasing) && lassoPoints.size >= 2 ->
                     r.strokePolyline(lassoPoints, chromePen(1.3))
                 selection.isNotEmpty() ->
                     selectionChromeBox()?.let { obb ->
-                        r.strokePolygon(obb.corners().map { Pt(it.x + moveOffset.x, it.y + moveOffset.y) }, accent)
+                        val corners = obb.corners().map { Pt(it.x + moveOffset.x, it.y + moveOffset.y) }
+                        // A lone text box wears its own quiet frame; everything else the marquee.
+                        if (loneTextBox() != null) r.strokePolygon(boxFrame(Rect.bounding(corners)), boxFramePen()) else r.strokePolygon(corners, accent)
                     }
             }
 
@@ -5412,9 +5769,15 @@ class InteractionController(
                         r.fillCircle(grip, side * 0.6, sel)
                     }
                 }
+                val round = loneTextBox() != null
                 for (h in selectionResizeHandles()) {
                     val c = Pt(h.content.x + moveOffset.x, h.content.y + moveOffset.y)
-                    r.fillRect(Rect(c.x - side / 2, c.y - side / 2, side, side), sel)
+                    if (round) {
+                        r.fillCircle(c, side * BOX_HANDLE_RADIUS + BOX_HANDLE_RING / state.zoom, state.palette.paper)
+                        r.fillCircle(c, side * BOX_HANDLE_RADIUS, sel)
+                    } else {
+                        r.fillRect(Rect(c.x - side / 2, c.y - side / 2, side, side), sel)
+                    }
                 }
                 drawTableChrome(r)
                 selectionMoveGrip()?.let { g ->
@@ -5428,17 +5791,17 @@ class InteractionController(
             }
 
             // Where a connector can glue, while one is armed or an end is being dragged.
-            if (marking) drawConnectionMarks(r)
+            if (marking && !readOnly) drawConnectionMarks(r)
 
             // Room on the pages, the cut a hovering pen would make, while Insert space is armed.
-            if (tool == Tool.INSERT_SPACE || insertSpace.active) insertSpace.drawOverlay(r, state.visibleContentRect())
+            if ((tool == Tool.INSERT_SPACE && !readOnly) || insertSpace.active) insertSpace.drawOverlay(r, state.visibleContentRect())
         }
 
         // Note icons: chrome of one size at any zoom, so in viewport space.
         noteIcons?.draw(r)
 
         // Each room's close button while Insert space is armed, and the room's height beside the pen while it drags.
-        if (tool == Tool.INSERT_SPACE || insertSpace.active) insertSpace.drawViewport(r)
+        if ((tool == Tool.INSERT_SPACE && !readOnly) || insertSpace.active) insertSpace.drawViewport(r)
 
         // Eraser cursor (viewport space, after the transform is restored).
         eraserCursor?.let {
@@ -5447,7 +5810,32 @@ class InteractionController(
         }
 
         // Ruler (viewport space; floats above all content and the live stroke).
-        if (ruler.visible) drawRuler(r)
+        if (ruler.visible && !readOnly) drawRuler(r)
+
+        val density = state.devicePxPerDp
+        val line = resizeItem as? ShapeItem
+        if (mode == PointerMode.RESIZE && line != null && line.shape.isEndpointShape) {
+            val start = state.contentToViewport(state.fromPageSpace(resizePageIndex, line.start))
+            val end = state.contentToViewport(state.fromPageSpace(resizePageIndex, line.end))
+            val (held, pen) = if (resizeHandle == HandleId.START) end to start else start to end
+            if (ResizeMath.onSnapStep(atan2(line.end.y - line.start.y, line.end.x - line.start.x))) drawSnapGuide(r, held, pen)
+            drawReadout(r, "${ResizeMath.angleDeg(held, pen)}°", pen + Pt(30.0, -30.0) * density, density, state.palette)
+        }
+        val obb = selObb
+        val pointer = txPointer
+        if (mode == PointerMode.TRANSFORM && txHandle == null && obb != null && pointer != null) {
+            val a = state.contentToViewport(obb.localToWorld(Pt(-obb.halfW, 0.0)))
+            val b = state.contentToViewport(obb.localToWorld(Pt(obb.halfW, 0.0)))
+            if (ResizeMath.onSnapStep(obb.angle)) drawSnapGuide(r, a, b)
+            val deg = ResizeMath.angleDeg(Pt.ZERO, Pt(cos(obb.angle), sin(obb.angle)))
+            drawReadout(r, "$deg°", state.contentToViewport(pointer) + Pt(30.0, -30.0) * density, density, state.palette)
+        }
+    }
+
+    /** A dashed run through viewport points [a] and [b], carried a little past both. */
+    private fun drawSnapGuide(r: Renderer, a: Pt, b: Pt) {
+        val (from, to) = ResizeMath.guideThrough(a, b, SNAP_GUIDE_OVERHANG_DP * state.devicePxPerDp) ?: return
+        r.strokePolyline(listOf(from, to), chromePen(1.5))
     }
 
     /** The page the selection sits on, or null (the current page) when nothing is selected. */
@@ -5712,8 +6100,16 @@ class InteractionController(
         val h = textH + padY * 2
         val left = (at.x - w / 2.0).coerceIn(2.0, (state.viewportW - w - 2.0).coerceAtLeast(2.0))
         val top = (at.y - h / 2.0).coerceIn(2.0, (state.viewportH - h - 2.0).coerceAtLeast(2.0))
-        r.fillRect(Rect(left, top, w, h), pal.menuBg.scaleAlpha(0.92))
-        r.strokeRect(Rect(left, top, w, h), Pen(pal.textDim, 1.2, cosmetic = true))
+        // Same radius as the chrome's small shape role, scaled by the corner style preference.
+        val rad = (8.0 * state.cornerScale * density).coerceAtMost(h / 2.0)
+        val right = left + w
+        val bottom = top + h
+        val outline = arcPolyline(Pt(left + rad, top + rad), rad, 180.0, 270.0, 6) +
+            arcPolyline(Pt(right - rad, top + rad), rad, 270.0, 360.0, 6) +
+            arcPolyline(Pt(right - rad, bottom - rad), rad, 0.0, 90.0, 6) +
+            arcPolyline(Pt(left + rad, bottom - rad), rad, 90.0, 180.0, 6)
+        r.fillPolygon(outline, pal.menuBg.scaleAlpha(0.92))
+        r.strokePolyline(outline + outline.first(), Pen(pal.textDim, 1.2, cosmetic = true))
         r.drawText(text, Rect(left + padX, top + padY, textW + 2.0, textH), font, pal.text)
     }
 
@@ -5785,6 +6181,15 @@ class InteractionController(
          *  the cache, to cover stroke anti-aliasing at the dirty-rect edge. */
         const val REPAIR_PAD = 2.0
 
+        /** The narrowest text a dragged-out box wraps at. */
+        const val MIN_BOX_TEXT_WIDTH = 40.0
+
+        /** A text box's frame: its corner radius on screen, how faint its line is, and its round handles. */
+        const val BOX_FRAME_CORNER_DP = 5.0
+        const val BOX_FRAME_ALPHA = 120
+        const val BOX_HANDLE_RADIUS = 0.42
+        const val BOX_HANDLE_RING = 1.5
+
         /** Drawn side length (viewport px) of a resize-handle square. Also sizes the table edit
          *  chrome (per-line handles and add/remove buttons), which derives from it. */
         const val HANDLE_SIZE = 24.0
@@ -5840,15 +6245,17 @@ class InteractionController(
          *  so a shape reads as thick as a same-size pen instead of as a flat full-width line. */
         const val SHAPE_PEN_PARITY = 0.675
 
-        /** A line/arrow drawn with the shape tool snaps flat when within this angle (deg) of an axis.
-         *  Half the recognizer's hold-to-snap angle: a live drag is steadier, so it needs less help. */
-        const val SHAPE_AXIS_SNAP_DEG = 4.0
-
         /** With the Perfect switch on, a line/arrow keeps its angle to whole steps of this (deg). */
         const val SHAPE_PERFECT_STEP_DEG = 15.0
 
         /** Half-width (rad) of the sticky zone around each 90-degree step for snap-rotation. */
-        val ROTATE_SNAP_STICK_RAD = Math.toRadians(6.0)
+        val ROTATE_SNAP_STICK_RAD = Math.toRadians(12.0)
+
+        /** Half-width (rad) of the sticky zone around each 45-degree step, for every rotation and line end. */
+        val ANGLE_SNAP_RAD = Math.toRadians(8.0)
+
+        /** How far (dp) the dashed snap guide runs past the selection. */
+        const val SNAP_GUIDE_OVERHANG_DP = 24.0
 
         // Inertial fling tuning (viewport px/s).
         const val VEL_SMOOTH = 0.4 // EMA weight on the previous velocity estimate

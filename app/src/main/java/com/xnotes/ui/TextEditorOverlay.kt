@@ -32,10 +32,7 @@ import androidx.compose.ui.relocation.BringIntoViewModifierNode
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontStyle
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
@@ -49,14 +46,6 @@ import kotlin.math.roundToInt
 
 private val composeFamilies = java.util.concurrent.ConcurrentHashMap<String, FontFamily>()
 
-/** Combine underline + strikethrough into one Compose decoration, or null for neither. */
-private fun textDecorationOf(underline: Boolean, strike: Boolean): TextDecoration? = when {
-    underline && strike -> TextDecoration.combine(listOf(TextDecoration.Underline, TextDecoration.LineThrough))
-    underline -> TextDecoration.Underline
-    strike -> TextDecoration.LineThrough
-    else -> null
-}
-
 /** Drop memoized Compose families after a font import/removal changed resolution. */
 internal fun invalidateComposeFamilies() = composeFamilies.clear()
 
@@ -67,7 +56,9 @@ internal fun FontFace.toComposeFamily(): FontFamily = when (this) {
     FontFace.MONO -> FontFamily.Monospace
     FontFace.HAND -> FontFamily.Cursive
     else -> composeFamilies.getOrPut(id) {
-        FontFamily(FontCatalog.resolve(this, bold = false, italic = false).typeface)
+        // An imported font is one file: as a Font, Compose synthesizes its bold and italic.
+        FontCatalog.customFile(this)?.let { runCatching { FontFamily(androidx.compose.ui.text.font.Font(it)) }.getOrNull() }
+            ?: FontFamily(FontCatalog.resolve(this, bold = false, italic = false).typeface)
     }
 }
 
@@ -219,14 +210,7 @@ fun TextEditorOverlay(editor: TextEditHost, field: EditingField) {
                 color = field.rgba.toComposeColor(),
                 fontFamily = field.face.toComposeFamily(),
                 fontSize = fontSp,
-                fontWeight = if (field.bold) FontWeight.Bold else null,
-                fontStyle = if (field.italic) FontStyle.Italic else null,
-                textDecoration = textDecorationOf(field.underline, field.strike),
-                textAlign = when {
-                    field.centred || field.align == com.xnotes.core.pal.HAlign.CENTER -> TextAlign.Center
-                    field.align == com.xnotes.core.pal.HAlign.RIGHT -> TextAlign.End
-                    else -> TextAlign.Start
-                },
+                textAlign = if (field.centred) TextAlign.Center else TextAlign.Start,
             ),
             cursorBrush = SolidColor(Rgba.CARET.toComposeColor()),
         )

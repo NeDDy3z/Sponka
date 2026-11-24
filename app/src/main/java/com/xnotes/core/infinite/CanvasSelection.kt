@@ -1,5 +1,6 @@
 package com.xnotes.core.infinite
 
+import com.xnotes.canvas.AngleSnap
 import com.xnotes.canvas.HandleId
 import com.xnotes.canvas.ResizeHandle
 import com.xnotes.canvas.ResizeMath
@@ -17,14 +18,12 @@ import com.xnotes.core.model.ConnectorItem
 import com.xnotes.core.model.FunctionSpec
 import com.xnotes.core.model.GeometrySnapshot
 import com.xnotes.core.model.GlueFollow
+import com.xnotes.core.model.ShapeHandle
 import com.xnotes.core.model.ShapeItem
 import com.xnotes.core.shapes.ShapeKind
 import com.xnotes.core.model.TapeItem
 import com.xnotes.core.model.TapeMode
 import com.xnotes.core.tape.TapeGeometry
-
-/** Half-width of the sticky zone around each 90-degree step when snap-rotation is on. */
-private val SNAP_STICK_RAD = Math.toRadians(6.0)
 
 /**
  * What is selected on the canvas, and the arithmetic of moving, scaling and rotating it.
@@ -50,8 +49,11 @@ class CanvasSelection(private val doc: InfiniteDocument) {
 
     val isEmpty: Boolean get() = items.isEmpty()
 
-    /** When set, a rotate drag snaps the box angle to the nearest 90 degrees. */
+    /** When set, a rotate drag snaps the box angle to the nearest 90 degrees from further away. */
     var snapRotation90: Boolean = false
+
+    /** Snapping for the rotate or line-end drag in progress, fresh for each [beginTransform]. */
+    private val angleSnap = AngleSnap()
 
     /** Gesture-start geometry, captured by [beginTransform] and restored every frame of a drag. */
     private var startSnapshots: List<GeometrySnapshot> = emptyList()
@@ -103,6 +105,9 @@ class CanvasSelection(private val doc: InfiniteDocument) {
     /** The lone selected strip of tape, which its two ends drag. */
     private val loneTapeStrip: TapeItem? get() = (items.singleOrNull() as? TapeItem)?.takeIf { it.mode == TapeMode.STRAIGHT }
 
+    /** The lone selected line or arrow, which its two ends drag, as on a note. */
+    private val loneEndpointShape: ShapeItem? get() = (items.singleOrNull() as? ShapeItem)?.takeIf { it.shape.isEndpointShape }
+
     private val CORNERS = setOf(HandleId.TL, HandleId.TR, HandleId.BL, HandleId.BR)
 
     private fun boxOf(of: List<CanvasItem>): Obb? =
@@ -124,19 +129,25 @@ class CanvasSelection(private val doc: InfiniteDocument) {
     /** True when [p] is inside the selection, so a press there grabs it rather than starting a band. */
     fun contains(p: Pt, screenMargin: Double = 0.0): Boolean = chromeBox(screenMargin)?.contains(p) == true
 
-    /** The resize handles, in content space; a shape that keeps its aspect gets corners only, a strip of tape its two ends. */
-    fun handles(screenMargin: Double = 0.0): List<ResizeHandle> {
+    /** The resize handles, in content space; a shape that keeps its aspect gets corners only, a line, an arrow or a strip of tape its two ends. A box too small at [zoom] gets none. */
+    fun handles(screenMargin: Double = 0.0, zoom: Double? = null): List<ResizeHandle> {
         loneTapeStrip?.let { t -> return listOf(ResizeHandle(HandleId.START, t.shape.points[0]), ResizeHandle(HandleId.END, t.shape.points[1])) }
-        val all = chromeBox(screenMargin)?.let { ResizeMath.obbHandles(it) } ?: return emptyList()
+        loneEndpointShape?.let { s -> return listOf(ResizeHandle(HandleId.START, s.start), ResizeHandle(HandleId.END, s.end)) }
+        val box = chromeBox(screenMargin) ?: return emptyList()
+        if (zoom != null && ResizeMath.obbCrowded(box, zoom)) return emptyList()
+        val all = ResizeMath.obbHandles(box)
         // A pill scales by its corners and lengthens by its sides; nothing stretches it upright.
         if (items.all { it is AudioItem }) return all.filter { it.id != HandleId.T && it.id != HandleId.B }
         val square = (items.singleOrNull() as? ShapeItem)?.shape?.keepsAspect == true
         return if (square || loneTapeBox != null) all.filter { it.id in CORNERS } else all
     }
 
+    /** True when the selection turns by a grip: never with a pill in it, nor a lone line, arrow or strip of tape, which its ends reorient. */
+    val turns: Boolean get() = items.none { it is AudioItem } && loneTapeStrip == null && loneEndpointShape == null
+
     /** The rotate grip's centre, [arm] content pixels past the box's top edge. */
     fun rotateGrip(arm: Double, screenMargin: Double = 0.0): Pt? =
-        if (items.any { it is AudioItem } || loneTapeStrip != null) null else chromeBox(screenMargin)?.let { ResizeMath.obbRotateGrip(it, arm) }
+        if (!turns) null else chromeBox(screenMargin)?.let { ResizeMath.obbRotateGrip(it, arm) }
 
     /** The move grip under a selection too small to grab by its body, seen at [zoom], or null. */
     fun moveGrip(zoom: Double, arm: Double, screenMargin: Double = 0.0): Pt? =
@@ -156,8 +167,8 @@ class CanvasSelection(private val doc: InfiniteDocument) {
     }
 
     /** Which handle [p] lands on, within [tolerance] content pixels, or null. */
-    fun hitHandle(p: Pt, tolerance: Double, screenMargin: Double = 0.0): HandleId? =
-        ResizeMath.hitHandle(handles(screenMargin), p, tolerance)
+    fun hitHandle(p: Pt, tolerance: Double, screenMargin: Double = 0.0, zoom: Double? = null): HandleId? =
+        ResizeMath.hitHandle(handles(screenMargin, zoom), p, tolerance)
 
     // --- transforms ---
 
@@ -167,6 +178,7 @@ class CanvasSelection(private val doc: InfiniteDocument) {
      * there, so a press a few pixels off the grip's centre no longer snaps the selection.
      */
     fun beginTransform(grabAt: Pt? = null, rigid: Boolean = false, pin: Boolean = true) {
+        angleSnap.reset()
         startSnapshots = items.map { it.snapshotGeometry() }
         // A move, turn or resize moves everything by one map; a point edit reshapes what it edits.
         follow = followOf(items, rigid = rigid, pin = pin)
@@ -261,7 +273,7 @@ class CanvasSelection(private val doc: InfiniteDocument) {
      * far outside the box the handle sits ([chromeMargin]), which the box edge keeps behind it.
      */
     fun resizeLive(handle: HandleId, pointer: Pt, margin: Double = 0.0) {
-        if (handle == HandleId.START || handle == HandleId.END) return dragTapeEnd(handle, pointer)
+        if (handle == HandleId.START || handle == HandleId.END) return dragEnd(handle, pointer)
         val from = startBox ?: return
         val result = boxResize(from, handle, pointer, margin)
         box = result.obb
@@ -285,13 +297,27 @@ class CanvasSelection(private val doc: InfiniteDocument) {
     private fun boxResize(from: Obb, handle: HandleId, pointer: Pt, margin: Double): ResizeMath.ObbResize =
         if (loneTapeBox != null && handle in CORNERS) ResizeMath.obbResizeFree(from, handle, pointer) else ResizeMath.obbResize(from, handle, pointer, margin)
 
-    /** Drag the lone strip of tape's [handle] end to [pointer], snapped level or upright against the other end, as when laid. */
-    private fun dragTapeEnd(handle: HandleId, pointer: Pt) {
-        val tape = loneTapeStrip ?: return
-        tape.restoreGeometry(startSnapshots[0])
-        val (a, b) = tape.shape.points
-        val ends = if (handle == HandleId.START) listOf(TapeGeometry.snap(b, pointer), b) else listOf(a, TapeGeometry.snap(a, pointer))
-        tape.shape = tape.shape.copy(points = ends)
+    /**
+     * Drag the [handle] end of the lone line, arrow or strip of tape to [pointer], the other end held
+     * still. Both snap level or upright against it, tape as when laid.
+     */
+    private fun dragEnd(handle: HandleId, pointer: Pt) {
+        val item = items.singleOrNull() ?: return
+        item.restoreGeometry(startSnapshots.singleOrNull() ?: return)
+        val tape = loneTapeStrip
+        val line = loneEndpointShape
+        when {
+            tape != null -> {
+                val (a, b) = tape.shape.points
+                val ends = if (handle == HandleId.START) listOf(TapeGeometry.snap(b, pointer), b) else listOf(a, TapeGeometry.snap(a, pointer))
+                tape.shape = tape.shape.copy(points = ends)
+            }
+            line != null -> {
+                val (s, e) = ResizeMath.snapOpenEnd(line.start, line.end, handle, pointer, angleSnap)
+                line.setGeometry(ShapeHandle(s, e))
+            }
+            else -> return
+        }
         box = boxOf(items)
         doc.itemsChanged(items)
     }
@@ -328,18 +354,8 @@ class CanvasSelection(private val doc: InfiniteDocument) {
         refreshBox()
     }
 
-    /**
-     * Give each 90-degree step a small sticky zone, if enabled: the box clings to the nearest
-     * quarter turn only while it is within [SNAP_STICK_RAD] of it, and rotates freely otherwise.
-     * Not a hard quantiser, so angles between the steps stay reachable.
-     */
-    private fun snapSwept(from: Obb, swept: Double): Double {
-        if (!snapRotation90) return swept
-        val quarter = Math.PI / 2.0
-        val target = from.angle + swept
-        val nearest = Math.round(target / quarter) * quarter
-        return if (Math.abs(target - nearest) <= SNAP_STICK_RAD) nearest - from.angle else swept
-    }
+    /** The swept turn snapped by [angleSnap], quarter turns catching from further away with [snapRotation90]. */
+    private fun snapSwept(from: Obb, swept: Double): Double = angleSnap.snap(from.angle + swept, snapRotation90) - from.angle
 
     /** Put the box back where the drag started, for a gesture that was cancelled rather than ended. */
     fun previewBack() {

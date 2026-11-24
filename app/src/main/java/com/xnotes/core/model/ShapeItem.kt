@@ -113,6 +113,9 @@ class ShapeItem(
     /** True for a dropped colour's area: only fill, which an eraser takes whole and nothing glues to. */
     val isFill: Boolean get() = shape == ShapeKind.FILL
 
+    /** A closed shape that can carry a fill of its own. */
+    val canFill: Boolean get() = shape.isClosed && !isFill && shape != ShapeKind.GLYPHS
+
     /** [p] from the shape's unturned frame onto the page: turned by [rotation] about the box centre. */
     fun toPage(p: Pt): Pt {
         if (rotation == 0.0) return p

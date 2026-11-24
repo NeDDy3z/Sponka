@@ -24,6 +24,8 @@ data class Preferences(
     val materialStyle: MaterialStyle = MaterialStyle.TONAL_SPOT,
     /** Material contrast level, -1 (reduced) .. 0 (standard) .. 1 (high). */
     val materialContrast: Double = 0.0,
+    /** Shift of the chrome surfaces behind the pages, -1 (darker) .. 0 (theme) .. 1 (brighter). */
+    val backgroundBrightness: Double = 0.0,
     val materialSurfaceSeed: Rgba = DEFAULT_MATERIAL_SURFACE,
     val cornerStyle: CornerStyle = CornerStyle.ROUNDED,
     val toolbarLook: ToolbarLook = ToolbarLook(),
@@ -49,6 +51,14 @@ data class Preferences(
     val snapRotation90: Boolean = false,
     /** Language for handwriting-to-text (Convert to text): BCP-47 tag, "cs" (Czech) | "en" (English). */
     val ocrLanguage: String = "cs",
+    /** Which handwritten-maths model converts ink to LaTeX (an id from the Sponka-Math-Models releases). */
+    val mathModel: String = "pix2text-mfr",
+    /** The custom LLM math option: an OpenAI-compatible base URL, model and prompt ("" = built-in). The key stays on the device. */
+    val mathLlmUrl: String = "",
+    val mathLlmModel: String = "",
+    val mathLlmPrompt: String = "",
+    /** On-device math model used instead of the custom LLM when there is no network; "" = none. */
+    val mathLlmOffline: String = "",
     /** Tool the stylus side button activates while held; "none" disables it. */
     val penButtonTool: String = "eraser",
     /** Whether the side-button tool also activates during hover (no contact needed); eraser/pan only. */
@@ -72,6 +82,8 @@ data class Preferences(
     val volumeKeysTurnPages: Boolean = false,
     /** Keep the screen from sleeping while the app is open. */
     val keepScreenOn: Boolean = false,
+    /** While a note or canvas is open, the Back button does nothing, so a stray press can't leave it. */
+    val disableBackButton: Boolean = false,
     /** Look for a newer release on GitHub each time the app starts. */
     val checkUpdatesOnStartup: Boolean = true,
     /** Preferences open on a list of categories; off shows every setting in one long list. */
@@ -80,6 +92,10 @@ data class Preferences(
     val sideMargin: Double = 16.0,
     /** Whether the hairline outline around every page is left undrawn. */
     val hidePageBorders: Boolean = false,
+    /** Whether the floating zoom bar is drawn over the page or canvas. */
+    val showZoomBar: Boolean = false,
+    /** Whether the floating pencilcase bar of saved tools is drawn over the page or canvas. */
+    val showPencilcase: Boolean = false,
     /** Whether the text margins are drawn on every page as dashed lines. */
     val showMargins: Boolean = false,
     /** User zoom floor: when enabled, no zoom path goes below [minZoomPercent]%. */
@@ -92,8 +108,8 @@ data class Preferences(
      *  read at both a wall's scale and a hair's. */
     val canvasMinZoomPercent: Int = 2,
     val canvasMaxZoomPercent: Int = 6400,
-    /** Long-edge cap (px) for the on-screen page cache; higher holds more of the page ready at deep zoom. */
-    val maxCacheResolution: Int = 2048,
+    /** Memory (MB) the page caches may hold, or 0 to size it to the device ([com.xnotes.canvas.CacheBudget]). */
+    val cacheMemoryMb: Int = 0,
     /** Whether wet ink keeps off the front buffer, so every stroke takes the ordinary canvas path. */
     val disableFrontBuffering: Boolean = false,
     /** Open in fullscreen; null ⇒ auto (on unless the display has a camera cutout). */
@@ -130,11 +146,15 @@ data class Preferences(
     /** Layouts the explorer header's switcher offers, in switcher order. */
     val switcherLayouts: List<ExplorerLayout> = ExplorerLayout.entries,
     val sidebarRecent: Boolean = true,
+    val sidebarHidden: Boolean = true,
+    val sidebarTemplates: Boolean = true,
     val sidebarPinned: Boolean = true,
     val sidebarColours: Boolean = true,
     val sidebarTrash: Boolean = true,
     val sidebarFiles: Boolean = true,
     val sidebarSync: Boolean = true,
+    /** Whether the home sidebar floats on a rounded sheet off the screen's edges instead of sitting flush. */
+    val sidebarFloating: Boolean = false,
     /** Where Home opens: "top" (the notes folder), "last" (the folder last shown) or "shelves" (the notes folder under Recent and Pinned). */
     val homeOpensTo: String = "top",
     /** What a swipe right / left on Home does: one of [HOME_SWIPES]. */
@@ -152,6 +172,10 @@ data class Preferences(
     val showExtensions: Boolean = false,
     /** Hides files and folders whose name starts with a dot (.obsidian, .git) from the explorer. */
     val hideDotItems: Boolean = true,
+    /** Document keys of files and folders hidden on this device; kept out of settings sync. */
+    val hiddenItems: Set<String> = emptySet(),
+    /** Lists the [hiddenItems] anyway, dimmed, so they can be unhidden. */
+    val showHidden: Boolean = false,
     /** The reader's light/dark choice; null follows the app theme. Never written to the file. */
     val readerDark: Boolean? = null,
     /** Whether an exported PDF gets a bookmark for each heading of the note's text. */
@@ -160,6 +184,8 @@ data class Preferences(
     val hiddenShapes: Set<String> = emptySet(),
     /** Shape and connector pages and chips, by key, in the order the shape popup shows them; empty keeps the built-in order. */
     val shapeOrder: List<String> = emptyList(),
+    /** The View menu's autoscroll speed in tenths of a paper millimetre per second; autoscroll itself always starts off. */
+    val autoScrollSpeed: Int = AUTOSCROLL_DEFAULT,
 ) {
     /**
      * A new note's page size in document pixels. A named size is laid out under
@@ -188,6 +214,11 @@ data class Preferences(
         .put("detect_shapes", detectShapes)
         .put("snap_rotation_90", snapRotation90)
         .put("ocr_language", ocrLanguage)
+        .put("math_model", mathModel)
+        .put("math_llm_url", mathLlmUrl)
+        .put("math_llm_model", mathLlmModel)
+        .put("math_llm_prompt", mathLlmPrompt)
+        .put("math_llm_offline", mathLlmOffline)
         .put("pen_button_tool", penButtonTool)
         .put("pen_button_hover", penButtonHover)
         .put("two_finger_tap", twoFingerTap)
@@ -198,10 +229,13 @@ data class Preferences(
         .put("stylus_button_2_tap", stylusButton2Tap)
         .put("volume_keys_turn_pages", volumeKeysTurnPages)
         .put("keep_screen_on", keepScreenOn)
+        .put("disable_back_button", disableBackButton)
         .put("check_updates_on_startup", checkUpdatesOnStartup)
         .put("prefs_categories", prefsCategories)
         .put("side_margin", sideMargin)
         .put("hide_page_borders", hidePageBorders)
+        .put("show_zoom_bar", showZoomBar)
+        .put("show_pencilcase", showPencilcase)
         .put("show_margins", showMargins)
         .put("min_zoom_enabled", minZoomEnabled)
         .put("min_zoom_percent", minZoomPercent)
@@ -209,7 +243,7 @@ data class Preferences(
         .put("max_zoom_percent", maxZoomPercent)
         .put("canvas_min_zoom_percent", canvasMinZoomPercent)
         .put("canvas_max_zoom_percent", canvasMaxZoomPercent)
-        .put("max_cache_resolution", maxCacheResolution)
+        .put("cache_memory_mb", cacheMemoryMb)
         .put("disable_front_buffering", disableFrontBuffering)
         .apply {
             if (materialMode != MaterialColourMode.SYSTEM) put("material_mode", materialMode.id)
@@ -223,6 +257,7 @@ data class Preferences(
             }
             if (materialStyle != MaterialStyle.TONAL_SPOT) put("material_style", materialStyle.id)
             if (materialContrast != 0.0) put("material_contrast", materialContrast)
+            if (backgroundBrightness != 0.0) put("background_brightness", backgroundBrightness)
             if (materialMode == MaterialColourMode.DUAL || materialSurfaceSeed != DEFAULT_MATERIAL_SURFACE) {
                 put("material_surface_seed", Rgba.toHex(materialSurfaceSeed))
             }
@@ -254,9 +289,12 @@ data class Preferences(
         }
         .put("switcher_layouts", org.json.JSONArray().apply { switcherLayouts.forEach { put(it.id) } })
         .put("sidebar_recent", sidebarRecent)
+        .put("sidebar_hidden", sidebarHidden)
+        .put("sidebar_templates", sidebarTemplates)
         .put("sidebar_pinned", sidebarPinned)
         .put("sidebar_colours", sidebarColours)
         .put("sidebar_trash", sidebarTrash)
+        .put("sidebar_floating", sidebarFloating)
         .put("sidebar_files", sidebarFiles)
         .put("sidebar_sync", sidebarSync)
         .put("home_opens_to", homeOpensTo)
@@ -269,10 +307,13 @@ data class Preferences(
         .put("show_folder_counts", showFolderCounts)
         .put("show_extensions", showExtensions)
         .put("hide_dot_items", hideDotItems)
+        .put("hidden_items", org.json.JSONArray(hiddenItems.sorted()))
+        .put("show_hidden", showHidden)
         .apply { readerDark?.let { put("reader_dark", it) } }
         .put("pdf_heading_bookmarks", pdfHeadingBookmarks)
         .apply { if (hiddenShapes.isNotEmpty()) put("hidden_shapes", org.json.JSONArray(hiddenShapes.sorted())) }
         .apply { if (shapeOrder.isNotEmpty()) put("shape_order", org.json.JSONArray(shapeOrder)) }
+        .put("autoscroll_speed", autoScrollSpeed)
 
     companion object {
         /** The accent a two-tone setting saved without a seed of its own has always loaded as. */
@@ -288,6 +329,11 @@ data class Preferences(
 
         /** [trashDays] for keeping deleted items until Trash is emptied by hand. */
         const val TRASH_FOREVER = -1
+
+        /** [autoScrollSpeed] bounds and default, in tenths of a mm per second. */
+        const val AUTOSCROLL_MIN = 1
+        const val AUTOSCROLL_MAX = 100
+        const val AUTOSCROLL_DEFAULT = 20
 
         /** Settable range of the min/max zoom limits, in percent (within the hard zoom bounds). */
         const val ZOOM_LIMIT_MIN_PCT = 20
@@ -326,6 +372,7 @@ data class Preferences(
                 materialDualSeed = dualSeed,
                 materialStyle = MaterialStyle.fromId(o.optString("material_style")),
                 materialContrast = o.optDouble("material_contrast", 0.0).takeIf { it in -1.0..1.0 } ?: 0.0,
+                backgroundBrightness = o.optDouble("background_brightness", 0.0).takeIf { it in -1.0..1.0 } ?: 0.0,
                 materialSurfaceSeed = surfaceSeed,
                 cornerStyle = CornerStyle.fromId(o.optString("corner_style")),
                 toolbarLook = ToolbarLook(
@@ -350,6 +397,11 @@ data class Preferences(
                 detectShapes = o.optBoolean("detect_shapes", true),
                 snapRotation90 = o.optBoolean("snap_rotation_90", false),
                 ocrLanguage = o.optString("ocr_language", "cs").ifEmpty { "cs" },
+                mathModel = o.optString("math_model", "pix2text-mfr").ifEmpty { "pix2text-mfr" },
+                mathLlmUrl = o.optString("math_llm_url", ""),
+                mathLlmModel = o.optString("math_llm_model", ""),
+                mathLlmPrompt = o.optString("math_llm_prompt", ""),
+                mathLlmOffline = o.optString("math_llm_offline", ""),
                 penButtonTool = o.optString("pen_button_tool", "eraser").ifEmpty { "eraser" },
                 penButtonHover = o.optBoolean("pen_button_hover", false),
                 twoFingerTap = tapAction("two_finger_tap"),
@@ -360,10 +412,13 @@ data class Preferences(
                 stylusButton2Tap = tapAction("stylus_button_2_tap"),
                 volumeKeysTurnPages = o.optBoolean("volume_keys_turn_pages", false),
                 keepScreenOn = o.optBoolean("keep_screen_on", false),
+                disableBackButton = o.optBoolean("disable_back_button", false),
                 checkUpdatesOnStartup = o.optBoolean("check_updates_on_startup", true),
                 prefsCategories = o.optBoolean("prefs_categories", true),
                 sideMargin = o.optDouble("side_margin", 16.0).coerceIn(0.0, 80.0),
                 hidePageBorders = o.optBoolean("hide_page_borders", false),
+                showZoomBar = o.optBoolean("show_zoom_bar", false),
+                showPencilcase = o.optBoolean("show_pencilcase", false),
                 showMargins = o.optBoolean("show_margins", false),
                 minZoomEnabled = o.optBoolean("min_zoom_enabled", false),
                 minZoomPercent = o.optInt("min_zoom_percent", 50).coerceIn(ZOOM_LIMIT_MIN_PCT, ZOOM_LIMIT_MAX_PCT),
@@ -371,7 +426,9 @@ data class Preferences(
                 maxZoomPercent = o.optInt("max_zoom_percent", 400).coerceIn(ZOOM_LIMIT_MIN_PCT, ZOOM_LIMIT_MAX_PCT),
                 canvasMinZoomPercent = o.optInt("canvas_min_zoom_percent", 2).coerceIn(1, 100),
                 canvasMaxZoomPercent = o.optInt("canvas_max_zoom_percent", 6400).coerceIn(200, 100000),
-                maxCacheResolution = o.optInt("max_cache_resolution", 2048).coerceIn(1024, 4096),
+                cacheMemoryMb = o.optInt("cache_memory_mb", 0).let {
+                    if (it <= 0) 0 else it.coerceIn(com.xnotes.canvas.CacheBudget.MIN_MB, com.xnotes.canvas.CacheBudget.MAX_MB)
+                },
                 disableFrontBuffering = o.optBoolean("disable_front_buffering", false),
                 startFullscreen = if (o.has("start_fullscreen")) o.getBoolean("start_fullscreen") else null,
                 codeThemePath = o.optString("code_theme_path").ifEmpty { null },
@@ -402,9 +459,12 @@ data class Preferences(
                     (0 until a.length()).mapNotNull { ExplorerLayout.fromId(a.optString(it)) }.distinct()
                 } ?: ExplorerLayout.entries,
                 sidebarRecent = o.optBoolean("sidebar_recent", true),
+                sidebarHidden = o.optBoolean("sidebar_hidden", true),
+                sidebarTemplates = o.optBoolean("sidebar_templates", true),
                 sidebarPinned = o.optBoolean("sidebar_pinned", true),
                 sidebarColours = o.optBoolean("sidebar_colours", true),
                 sidebarTrash = o.optBoolean("sidebar_trash", true),
+                sidebarFloating = o.optBoolean("sidebar_floating", false),
                 sidebarFiles = o.optBoolean("sidebar_files", true),
                 sidebarSync = o.optBoolean("sidebar_sync", true),
                 homeOpensTo = o.optString("home_opens_to", "top").let { if (it == "last" || it == "shelves") it else "top" },
@@ -417,10 +477,13 @@ data class Preferences(
                 showFolderCounts = o.optBoolean("show_folder_counts", true),
                 showExtensions = o.optBoolean("show_extensions", false),
                 hideDotItems = o.optBoolean("hide_dot_items", true),
+                hiddenItems = o.optJSONArray("hidden_items")?.let { a -> (0 until a.length()).mapNotNull { a.optString(it).ifEmpty { null } }.toSet() }.orEmpty(),
+                showHidden = o.optBoolean("show_hidden", false),
                 readerDark = if (o.has("reader_dark")) o.optBoolean("reader_dark") else null,
                 pdfHeadingBookmarks = o.optBoolean("pdf_heading_bookmarks", true),
                 hiddenShapes = o.optJSONArray("hidden_shapes")?.let { a -> (0 until a.length()).mapNotNull { a.optString(it).ifEmpty { null } }.toSet() }.orEmpty(),
                 shapeOrder = o.optJSONArray("shape_order")?.let { a -> (0 until a.length()).mapNotNull { a.optString(it).ifEmpty { null } } }.orEmpty(),
+                autoScrollSpeed = o.optInt("autoscroll_speed", AUTOSCROLL_DEFAULT).coerceIn(AUTOSCROLL_MIN, AUTOSCROLL_MAX),
             )
         }
     }
