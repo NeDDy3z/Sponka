@@ -32,7 +32,7 @@ App icon by [@failure-404](https://github.com/failure-404).
 
 [xnotes](https://github.com/shardulvs/xnotes-android) is a thoughtfully built app and we're grateful to Shardul Vikram Singh for creating and sharing it openly. **sponka** (formerly `n-notes`) started as a personal fork to add day-to-day essentials like cloud sync and file change management, and has since grown into its own project.
 
-* **50+ additions** on top of upstream xnotes — see the full list in [**ADDITIONS.md**](ADDITIONS.md).
+* **50+ additions** on top of upstream xnotes - see the full list in [**ADDITIONS.md**](ADDITIONS.md).
 
 * **In sync & backwards-compatible** with upstream xnotes whenever possible.
 
