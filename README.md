@@ -38,6 +38,8 @@ App icon by [@failure-404](https://github.com/failure-404).
 
 * **Free & open-source** - committed to [long-term support](https://github.com/NeDDy3z/Sponka/discussions/128) with no accounts, ads, or lock-in... EVER.
 
+* **Coming to all platforms** (soon), so you can be productive on all your devices (*using the sync features*).
+
 ## Roadmap
 
 Our roadmap lives outside this README so it stays up to date automatically as work progresses:
