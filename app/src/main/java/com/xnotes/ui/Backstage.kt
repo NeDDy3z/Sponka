@@ -51,7 +51,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -738,14 +737,10 @@ private fun BackstageMain(
 
 // --- left rail ---
 
-/** The phone drawer's surface: flush with the screen's edge, so only its open side is rounded when floating. */
+/** The phone drawer's surface: the wide sidebar's floating sheet, off the screen's edges and outlined, or a flush panel. */
 @Composable
-internal fun Modifier.drawerSheet(floating: Boolean): Modifier {
-    val palette = LocalPalette.current
-    if (!floating) return background(palette.panel.toComposeColor())
-    val shape = MaterialTheme.shapes.large.copy(topStart = CornerSize(0.dp), bottomStart = CornerSize(0.dp))
-    return background(palette.menuBg.toComposeColor(), shape).clip(shape).padding(vertical = SHEET_MARGIN)
-}
+internal fun Modifier.drawerSheet(floating: Boolean): Modifier =
+    if (floating) sidebarSheet(true) else background(LocalPalette.current.panel.toComposeColor())
 
 /** The wide sidebar's surface: a floating sheet off the screen's edges, or a flush panel. */
 @Composable
