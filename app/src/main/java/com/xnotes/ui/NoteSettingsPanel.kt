@@ -696,6 +696,7 @@ private class MarginsState(editor: Editor) {
     var edge by mutableStateOf(PageEdge.LEFT)
     var docMargins by mutableStateOf(editor.documentMargins)
     var pageMargins by mutableStateOf(editor.currentPageMargins)
+    var textMargins by mutableStateOf(editor.flowMargins)
     val margins: PageMargins get() = if (tab == 0) docMargins else pageMargins
 
     fun apply(editor: Editor, next: PageMargins) {
@@ -759,7 +760,17 @@ private fun MarginsPage(editor: Editor, s: MarginsState, onBack: () -> Unit) {
     }
 
     Box(Modifier.padding(vertical = 16.dp).fillMaxWidth().height(1.dp).background(palette.border.toComposeColor()))
-    TextMargins(editor, s.tab)
+    TextMargins(editor, s)
+    if (s.tab == 0) {
+        // The expand and the text margins together, as a new note starts with them.
+        val factory = s.docMargins.isEmpty && s.textMargins == editor.factoryFlow.margins
+        PanelCheck(
+            stringResource(R.string.default_for_new_notes),
+            !factory && editor.newNoteMargins == s.docMargins && editor.newNoteFlow.margins == s.textMargins,
+        ) { on ->
+            if (on) editor.saveNewNoteMargins(s.docMargins, s.textMargins) else editor.saveNewNoteMargins(PageMargins(), editor.factoryFlow.margins)
+        }
+    }
 }
 
 /**
@@ -768,15 +779,16 @@ private fun MarginsPage(editor: Editor, s: MarginsState, onBack: () -> Unit) {
  * the slider is held, or always with Show margins.
  */
 @Composable
-private fun TextMargins(editor: Editor, tab: Int) {
+private fun TextMargins(editor: Editor, s: MarginsState) {
+    val tab = s.tab
     var edge by remember { mutableStateOf<PageEdge?>(null) } // null = all edges
-    var docMargins by remember { mutableStateOf(editor.flowMargins) }
+    val docMargins = s.textMargins
     var pageMargins by remember { mutableStateOf(editor.currentPageTextMargins) }
     val margins = if (tab == 0) docMargins else pageMargins ?: docMargins
     fun apply(next: FlowMargins?) {
         if (tab == 0) {
-            docMargins = next ?: FlowMargins()
-            editor.setFlowMargins(docMargins)
+            s.textMargins = next ?: FlowMargins()
+            editor.setFlowMargins(s.textMargins)
         } else {
             pageMargins = next
             editor.setCurrentPageTextMargins(next)

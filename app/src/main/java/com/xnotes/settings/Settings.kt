@@ -106,6 +106,8 @@ data class Settings(
     val newNoteStyle: PageStyle = PageStyle(),
     /** Flow (text tool) defaults stamped onto every newly created note; null ⇒ none saved (the device's factory). */
     val newNoteFlow: FlowDefaults? = null,
+    /** How far the pages of every newly created note expand past the paper; empty means none saved. */
+    val newNoteMargins: com.xnotes.core.model.PageMargins = com.xnotes.core.model.PageMargins(),
     /** What a new text box starts as; null is the factory's. */
     val textBox: BoxDefaults? = null,
     /** Background stamped onto every newly created canvas; null ⇒ none saved. */
@@ -192,6 +194,7 @@ data class Settings(
             .put("render_scale", renderScale)
             .apply { if (!newNoteStyle.isEmpty) put("new_note_style", pageStyleJson(newNoteStyle)) }
             .apply { newNoteFlow?.let { put("new_note_flow", flowDefaultsJson(it)) } }
+            .apply { if (!newNoteMargins.isEmpty) put("new_note_margins", pageMarginsJson(newNoteMargins)) }
             .apply { textBox?.let { put("text_box", boxDefaultsJson(it)) } }
             .apply { newCanvasBackground?.let { put("new_canvas_background", canvasBackgroundJson(it)) } }
             .apply { if (!newTable.isFactory) put("new_table", tableDefaultsJson(newTable)) }
@@ -266,6 +269,7 @@ data class Settings(
                 renderScale = o.optDouble("render_scale", 1.0),
                 newNoteStyle = pageStyle(o.optJSONObject("new_note_style")),
                 newNoteFlow = o.optJSONObject("new_note_flow")?.let { flowDefaults(it) },
+                newNoteMargins = pageMargins(o.optJSONObject("new_note_margins")),
                 textBox = o.optJSONObject("text_box")?.let { boxDefaults(it) },
                 newCanvasBackground = canvasBackground(o.optJSONObject("new_canvas_background")),
                 newTable = tableDefaults(o.optJSONObject("new_table")),
@@ -407,6 +411,20 @@ data class Settings(
         }
 
         private fun rgbaArr(c: Rgba) = JSONArray().put(c.r).put(c.g).put(c.b).put(c.a)
+
+        private fun pageMarginsJson(m: com.xnotes.core.model.PageMargins) = JSONObject().apply {
+            m.left?.let { put("left", it) }
+            m.top?.let { put("top", it) }
+            m.right?.let { put("right", it) }
+            m.bottom?.let { put("bottom", it) }
+            m.color?.let { put("color", rgbaArr(it)) }
+        }
+
+        private fun pageMargins(o: JSONObject?): com.xnotes.core.model.PageMargins {
+            if (o == null) return com.xnotes.core.model.PageMargins()
+            fun edge(key: String) = if (o.has(key)) o.optDouble(key).takeIf { !it.isNaN() }?.coerceIn(0.0, com.xnotes.core.model.PageMargins.MAX) else null
+            return com.xnotes.core.model.PageMargins(edge("left"), edge("top"), edge("right"), edge("bottom"), rgba(o.optJSONArray("color")))
+        }
 
         private fun rgba(a: JSONArray?): Rgba? =
             a?.let { Rgba.fromList((0 until it.length()).map { i -> it.optInt(i, 0) }) }

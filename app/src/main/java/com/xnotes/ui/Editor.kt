@@ -3827,6 +3827,18 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
 
     override fun setSelectedBoxStyle(style: com.xnotes.core.model.BoxStyle, preview: Boolean) = controller.restyleSelectedBox(style, preview)
 
+    /** The page expand stamped onto newly created notes (empty means none). */
+    var newNoteMargins by mutableStateOf(settings.newNoteMargins)
+        private set
+
+    /** Save (or, passing an empty [page] and the factory [text] margins, forget) the margins new notes start with. */
+    fun saveNewNoteMargins(page: PageMargins, text: FlowMargins) {
+        newNoteMargins = page
+        settings = settings.copy(newNoteMargins = page)
+        saveNewNoteFlow(newNoteFlow.copy(margins = text))
+        settingsRepo.save(settings)
+    }
+
     fun saveNewNoteFlow(defaults: FlowDefaults) {
         if (newNoteFlow == defaults) return
         newNoteFlow = defaults
@@ -3871,6 +3883,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             }
         }
         (settings.newNoteFlow ?: factoryFlow).applyTo(doc.flow)
+        doc.margins = settings.newNoteMargins
         return doc
     }
 
