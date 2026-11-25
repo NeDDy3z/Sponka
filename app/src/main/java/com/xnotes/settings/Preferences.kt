@@ -191,6 +191,8 @@ data class Preferences(
     val readerDark: Boolean? = null,
     /** Whether an exported PDF gets a bookmark for each heading of the note's text. */
     val pdfHeadingBookmarks: Boolean = true,
+    /** Whether a PDF export keeps the room pages are expanded by; off, every page exports at its paper size. */
+    val pdfIncludeExpand: Boolean = true,
     /** Shape chips and picker pages, by key, left out of the shape popup. */
     val hiddenShapes: Set<String> = emptySet(),
     /** Shape and connector pages and chips, by key, in the order the shape popup shows them; empty keeps the built-in order. */
@@ -327,6 +329,7 @@ data class Preferences(
         .put("show_hidden", showHidden)
         .apply { readerDark?.let { put("reader_dark", it) } }
         .put("pdf_heading_bookmarks", pdfHeadingBookmarks)
+        .put("pdf_include_expand", pdfIncludeExpand)
         .apply { if (hiddenShapes.isNotEmpty()) put("hidden_shapes", org.json.JSONArray(hiddenShapes.sorted())) }
         .apply { if (shapeOrder.isNotEmpty()) put("shape_order", org.json.JSONArray(shapeOrder)) }
         .put("autoscroll_speed", autoScrollSpeed)
@@ -503,6 +506,7 @@ data class Preferences(
                 showHidden = o.optBoolean("show_hidden", false),
                 readerDark = if (o.has("reader_dark")) o.optBoolean("reader_dark") else null,
                 pdfHeadingBookmarks = o.optBoolean("pdf_heading_bookmarks", true),
+                pdfIncludeExpand = o.optBoolean("pdf_include_expand", true),
                 hiddenShapes = o.optJSONArray("hidden_shapes")?.let { a -> (0 until a.length()).mapNotNull { a.optString(it).ifEmpty { null } }.toSet() }.orEmpty(),
                 shapeOrder = o.optJSONArray("shape_order")?.let { a -> (0 until a.length()).mapNotNull { a.optString(it).ifEmpty { null } } }.orEmpty(),
                 autoScrollSpeed = o.optInt("autoscroll_speed", AUTOSCROLL_DEFAULT).coerceIn(AUTOSCROLL_MIN, AUTOSCROLL_MAX),

@@ -1708,4 +1708,5 @@
     <string name="file_info_name">Nombre</string>
     <string name="file_info_location">Ubicación</string>
     <string name="open_note">Abrir nota</string>
+    <string name="include_expand_in_pdf">Incluir al exportar a PDF</string>
 </resources>

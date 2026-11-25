@@ -3265,6 +3265,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                 flow = flowExportHooks(state.document),
                 title = title,
                 headingBookmarks = settings.prefs.pdfHeadingBookmarks,
+                expand = settings.prefs.pdfIncludeExpand,
             )
         } finally {
             src?.close()
@@ -7487,6 +7488,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                 flow = flowExportHooks(doc),
                 title = stem,
                 headingBookmarks = settings.prefs.pdfHeadingBookmarks,
+                expand = settings.prefs.pdfIncludeExpand,
             )
         } finally {
             src?.close()
@@ -8700,6 +8702,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                 flow = flowExportHooks(doc),
                 title = title.ifEmpty { doc.title },
                 headingBookmarks = settings.prefs.pdfHeadingBookmarks,
+                expand = settings.prefs.pdfIncludeExpand,
             )
         } finally {
             src?.close()
@@ -9269,6 +9272,12 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         get() { prefsVersion; return preferences.showZoomBar }
 
     fun setShowZoomBar(on: Boolean) = applyHomePreferences(preferences.copy(showZoomBar = on))
+
+    /** Whether PDF exports keep the room pages are expanded by, for every note. */
+    val pdfIncludeExpand: Boolean
+        get() { prefsVersion; return preferences.pdfIncludeExpand }
+
+    fun setPdfIncludeExpand(on: Boolean) = applyHomePreferences(preferences.copy(pdfIncludeExpand = on))
 
     /** Saved tools, shared by every note and canvas. */
     val pencilcase: List<com.xnotes.core.tools.PencilcaseItem>
@@ -10204,6 +10213,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                 flow = flowExportHooks(state.document),
                 title = title,
                 headingBookmarks = settings.prefs.pdfHeadingBookmarks,
+                expand = settings.prefs.pdfIncludeExpand,
             )
         } finally {
             src?.close()

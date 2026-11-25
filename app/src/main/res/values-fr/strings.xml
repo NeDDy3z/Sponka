@@ -1684,4 +1684,5 @@
     <string name="file_info_name">Nom</string>
     <string name="file_info_location">Emplacement</string>
     <string name="open_note">Ouvrir une note</string>
+    <string name="include_expand_in_pdf">Inclure dans l\'export PDF</string>
 </resources>

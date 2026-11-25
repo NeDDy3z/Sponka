@@ -758,6 +758,8 @@ private fun MarginsPage(editor: Editor, s: MarginsState, onBack: () -> Unit) {
         PanelChip(stringResource(R.string.default_choice), margins.color == null) { s.apply(editor, margins.copy(color = null)) }
         SwatchCircles(editor, SwatchRole.PAPER, margins.color) { s.apply(editor, margins.copy(color = it)) }
     }
+    Spacer(Modifier.height(8.dp))
+    PanelToggle(stringResource(R.string.include_expand_in_pdf), editor.pdfIncludeExpand) { editor.setPdfIncludeExpand(it) }
 
     Box(Modifier.padding(vertical = 16.dp).fillMaxWidth().height(1.dp).background(palette.border.toComposeColor()))
     TextMargins(editor, s)

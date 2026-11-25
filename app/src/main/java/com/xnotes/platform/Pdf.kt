@@ -182,6 +182,7 @@ object PdfExporter {
         title: String = doc.title,
         headingBookmarks: Boolean = true,
         note: PdfNote? = null,
+        expand: Boolean = true,
     ) {
         // Text fonts read PdfBox's glyph list, which only loads once the resource loader is set up.
         PDFBoxResourceLoader.init(context.applicationContext)
@@ -195,16 +196,16 @@ object PdfExporter {
         // A PDF background we can't parse with PdfBox: keep the working framework rasterizer.
         if (file != null && srcDoc == null) {
             if (note == null) {
-                exportRasterized(doc, source, sink, paperColor, paintRuling, onProgress, isCancelled, flow)
+                exportRasterized(doc, source, sink, paperColor, paintRuling, onProgress, isCancelled, flow, expand)
             } else {
-                rasterizedWithNote(context, doc, source, sink, paperColor, paintRuling, onProgress, isCancelled, flow, mem, note)
+                rasterizedWithNote(context, doc, source, sink, paperColor, paintRuling, onProgress, isCancelled, flow, mem, note, expand)
             }
             sink.flush()
             return
         }
         val tags = if (file == null) tagSetup(context, title) else null
         try {
-            exportVector(doc, srcDoc, sink, paperColor, paintRuling, onProgress, isCancelled, mem, flow, tags, headingBookmarks, note)
+            exportVector(doc, srcDoc, sink, paperColor, paintRuling, onProgress, isCancelled, mem, flow, tags, headingBookmarks, note, expand)
         } finally {
             srcDoc?.runCatching { close() }
         }
@@ -228,13 +229,14 @@ object PdfExporter {
         flow: FlowExport = FlowExport.NONE,
         title: String = doc.title,
         headingBookmarks: Boolean = true,
+        expand: Boolean = true,
     ): Boolean {
         var whole = false
         try {
             FileOutputStream(to).use { file ->
                 // The save is one PdfBox call, and only a stream that throws stops it part way.
                 val out = CancellableOutputStream(file, isCancelled)
-                export(context, doc, source, out, paperColor, paintRuling, onProgress, isCancelled, flow, title, headingBookmarks, note)
+                export(context, doc, source, out, paperColor, paintRuling, onProgress, isCancelled, flow, title, headingBookmarks, note, expand)
             }
             if (isCancelled()) return false
             note.seal(to)
@@ -261,10 +263,11 @@ object PdfExporter {
         flow: FlowExport,
         mem: MemoryUsageSetting,
         note: PdfNote,
+        expand: Boolean,
     ) {
         val pages = File.createTempFile("raster", ".pdf", context.cacheDir)
         try {
-            FileOutputStream(pages).use { exportRasterized(doc, source, it, paperColor, paintRuling, onProgress, isCancelled, flow) }
+            FileOutputStream(pages).use { exportRasterized(doc, source, it, paperColor, paintRuling, onProgress, isCancelled, flow, expand) }
             if (isCancelled()) return
             PDDocument.load(pages, mem).use { pdf ->
                 note.attachTo(pdf)
@@ -306,6 +309,7 @@ object PdfExporter {
         tags: PdfTags.Setup?,
         headingBookmarks: Boolean,
         note: PdfNote?,
+        expand: Boolean,
     ) {
         val s = 72.0 / doc.dpi
         val total = doc.pages.size
@@ -323,7 +327,7 @@ object PdfExporter {
             val n = srcDoc.numberOfPages
             doc.pages.forEachIndexed { index, page ->
                 if (isCancelled()) return
-                val ins = page.insets(doc)
+                val ins = page.exportInsets(doc, expand)
                 if (index < n) {
                     turnAsShown(srcDoc.getPage(index), page)
                     // Flow text counts as content too: a typed-only page must still annotate, and so
@@ -343,7 +347,7 @@ object PdfExporter {
             if (isCancelled()) return
             ctx.finish()
             PdfBands.moveDestinations(srcDoc, roomPages(doc, srcDoc, frames))
-            PdfBookmarks.write(srcDoc, emptyList(), headingAnchors(doc, flow, ctx, frames, headingBookmarks))
+            PdfBookmarks.write(srcDoc, emptyList(), headingAnchors(doc, flow, ctx, frames, headingBookmarks, expand))
             note?.attachTo(srcDoc)
             // Page work is near-instant on this path, so all the time is in writing the PDF — one
             // opaque PdfBox call. Report it as byte progress (output ≈ the source PDF's size) so the
@@ -367,7 +371,7 @@ object PdfExporter {
             doc.pages.forEachIndexed { index, page ->
                 if (isCancelled()) return
                 val srcIdx = page.pdfPage
-                val ins = page.insets(doc)
+                val ins = page.exportInsets(doc, expand)
                 frames[index] = if (srcIdx != null && srcDoc != null && srcIdx in 0 until srcDoc.numberOfPages) {
                     vectorImportedPage(ctx, srcDoc, srcIdx, page, ins, s, paperColor, paintRuling, flow)
                 } else {
@@ -388,7 +392,7 @@ object PdfExporter {
             // the headings' are placed where the page shows them already.
             PdfBookmarks.write(outDoc, sources, emptyList())
             PdfBands.moveDestinations(outDoc, roomPages(doc, outDoc, frames))
-            PdfBookmarks.write(outDoc, emptyList(), headingAnchors(doc, flow, ctx, frames, headingBookmarks))
+            PdfBookmarks.write(outDoc, emptyList(), headingAnchors(doc, flow, ctx, frames, headingBookmarks, expand))
             note?.attachTo(outDoc)
             outDoc.save(out)
         } finally {
@@ -411,7 +415,7 @@ object PdfExporter {
      * Where the bookmark of each heading on the exported pages opens, in [ctx]'s document, whose
      * pages are [doc]'s in order and were drawn by [frames]. None unless [on].
      */
-    private fun headingAnchors(doc: Document, flow: FlowExport, ctx: PdfExportContext, frames: Array<PageFrame?>, on: Boolean): List<PdfBookmarks.Anchor> {
+    private fun headingAnchors(doc: Document, flow: FlowExport, ctx: PdfExportContext, frames: Array<PageFrame?>, on: Boolean, expand: Boolean): List<PdfBookmarks.Anchor> {
         if (!on) return emptyList()
         val out = mutableListOf<PdfBookmarks.Anchor>()
         doc.pages.forEachIndexed { i, page ->
@@ -422,7 +426,7 @@ object PdfExporter {
             for (h in headings) {
                 val element = ctx.tags?.let { tags -> flow.structure.textOf(h.para)?.let { tags.elementOf(it) } }
                 // On a turned page the displayed top is a side of the box, so the left edge is pinned too.
-                val at = frame.toUser(-page.insets(doc).left, h.top)
+                val at = frame.toUser(-page.exportInsets(doc, expand).left, h.top)
                 out += PdfBookmarks.Anchor(h, pd, if (frame.turned) at.x.toFloat() else null, at.y.toFloat(), element)
             }
         }
@@ -579,6 +583,9 @@ object PdfExporter {
         r.fillPath(path, color, FillRule.NONZERO)
     }
 
+    /** [insets] as the export draws them: none when the pages' expand is left out of it. */
+    private fun Page.exportInsets(doc: Document, expand: Boolean): PageInsets = if (expand) insets(doc) else PageInsets.NONE
+
     /** [page]'s whole paper in page space, margins included (negative on a margined edge). */
     private fun footprintOf(page: Page, ins: PageInsets): Rect =
         Rect(-ins.left, -ins.top, ins.left + page.width + ins.right, ins.top + page.height + ins.bottom)
@@ -618,6 +625,7 @@ object PdfExporter {
         onProgress: (Int, Int) -> Unit,
         isCancelled: () -> Boolean,
         flow: FlowExport,
+        expand: Boolean,
     ) {
         val pdf = PdfDocument()
         val scale = (72.0 / doc.dpi).toFloat()
@@ -627,7 +635,7 @@ object PdfExporter {
             onProgress(0, total)
             doc.pages.forEachIndexed { index, page ->
                 if (isCancelled()) return
-                val cover = footprintOf(page, page.insets(doc))
+                val cover = footprintOf(page, page.exportInsets(doc, expand))
                 val wPts = (cover.w / doc.dpi * 72).roundToInt().coerceAtLeast(1)
                 val hPts = (cover.h / doc.dpi * 72).roundToInt().coerceAtLeast(1)
                 val info = PdfDocument.PageInfo.Builder(wPts, hPts, index + 1).create()
