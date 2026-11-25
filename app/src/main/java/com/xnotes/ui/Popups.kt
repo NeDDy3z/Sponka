@@ -13,6 +13,8 @@ import com.xnotes.core.shapes.ShapePresets
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -237,10 +239,17 @@ fun ToolConfigPopup(editor: ToolPopupHost, tool: Tool, onPick: ((Tool) -> Unit)?
                 }
             }
             add {
-                MenuSlider(
-                    stringResource(R.string.caption_thickness), width,
-                    range.start.toFloat()..range.endInclusive.toFloat(), step = ToolConversions.WIDTH_STEP.toFloat(),
-                ) { width = it; emit() }
+                if (editor.hostFollowThickness) {
+                    // A tool that follows the toolbar's thickness preset takes no width of its own.
+                    MenuRow(stringResource(R.string.caption_thickness)) {
+                        Text(stringResource(R.string.thickness_following), color = LocalPalette.current.textDim.toComposeColor(), fontSize = 14.sp, maxLines = 1)
+                    }
+                } else {
+                    MenuSlider(
+                        stringResource(R.string.caption_thickness), width,
+                        range.start.toFloat()..range.endInclusive.toFloat(), step = ToolConversions.WIDTH_STEP.toFloat(),
+                    ) { width = it; emit() }
+                }
             }
             if (tool == Tool.HIGHLIGHTER) add { MenuSlider(stringResource(R.string.caption_intensity), intensity, 10f..100f) { intensity = it; emit() } }
             if (tool == Tool.DASHED) {
@@ -533,7 +542,13 @@ fun EraserConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
                     modes.indexOf(mode).coerceAtLeast(0),
                 ) { mode = modes[it]; emit() }
                 val r = ToolConversions.widthRange(Tool.ERASER)
-                MenuSlider(stringResource(R.string.caption_size), size, r.start.toFloat()..r.endInclusive.toFloat()) { size = it; emit() }
+                if (editor.hostFollowThickness) {
+                    MenuRow(stringResource(R.string.caption_size)) {
+                        Text(stringResource(R.string.thickness_following), color = LocalPalette.current.textDim.toComposeColor(), fontSize = 14.sp, maxLines = 1)
+                    }
+                } else {
+                    MenuSlider(stringResource(R.string.caption_size), size, r.start.toFloat()..r.endInclusive.toFloat()) { size = it; emit() }
+                }
             }
         })
         PanelCard(padding = PaddingValues(start = 12.dp, top = 10.dp, end = 12.dp, bottom = 12.dp)) {
@@ -814,6 +829,83 @@ fun ColorSwitcherPopup(host: ToolPopupHost, index: Int, onDismiss: () -> Unit) {
         onDismiss = { host.rememberSwatchColor(index); onDismiss() },
         onPick = { host.setSwatchColor(index, it) },
     )
+}
+
+/** Thickness switcher: the toolbar preset editor — a stepped slider that writes preset [index] live
+ *  and commits it when the popup closes, mirroring [ColorSwitcherPopup]. */
+@Composable
+fun WidthSwitcherPopup(host: ToolPopupHost, index: Int, onDismiss: () -> Unit) {
+    var value by remember(index) { mutableStateOf((host.hostToolbarWidths.getOrNull(index) ?: 4.0).toFloat()) }
+    val range = ToolConversions.widthRange(Tool.PEN)
+    ToolMenu(stringResource(R.string.caption_thickness), onDismiss) {
+        MenuCard(buildList<MenuGroup> {
+            add {
+                MenuSlider(
+                    stringResource(R.string.caption_thickness), value,
+                    range.start.toFloat()..range.endInclusive.toFloat(), step = ToolConversions.WIDTH_STEP.toFloat(),
+                ) { value = it; host.setWidthPreset(index, it.toDouble()) }
+            }
+        })
+    }
+    DisposableEffect(Unit) { onDispose { host.commitWidthPreset() } }
+}
+
+/**
+ * The follow-thickness control: a tap toggles whether the following tools share the armed thickness,
+ * a long-press opens [FollowThicknessFilterMenu] to choose which tools follow. Shared by both bars.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+internal fun FollowThicknessButton(
+    follow: Boolean,
+    tools: Set<Tool>,
+    onToggle: () -> Unit,
+    onChangeTools: (Set<Tool>) -> Unit,
+) {
+    val palette = LocalPalette.current
+    val box = LocalBar.current.swatch
+    var open by remember { mutableStateOf(false) }
+    Box {
+        // A hollow ring, not a filled disc: colourless (neutral) when off, accent when on, so it
+        // never reads as one of the colour tool's solid swatches.
+        Box(
+            Modifier
+                .size(box)
+                .clip(CircleShape)
+                .border(3.dp, (if (follow) palette.accent else palette.border).toComposeColor(), CircleShape)
+                .combinedClickable(onLongClick = { open = true }, onClick = onToggle),
+        )
+        if (open) FollowThicknessFilterMenu(tools, onChangeTools) { open = false }
+    }
+}
+
+/** One chip per thickness-bearing tool group; toggling a group adds or removes its tools. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun FollowThicknessFilterMenu(
+    tools: Set<Tool>,
+    onChange: (Set<Tool>) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val groups = listOf(
+        Triple(stringResource(R.string.tool_pen), Tool.PENS, ImageVector.vectorResource(R.drawable.ic_stroke_regular)),
+        Triple(stringResource(R.string.tool_highlighter), listOf(Tool.HIGHLIGHTER), ImageVector.vectorResource(R.drawable.ic_stroke_highlighter)),
+        Triple(stringResource(R.string.tool_eraser), listOf(Tool.ERASER), XnotesIcons.eraser),
+        Triple(stringResource(R.string.tool_shape), listOf(Tool.SHAPE), XnotesIcons.shape),
+    )
+    ToolMenu(stringResource(R.string.caption_thickness), onDismiss) {
+        PanelCard(padding = PaddingValues(start = 12.dp, top = 10.dp, end = 12.dp, bottom = 12.dp)) {
+            PanelCaption(stringResource(R.string.caption_follow_tools))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                for ((label, members, icon) in groups) {
+                    val on = members.any { it in tools }
+                    KindChip(icon, label, on) {
+                        onChange(if (on) tools - members.toSet() else tools + members)
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable

@@ -78,8 +78,14 @@ fun ShapeConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
                 add { MenuSwitch(stringResource(R.string.caption_perfect), config.perfect) { emit(config.copy(perfect = it)) } }
             }
             add {
-                MenuSlider(stringResource(R.string.caption_thickness), config.strokeWidth.toFloat(), 1f..20f, step = ToolConversions.WIDTH_STEP.toFloat()) {
-                    emit(config.copy(strokeWidth = it.toDouble()))
+                if (editor.hostFollowThickness) {
+                    MenuRow(stringResource(R.string.caption_thickness)) {
+                        Text(stringResource(R.string.thickness_following), color = LocalPalette.current.textDim.toComposeColor(), fontSize = 14.sp, maxLines = 1)
+                    }
+                } else {
+                    MenuSlider(stringResource(R.string.caption_thickness), config.strokeWidth.toFloat(), 1f..20f, step = ToolConversions.WIDTH_STEP.toFloat()) {
+                        emit(config.copy(strokeWidth = it.toDouble()))
+                    }
                 }
             }
             if (!connecting && chip.kind.isClosed) {

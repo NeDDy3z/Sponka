@@ -66,6 +66,8 @@ import com.xnotes.core.tools.ShapeConfig
 import com.xnotes.core.tools.Tool
 import com.xnotes.core.tools.ToolConfig
 import com.xnotes.core.tools.ToolDefaults
+import com.xnotes.core.tools.ToolConversions
+import com.xnotes.settings.Settings
 import com.xnotes.core.vector.VectorMesher
 import com.xnotes.gl.CanvasScene
 import com.xnotes.gl.InfiniteCanvasView
@@ -125,7 +127,7 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         onEraserCursor = { at, radius -> view.setEraserCursor(at, radius) },
         onPendingShape = { publishPendingShape(it) },
         onCommitShape = { commitItem(it) },
-        shapeConfig = { shapeConfig },
+        shapeConfig = { shapeConfigForDraw() },
         inkColor = { inkColor },
         detectShapes = { detectShapes },
         selection = { selection },
@@ -164,6 +166,84 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     /** The shape tool's style. */
     var shapeConfig by mutableStateOf(ShapeConfig())
         private set
+
+    /** When true, the thickness-bearing tools in [followThicknessTools] draw at [globalThickness]
+     *  instead of their own base width. */
+    var followThickness: Boolean = false
+
+    /** Which thickness-bearing tools follow [globalThickness] while [followThickness] is on. */
+    var followThicknessTools: Set<Tool> = Tool.THICKNESS_TOOLS.toSet()
+
+    /** The armed thickness preset in dp, applied to the following tools while [followThickness] is on. */
+    var globalThickness: Double = ToolDefaults.configFor(Tool.PEN).baseWidth
+
+    /** The shape style the draw path uses: the armed thickness preset when following (and the shape is
+     *  in the follow set). */
+    private fun shapeConfigForDraw(): ShapeConfig =
+        if (followThickness && Tool.SHAPE in followThicknessTools) shapeConfig.copy(strokeWidth = globalThickness.coerceIn(1.0, 20.0)) else shapeConfig
+
+    /** The toolbar's thickness presets, mirrored from the host editor; the canvas reports edits back up. */
+    var toolbarWidths: List<Double> = Settings.DEFAULT_TOOLBAR_WIDTHS
+        private set
+
+    /** Which of [toolbarWidths] is armed. */
+    var activeWidthIndex: Int = 1
+        private set
+
+    /** A preset was edited live; the host persists and mirrors it. */
+    var onWidthChanged: ((Int, Double) -> Unit)? = null
+
+    /** The thickness popup closed; the host commits the presets. */
+    var onWidthCommitted: (() -> Unit)? = null
+
+    /** The follow-thickness toggle changed; the host persists it. */
+    var onFollowThicknessChanged: ((Boolean) -> Unit)? = null
+
+    /** Which tools follow the armed thickness changed; the host persists it. */
+    var onFollowThicknessToolsChanged: ((Set<Tool>) -> Unit)? = null
+
+    /** Push the presets and armed index from the host (also sets [globalThickness]/[followThickness]). */
+    fun pushThicknessState(widths: List<Double>, activeIndex: Int) {
+        toolbarWidths = widths
+        activeWidthIndex = activeIndex.coerceIn(0, (widths.size - 1).coerceAtLeast(0))
+        globalThickness = toolbarWidths[activeWidthIndex]
+    }
+
+    /** Arm thickness preset [index] on the canvas, the same way the paged bar picks one. */
+    fun pickWidth(index: Int) {
+        if (index !in toolbarWidths.indices) return
+        activeWidthIndex = index
+        globalThickness = toolbarWidths[index]
+        onToolStyleChanged?.invoke()
+    }
+
+    override fun setWidthPreset(index: Int, width: Double) {
+        if (index !in toolbarWidths.indices) return
+        toolbarWidths = toolbarWidths.toMutableList().also { it[index] = width }
+        if (index == activeWidthIndex) globalThickness = width
+        onWidthChanged?.invoke(index, width)
+        onToolStyleChanged?.invoke()
+    }
+
+    override fun commitWidthPreset() { onWidthCommitted?.invoke() }
+
+    /** Turn following the armed thickness on/off on the canvas, and report it up. */
+    fun updateFollowThickness(on: Boolean) {
+        followThickness = on
+        onFollowThicknessChanged?.invoke(on)
+        onToolStyleChanged?.invoke()
+    }
+
+    /** Set which tools follow the armed thickness on the canvas, and report it up. */
+    fun updateFollowThicknessTools(tools: Set<Tool>) {
+        followThicknessTools = tools
+        onFollowThicknessToolsChanged?.invoke(tools)
+        onToolStyleChanged?.invoke()
+    }
+
+    override val hostToolbarWidths: List<Double> get() = toolbarWidths
+
+    override val hostFollowThicknessTools: Set<Tool> get() = followThicknessTools
 
     /** Whether a held freehand stroke may snap to the shape it looks like. */
     private var detectShapes = false
@@ -1196,7 +1276,11 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
         val base = toolConfigs.getOrPut(forTool) { ToolDefaults.configFor(forTool) }
         // A tool with a colour override always draws in its own colour; the rest follow the
         // toolbar's active ink.
-        return base.copy(rgba = base.colorOverride ?: inkColor)
+        val inked = base.copy(rgba = base.colorOverride ?: inkColor)
+        // Follow-thickness: a tool in the follow set draws at the armed preset; the eraser's base
+        // width is its radius. Tools not in the set keep their own width.
+        return if (followThickness && forTool in followThicknessTools)
+            inked.copy(baseWidth = ToolConversions.snapWidth(forTool, globalThickness)) else inked
     }
 
     /**
@@ -1222,6 +1306,8 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     var onDetectShapesChanged: ((Boolean) -> Unit)? = null
 
     override val hostShapeConfig: ShapeConfig get() = shapeConfig
+
+    override val hostFollowThickness: Boolean get() = followThickness
 
     /** The app's hidden shape chips and pages, read live from the preferences the paged editor holds. */
     var hiddenShapes: () -> Set<String> = { emptySet() }
@@ -1315,6 +1401,8 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
 
         override fun applyDrop(spot: DropSpot, action: DropAction, color: Rgba) = applyColorDrop(spot, action, color)
 
+        override fun applyWidthDrop(spot: DropSpot, action: DropAction, width: Double) = doWidthDrop(spot, action, width)
+
         override fun viewInWindow(): Offset {
             val at = IntArray(2).also { view.getLocationInWindow(it) }
             return Offset(at[0].toFloat(), at[1].toFloat())
@@ -1326,6 +1414,8 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
     override val colorDrag: ColorDrag? get() = colorDropper.drag
 
     override fun beginColorDrag(color: Rgba, window: Offset) = colorDropper.begin(color, window)
+
+    override fun beginWidthDrag(width: Double, window: Offset) = colorDropper.beginWidth(width, window)
 
     override fun moveColorDrag(window: Offset) = colorDropper.move(window)
 
@@ -1379,6 +1469,30 @@ class InfiniteEditor(context: Context) : ToolPopupHost, SelectionMenuHost, LongP
             // The canvas has no markups; the surface never hands this in, but the when is exhaustive.
             DropAction.RecolourMarkup -> return
             DropAction.None -> return
+        }
+        command.redo()
+        history.push(command)
+        markDirty()
+        refresh()
+        publishOverlay()
+    }
+
+    /** Carry out a thickness drop as one undo step: restyle the line or the selection it lands on to
+     *  [width]. The canvas has no markups or fills to recolour, so only lines and the selection apply. */
+    private fun doWidthDrop(spot: DropSpot, action: DropAction, width: Double) {
+        val unchanged = selection.items.size == dropSelection.size && dropSelection.all { d -> selection.items.any { it === d } }
+        if (unchanged && spot.selection?.outset(spot.reach)?.contains(spot.at) == true) {
+            restyleSelection(null, width)
+            return
+        }
+        val command: Command = when (action) {
+            is DropAction.Recolour -> {
+                val item = action.item.takeIf { document.containsRef(it) } ?: return
+                if (item is com.xnotes.core.model.TextItem) return
+                val before = DrawStyle.of(item) ?: return
+                OnCanvas(document, RestyleItems(listOf(RestyleItems.Entry(item, before, before.copy(width = width)))), listOf(item))
+            }
+            else -> return
         }
         command.redo()
         history.push(command)

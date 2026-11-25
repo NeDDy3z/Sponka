@@ -51,6 +51,11 @@ enum class Tool(val id: String) {
         /** The pen kinds the one toolbar pen switches between. */
         val PENS = listOf(PEN, DASHED, CALLIGRAPHY, SPEED, TAPER)
 
+        /** Every tool that carries a stroke thickness: the pens, the highlighter, the eraser (its
+         *  radius) and the shape tool (its outline). These are the tools the thickness tool's follow
+         *  filter can include. */
+        val THICKNESS_TOOLS = PENS + listOf(HIGHLIGHTER, ERASER, SHAPE)
+
         /** The selection shapes the one toolbar select switches between. */
         val SELECTIONS = listOf(SELECT, LASSO)
 

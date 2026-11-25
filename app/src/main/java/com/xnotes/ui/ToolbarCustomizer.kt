@@ -481,6 +481,7 @@ private fun itemIcon(item: ToolbarItem): ImageVector = when (item) {
     ToolbarItem.MARGINS -> XnotesIcons.margins
     ToolbarItem.VIEW -> XnotesIcons.view
     ToolbarItem.COLORS -> XnotesIcons.more
+    ToolbarItem.WIDTH -> XnotesIcons.filter
     ToolbarItem.PENCILCASE -> Icons.Outlined.DesignServices
 }
 

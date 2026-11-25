@@ -376,6 +376,25 @@ class SettingsTest {
         assertEquals(15, Settings.fromJson(Settings(toolbarColorCount = 99).toJson()).toolbarColorCount)
     }
 
+    @Test fun toolbarWidthsDefaultAndRoundTrip() {
+        val defaults = Settings.fromJson(JSONObject())
+        assertEquals(Settings.DEFAULT_TOOLBAR_WIDTHS, defaults.toolbarWidths)
+        assertEquals(1, defaults.activeWidth)
+        assertFalse(defaults.followThickness)
+        assertEquals(com.xnotes.core.tools.Tool.THICKNESS_TOOLS.toSet(), defaults.followThicknessTools)
+
+        val original = Settings(toolbarWidths = listOf(1.0, 3.5, 9.0), activeWidth = 2, followThickness = true, followThicknessTools = setOf(com.xnotes.core.tools.Tool.PEN, com.xnotes.core.tools.Tool.SHAPE))
+        val back = Settings.fromJson(original.toJson())
+        assertEquals(listOf(1.0, 3.5, 9.0), back.toolbarWidths)
+        assertEquals(2, back.activeWidth)
+        assertTrue(back.followThickness)
+        assertEquals(setOf(com.xnotes.core.tools.Tool.PEN, com.xnotes.core.tools.Tool.SHAPE), back.followThicknessTools)
+    }
+
+    @Test fun toolbarActiveWidthClampsToPresets() {
+        assertEquals(1, Settings.fromJson(Settings(toolbarWidths = listOf(2.0, 4.0), activeWidth = 9).toJson()).activeWidth)
+    }
+
     @Test fun rememberColorDedupesAndCaps() {
         var s = Settings()
         repeat(30) { s = s.rememberColor(Rgba(it, it, it)) }

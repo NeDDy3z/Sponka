@@ -155,6 +155,7 @@ val ToolbarItem.labelRes: Int
         ToolbarItem.MARGINS -> R.string.title_margins
         ToolbarItem.VIEW -> R.string.toolbar_view
         ToolbarItem.COLORS -> R.string.toolbar_colours
+        ToolbarItem.WIDTH -> R.string.toolbar_width
         ToolbarItem.PENCILCASE -> R.string.toolbar_pencilcase
     }
 

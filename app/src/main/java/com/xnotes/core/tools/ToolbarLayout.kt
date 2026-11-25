@@ -40,6 +40,10 @@ enum class ToolbarItem(val id: String) {
     SEARCH("search"),
     COLORS("colors"),
 
+    /** A row of stroke-thickness presets, with a follow toggle that makes every thickness-bearing
+     *  tool share the selected preset (see the ThicknessTool in the toolbars). */
+    WIDTH("width"),
+
     /** Shows or hides the floating bar of saved tools. */
     PENCILCASE("pencilcase"),
 
@@ -158,6 +162,7 @@ data class ToolbarLayout(val sections: List<ToolbarSection>) {
             ToolbarItem.TAPE to ToolbarItem.WAND,
             ToolbarItem.INSERT_SPACE to ToolbarItem.SELECT,
             ToolbarItem.MARKUP to ToolbarItem.TEXT_BOX,
+            ToolbarItem.WIDTH to ToolbarItem.COLORS,
             ToolbarItem.SEARCH to ToolbarItem.REDO,
             ToolbarItem.ADD_PAGE to ToolbarItem.SEARCH,
             ToolbarItem.READER to ToolbarItem.ADD_PAGE,
@@ -179,7 +184,7 @@ data class ToolbarLayout(val sections: List<ToolbarSection>) {
             ToolbarItem.PEN, ToolbarItem.HIGHLIGHTER, ToolbarItem.ERASER,
             ToolbarItem.PAN, ToolbarItem.SELECT, ToolbarItem.WAND,
             ToolbarItem.TAPE, ToolbarItem.SHAPE,
-            ToolbarItem.IMAGE, ToolbarItem.COLORS, ToolbarItem.PENCILCASE, ToolbarItem.UNDO, ToolbarItem.REDO,
+            ToolbarItem.IMAGE, ToolbarItem.COLORS, ToolbarItem.WIDTH, ToolbarItem.PENCILCASE, ToolbarItem.UNDO, ToolbarItem.REDO,
         )
 
         /** Everything the paged bar can hold: the whole enum. Page, zoom and view settings live behind the gear on both bars. */
@@ -193,7 +198,7 @@ data class ToolbarLayout(val sections: List<ToolbarSection>) {
             listOf(ToolbarItem.PAN, ToolbarItem.PENCILCASE, ToolbarItem.SELECT, ToolbarItem.INSERT_SPACE, ToolbarItem.SCREENSHOT),
             listOf(ToolbarItem.WAND, ToolbarItem.TAPE, ToolbarItem.SHAPE, ToolbarItem.RULER, ToolbarItem.TEXT, ToolbarItem.TEXT_BOX, ToolbarItem.MARKUP),
             listOf(ToolbarItem.IMAGE, ToolbarItem.TABLE),
-            listOf(ToolbarItem.COLORS),
+            listOf(ToolbarItem.COLORS, ToolbarItem.WIDTH),
             listOf(ToolbarItem.UNDO, ToolbarItem.REDO),
             listOf(ToolbarItem.SEARCH, ToolbarItem.ADD_PAGE, ToolbarItem.READER, ToolbarItem.MARGINS, ToolbarItem.VIEW),
         )
@@ -205,7 +210,7 @@ data class ToolbarLayout(val sections: List<ToolbarSection>) {
             listOf(ToolbarItem.PAN, ToolbarItem.PENCILCASE, ToolbarItem.SELECT),
             listOf(ToolbarItem.WAND, ToolbarItem.TAPE, ToolbarItem.SHAPE),
             listOf(ToolbarItem.IMAGE),
-            listOf(ToolbarItem.COLORS),
+            listOf(ToolbarItem.COLORS, ToolbarItem.WIDTH),
             listOf(ToolbarItem.UNDO, ToolbarItem.REDO),
         )
 

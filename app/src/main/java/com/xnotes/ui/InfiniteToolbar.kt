@@ -82,6 +82,7 @@ fun InfiniteToolbar(
     // Which swatch has the colour picker open, as on the paged bar: tapping the armed swatch again
     // opens it, so the five colours are both the ink and the way to change it.
     var switcherIndex by remember { mutableStateOf<Int?>(null) }
+    var widthSwitcherIndex by remember { mutableStateOf<Int?>(null) }
 
     // Pinned outside the scrolling strip, so closing a split pane is always one tap away.
     ToolbarFrame(
@@ -168,6 +169,23 @@ fun InfiniteToolbar(
                                 if (switcherIndex == i) ColorSwitcherPopup(editor, i) { switcherIndex = null }
                             }
                         }
+
+                    ToolbarItem.WIDTH -> {
+                        editor.toolbarWidths.forEachIndexed { i, w ->
+                            Box {
+                                ThicknessSwatch(w, active = editor.activeWidthIndex == i, drag = editor) {
+                                    if (editor.activeWidthIndex == i) widthSwitcherIndex = i else editor.pickWidth(i)
+                                }
+                                if (widthSwitcherIndex == i) WidthSwitcherPopup(editor, i) { widthSwitcherIndex = null }
+                            }
+                        }
+                        FollowThicknessButton(
+                            follow = editor.followThickness,
+                            tools = editor.followThicknessTools,
+                            onToggle = { editor.updateFollowThickness(!editor.followThickness) },
+                            onChangeTools = { editor.updateFollowThicknessTools(it) },
+                        )
+                    }
 
                     ToolbarItem.PENCILCASE ->
                         ToolbarIcon(Icons.Outlined.DesignServices, stringResource(R.string.toolbar_pencilcase), active = owner.showPencilcase) {

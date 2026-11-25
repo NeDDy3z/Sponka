@@ -56,9 +56,11 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sqrt
 
-/** One drag of a toolbar swatch over the page: where the pointer is, and what a drop there would do. */
+/** One drag of a toolbar swatch over the page: where the pointer is, and what a drop there would do.
+ *  A [width] drag (non-null) carries a stroke thickness instead of a [color]; [color] is then a
+ *  placeholder used only for the hit-test's fill check, which a width drop ignores. */
 @Stable
-class ColorDrag internal constructor(val color: Rgba) {
+class ColorDrag internal constructor(val color: Rgba, val width: Double? = null) {
     /** The pointer, in window pixels. */
     var pointer by mutableStateOf(Offset.Unspecified)
         internal set
@@ -66,6 +68,9 @@ class ColorDrag internal constructor(val color: Rgba) {
     /** What a drop at the pointer would do, drawn under the disc; null for nothing. */
     var preview by mutableStateOf<DropPreview?>(null)
         internal set
+
+    /** Whether this drag carries a thickness rather than a colour. */
+    val isWidth: Boolean get() = width != null
 }
 
 /** What a drop at the pointer would do, ready to draw over the page (or canvas) [frame] it lands on. */
@@ -88,6 +93,7 @@ interface ColorDropHost {
     val colorDrag: ColorDrag?
 
     fun beginColorDrag(color: Rgba, window: Offset)
+    fun beginWidthDrag(width: Double, window: Offset)
     fun moveColorDrag(window: Offset)
     fun endColorDrag(window: Offset)
     fun cancelColorDrag()
@@ -134,6 +140,9 @@ internal interface DropSurface {
     /** Carry out [action] at [spot] in [color], as one undo step, or say why nothing happened. */
     fun applyDrop(spot: DropSpot, action: DropAction, color: Rgba)
 
+    /** Carry out a thickness [action] at [spot] setting the stroke width to [width], as one undo step. */
+    fun applyWidthDrop(spot: DropSpot, action: DropAction, width: Double)
+
     /** The canvas view's top left, in window pixels. */
     fun viewInWindow(): Offset
 
@@ -166,28 +175,32 @@ internal class ColorDropper(private val surface: DropSurface) {
     private var lastKey: Any? = null
     private var lastPreview: DropPreview? = null
 
-    private class Ask(val spot: DropSpot?, val drop: Boolean, val generation: Int, val color: Rgba)
+    private class Ask(val spot: DropSpot?, val drop: Boolean, val generation: Int, val color: Rgba, val width: Double?)
 
-    fun begin(color: Rgba, window: Offset) {
+    fun begin(color: Rgba, window: Offset) = beginDrag(color, null, window)
+
+    fun beginWidth(width: Double, window: Offset) = beginDrag(Rgba(0, 0, 0, 255), width, window)
+
+    private fun beginDrag(color: Rgba, width: Double?, window: Offset) {
         surface.beginDrop()
         generation++
         shownLine = null
         shownCopy = null
-        drag = ColorDrag(color).also { it.pointer = window }
-        ask(window, color, drop = false)
+        drag = ColorDrag(color, width).also { it.pointer = window }
+        ask(window, color, width, drop = false)
     }
 
     fun move(window: Offset) {
         val d = drag ?: return
         d.pointer = window
-        ask(window, d.color, drop = false)
+        ask(window, d.color, d.width, drop = false)
     }
 
     fun end(window: Offset) {
         val d = drag ?: return
         // The disc goes at once; the drop lands once the worker has worked it out.
         drag = null
-        ask(window, d.color, drop = true)
+        ask(window, d.color, d.width, drop = true)
     }
 
     fun cancel() {
@@ -195,10 +208,10 @@ internal class ColorDropper(private val surface: DropSurface) {
         generation++
     }
 
-    private fun ask(window: Offset, color: Rgba, drop: Boolean) {
+    private fun ask(window: Offset, color: Rgba, width: Double?, drop: Boolean) {
         val origin = surface.viewInWindow()
         val spot = surface.spotAt(Pt((window.x - origin.x).toDouble(), (window.y - origin.y).toDouble()))
-        pending.set(Ask(spot, drop, generation, color))
+        pending.set(Ask(spot, drop, generation, color, width))
         worker.execute(::work)
     }
 
@@ -223,23 +236,34 @@ internal class ColorDropper(private val surface: DropSurface) {
             var action = ColorDrop.decide(spot.items, map, spot.at, ask.color, spot.reach, spot.smallHole)
             // The spot was read off the surface as the finger lifted, so its markup is current: a
             // point the drawing will not take that sits on a markup takes the colour there (a drop
-            // on the live selection is the surface's to rule, before any of this).
-            if ((action == DropAction.None || action == DropAction.NotClosed) && spot.markup != null &&
+            // on the live selection is the surface's to rule, before any of this). A thickness drop
+            // never recolours a markup.
+            if (ask.width == null && (action == DropAction.None || action == DropAction.NotClosed) && spot.markup != null &&
                 spot.selection?.outset(spot.reach)?.contains(spot.at) != true
             ) action = DropAction.RecolourMarkup
-            post(ask.generation) { surface.applyDrop(spot, action, ask.color) }
+            if (ask.width != null) surface.applyWidthDrop(spot, action, ask.width) else surface.applyDrop(spot, action, ask.color)
             return
         }
-        val preview = previewAt(spot, map)
-        post(ask.generation) { show(preview, ask.color) }
+        // A thickness preview only shows the line or the selection it would restyle; areas and
+        // markups are a colour's business.
+        val preview = if (ask.width != null) widthPreviewAt(spot) else previewAt(spot, map)
+        post(ask.generation) { show(preview, ask.color, ask.width) }
+    }
+
+    /** What a thickness drop at [spot] would do: restyle the whole selection, or the line it lands on. */
+    private fun widthPreviewAt(spot: DropSpot): DropPreview? {
+        spot.selection?.takeIf { it.outset(spot.reach).contains(spot.at) }?.let { return DropPreview.Box(spot.frame, it) }
+        ColorDrop.lineAt(spot.items, spot.at, spot.reach, skipHighlighters = false)
+            ?.let { return DropPreview.Line(spot.frame, it) }
+        return null
     }
 
     // The main thread's own: the line last shown recoloured, and its recoloured copy.
     private var shownLine: CanvasItem? = null
     private var shownCopy: DropPreview.Line? = null
 
-    /** Show [preview], a line's in a recoloured copy made here, on the main thread, and kept while the pointer stays on it. */
-    private fun show(preview: DropPreview?, color: Rgba) {
+    /** Show [preview], a line's in a restyled copy made here, on the main thread, and kept while the pointer stays on it. */
+    private fun show(preview: DropPreview?, color: Rgba, width: Double?) {
         val d = drag ?: return
         if (preview !is DropPreview.Line) {
             d.preview = preview
@@ -247,7 +271,7 @@ internal class ColorDropper(private val surface: DropSurface) {
         }
         if (shownLine !== preview.item || shownCopy?.frame != preview.frame) {
             shownLine = preview.item
-            shownCopy = DropPreview.Line(preview.frame, preview.item.deepCopy(surface.measurer).also { recolour(it, color) })
+            shownCopy = DropPreview.Line(preview.frame, preview.item.deepCopy(surface.measurer).also { restyle(it, color, width) })
         }
         d.preview = shownCopy
     }
@@ -300,8 +324,11 @@ internal class ColorDropper(private val surface: DropSurface) {
         /** Most cells an area preview's mask holds. */
         const val PREVIEW_CELLS = 600_000.0
 
-        fun recolour(item: CanvasItem, color: Rgba) {
-            if (item is TextItem) item.rgba = color else DrawStyle.of(item)?.let { DrawStyle(color, it.width).applyTo(item) }
+        /** Restyle [item] to [color]/[width] (either may be null to keep the current one). */
+        fun restyle(item: CanvasItem, color: Rgba?, width: Double?) {
+            if (item is TextItem) {
+                if (color != null) item.rgba = color
+            } else DrawStyle.of(item)?.let { DrawStyle(color ?: it.color, width ?: it.width).applyTo(item) }
         }
     }
 }
@@ -329,7 +356,7 @@ fun ColorDropOverlay(host: ColorDropHost) {
                             val d = p.rect
                             c.nativeCanvas.drawBitmap(p.mask, null, RectF(d.left.toFloat(), d.top.toFloat(), d.right.toFloat(), d.bottom.toFloat()), tint)
                         }
-                        is DropPreview.Box -> r.strokeRect(p.rect, Pen(drag.color, SELECTION_RING_PX))
+                        is DropPreview.Box -> r.strokeRect(p.rect, Pen(if (drag.isWidth) ring else drag.color, SELECTION_RING_PX))
                     }
                     r.restore()
                 }
@@ -339,8 +366,18 @@ fun ColorDropOverlay(host: ColorDropHost) {
         if (at.isSpecified) {
             val local = at - origin[0]
             val radius = DISC_RADIUS.dp.toPx()
-            drawCircle(drag.color.toComposeColor(), radius, local)
-            drawCircle(ring.toComposeColor(), radius, local, style = RingStroke(1.5.dp.toPx()))
+            val ringPx = 1.5.dp.toPx()
+            if (drag.isWidth) {
+                // A thickness drag carries a pill whose height is the width, not a colour disc.
+                val w = drag.width ?: 0.0
+                val h = 2.dp.toPx() + (w / 20.0).coerceIn(0.0, 1.0).toFloat() * (radius * 2f - 2.dp.toPx())
+                val box = androidx.compose.ui.geometry.Size(radius * 2f, h)
+                val topLeft = Offset(local.x - radius, local.y - h / 2f)
+                drawRoundRect(ring.toComposeColor(), topLeft, box, cornerRadius = androidx.compose.ui.geometry.CornerRadius(h / 2f))
+            } else {
+                drawCircle(drag.color.toComposeColor(), radius, local)
+                drawCircle(ring.toComposeColor(), radius, local, style = RingStroke(ringPx))
+            }
         }
     }
 }
@@ -382,6 +419,54 @@ internal fun Modifier.colorDragSource(host: ColorDropHost, color: Rgba, vertical
                             if (across <= slop) continue
                             dragging = true
                             host.beginColorDrag(color, window(change.position))
+                        } else {
+                            host.moveColorDrag(window(change.position))
+                        }
+                        change.consume()
+                    }
+                } finally {
+                    if (dragging && !dropped) host.cancelColorDrag()
+                }
+            }
+        }
+}
+
+/**
+ * Lets a toolbar thickness preset be pulled off the bar as a thickness drag for [host], with the same
+ * pull-across-the-bar gesture as [colorDragSource]: a tap still picks the preset.
+ */
+internal fun Modifier.widthDragSource(host: ColorDropHost, width: Double, vertical: Boolean): Modifier {
+    val where = arrayOfNulls<LayoutCoordinates>(1)
+    return this
+        .onGloballyPositioned { where[0] = it }
+        .pointerInput(host, width, vertical) {
+            awaitEachGesture {
+                val down = awaitFirstDown(requireUnconsumed = false)
+                val slop = viewConfiguration.touchSlop
+                var moved = Offset.Zero
+                var dragging = false
+                var dropped = false
+                fun window(p: Offset): Offset = where[0]?.takeIf { it.isAttached }?.localToWindow(p) ?: p
+                try {
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                        if (!change.pressed) {
+                            if (dragging) {
+                                change.consume()
+                                host.endColorDrag(window(change.position))
+                                dropped = true
+                            }
+                            break
+                        }
+                        if (!dragging) {
+                            moved += change.positionChange()
+                            val across = abs(if (vertical) moved.x else moved.y)
+                            val along = abs(if (vertical) moved.y else moved.x)
+                            if (along > slop && along >= across) break
+                            if (across <= slop) continue
+                            dragging = true
+                            host.beginWidthDrag(width, window(change.position))
                         } else {
                             host.moveColorDrag(window(change.position))
                         }

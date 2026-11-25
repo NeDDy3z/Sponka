@@ -52,6 +52,22 @@ interface ToolPopupHost : SwatchHost {
     /** The active swatch. */
     val hostActiveColorIndex: Int
 
+    /** When true, every thickness-bearing tool follows the toolbar's armed thickness preset, so the
+     *  per-tool thickness controls are ignored. */
+    val hostFollowThickness: Boolean get() = false
+
+    /** The toolbar's thickness presets, in dp. */
+    val hostToolbarWidths: List<Double> get() = emptyList()
+
+    /** Which thickness-bearing tools follow the armed preset while [hostFollowThickness] is on. */
+    val hostFollowThicknessTools: Set<Tool> get() = emptySet()
+
+    /** Live-edit thickness preset [index] (the thickness popup's slider). */
+    fun setWidthPreset(index: Int, width: Double) {}
+
+    /** The thickness popup closed: commit the edited presets. */
+    fun commitWidthPreset() {}
+
     /** Recolour swatch [index] and arm it, live while the picker is open. */
     fun setSwatchColor(index: Int, color: Rgba)
 
