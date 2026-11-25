@@ -85,6 +85,11 @@ The sponka team uses LLMs as a tool - primarily for research, code review, and t
 
 Translations are currently fully LLM-generated (due to lack of translators) and will improve over time based on user reports. If you spot a translation issue or wish to contribute, please report it [here](https://github.com/NeDDy3z/Sponka/issues/new?title=Incorrect+Translation&labels=translation&assignees=NeDDy3z&body=Language%3A%0ALocation%3A%0AIncorrect%3A%0AFix%3A).
 
+## Special thanks
+
+- [@shardulvs](https://github.com/shardulvs) for creating xnotes, which sponka is built on.
+- [@failure-404](https://github.com/failure-404) for creating the app icon and for a lot of help with managing the repository and coming up with ideas.
+
 ## License
 
 Released under the MIT License, the same as upstream. See [LICENSE](LICENSE).
