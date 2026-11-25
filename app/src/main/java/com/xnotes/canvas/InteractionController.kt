@@ -2048,17 +2048,14 @@ class InteractionController(
         return if (square || loneTapeBox() != null) all.filter { it.id in CORNER_HANDLES } else all
     }
 
-    /** The lone selected text box, which shows a hairline frame and round handles. */
-    private fun loneTextBox(): TextItem? = selection.singleOrNull()?.item as? TextItem
-
     /** A text box's frame around content rect [b]: its corners gently rounded, one size on screen. */
     private fun boxFrame(b: Rect): List<Pt> {
         val radius = (BOX_FRAME_CORNER_DP * state.devicePxPerDp / state.zoom).coerceAtMost(minOf(b.w, b.h) / 2.0)
         return if (radius <= 0.0) listOf(Pt(b.left, b.top), Pt(b.right, b.top), Pt(b.right, b.bottom), Pt(b.left, b.bottom)) else TextItem.roundedRect(b, radius)
     }
 
-    /** The hairline that frame is drawn in: thin and low in contrast, so the text reads through it. */
-    private fun boxFramePen(): Pen = Pen(state.palette.accent.withAlpha(BOX_FRAME_ALPHA), 1.0, cosmetic = true)
+    /** That frame is drawn in the marquee's dashes, so a text box reads as selected like anything else. */
+    private fun boxFramePen(): Pen = chromePen(1.3)
 
     /** The lone selected connector, whose chrome is its own handles rather than a box. */
     private fun loneConnector(): Selected? = selection.singleOrNull()?.takeIf { it.item is ConnectorItem }
@@ -5795,8 +5792,7 @@ class InteractionController(
                 selection.isNotEmpty() ->
                     selectionChromeBox()?.let { obb ->
                         val corners = obb.corners().map { Pt(it.x + moveOffset.x, it.y + moveOffset.y) }
-                        // A lone text box wears its own quiet frame; everything else the marquee.
-                        if (loneTextBox() != null) r.strokePolygon(boxFrame(Rect.bounding(corners)), boxFramePen()) else r.strokePolygon(corners, accent)
+                        r.strokePolygon(corners, accent)
                     }
             }
 
@@ -5822,15 +5818,9 @@ class InteractionController(
                         r.fillCircle(grip, side * 0.6, sel)
                     }
                 }
-                val round = loneTextBox() != null
                 for (h in selectionResizeHandles()) {
                     val c = Pt(h.content.x + moveOffset.x, h.content.y + moveOffset.y)
-                    if (round) {
-                        r.fillCircle(c, side * BOX_HANDLE_RADIUS + BOX_HANDLE_RING / state.zoom, state.palette.paper)
-                        r.fillCircle(c, side * BOX_HANDLE_RADIUS, sel)
-                    } else {
-                        r.fillRect(Rect(c.x - side / 2, c.y - side / 2, side, side), sel)
-                    }
+                    r.fillRect(Rect(c.x - side / 2, c.y - side / 2, side, side), sel)
                 }
                 drawTableChrome(r)
                 selectionMoveGrip()?.let { g ->
@@ -6237,11 +6227,8 @@ class InteractionController(
         /** The narrowest text a dragged-out box wraps at. */
         const val MIN_BOX_TEXT_WIDTH = 40.0
 
-        /** A text box's frame: its corner radius on screen, how faint its line is, and its round handles. */
+        /** A text box's frame while it is typed in or dragged out: its corner radius on screen. */
         const val BOX_FRAME_CORNER_DP = 5.0
-        const val BOX_FRAME_ALPHA = 120
-        const val BOX_HANDLE_RADIUS = 0.42
-        const val BOX_HANDLE_RING = 1.5
 
         /** Drawn side length (viewport px) of a resize-handle square. Also sizes the table edit
          *  chrome (per-line handles and add/remove buttons), which derives from it. */
