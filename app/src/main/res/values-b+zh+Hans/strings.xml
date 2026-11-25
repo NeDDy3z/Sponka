@@ -1650,4 +1650,5 @@
     <string name="pencilcase_clear_title">清空笔袋？</string>
     <string name="pencilcase_clear_text">所有已保存的工具都将被移除。此操作无法撤销。</string>
     <string name="show_file_extension">文件扩展名</string>
+    <string name="caption_keep_selected">绘制后保持选中</string>
 </resources>

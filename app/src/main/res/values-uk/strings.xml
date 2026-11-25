@@ -1728,4 +1728,5 @@
     <string name="pencilcase_clear_title">Очистити пенал?</string>
     <string name="pencilcase_clear_text">Усі збережені інструменти буде видалено. Це не можна скасувати.</string>
     <string name="show_file_extension">Розширення файлу</string>
+    <string name="caption_keep_selected">Залишати фігуру виділеною</string>
 </resources>

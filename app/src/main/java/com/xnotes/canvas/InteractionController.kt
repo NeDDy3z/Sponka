@@ -1764,8 +1764,10 @@ class InteractionController(
         cancelDwell()
         // Auto-select the new shape so it can be resized right away. The menu only shows once the
         // gesture settles, so flag it for the pen lift (endDraw) rather than mid-stroke here.
-        setSelection(listOf(Selected(pageIndex, shape)))
-        snappedSelectionPendingMenu = true
+        if (shapeConfig.keepSelected) {
+            setSelection(listOf(Selected(pageIndex, shape)))
+            snappedSelectionPendingMenu = true
+        }
         onContentChanged()
         onHaptic()
         requestRender()
@@ -3168,8 +3170,10 @@ class InteractionController(
             state.document.dirty = true
             onContentChanged()
             // A new shape stays selected, so it can be resized, turned or reshaped straight away.
-            setSelection(listOf(Selected(pi, shape)))
-            refreshSelectionMenu()
+            if (shapeConfig.keepSelected) {
+                setSelection(listOf(Selected(pi, shape)))
+                refreshSelectionMenu()
+            }
         } else if (shape != null && pi != null) {
             shapeTap(pi, shape.start)
         }
@@ -3348,8 +3352,10 @@ class InteractionController(
             history.push(AddItem(page, c))
             state.document.dirty = true
             onContentChanged()
-            setSelection(listOf(Selected(pi, c)))
-            refreshSelectionMenu()
+            if (shapeConfig.keepSelected) {
+                setSelection(listOf(Selected(pi, c)))
+                refreshSelectionMenu()
+            }
         } else if (page != null) {
             selectShapeAt(pi, draft.connector.start.at)
         }
@@ -3447,8 +3453,10 @@ class InteractionController(
             history.push(AddItem(page, shape))
             state.document.dirty = true
             onContentChanged()
-            setSelection(listOf(Selected(pi, shape)))
-            refreshSelectionMenu()
+            if (shapeConfig.keepSelected) {
+                setSelection(listOf(Selected(pi, shape)))
+                refreshSelectionMenu()
+            }
         }
         requestRender()
     }

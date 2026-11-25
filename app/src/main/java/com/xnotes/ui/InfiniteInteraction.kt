@@ -1632,7 +1632,7 @@ class InfiniteInteraction(
             val cfg = shapeConfig()
             val shape = cfg.placedShape(draft.points, closed, inkColor(), cfg.strokeWidth)
             onCommitShape(shape)
-            selection()?.select(listOf(shape))
+            if (cfg.keepSelected) selection()?.select(listOf(shape))
             onSelectionChanged()
         }
         requestRender()
@@ -1694,7 +1694,7 @@ class InfiniteInteraction(
         // be resized, turned or reshaped straight away; a tap picks up the shape under it instead.
         if (shape != null && shape.start.distanceTo(shape.end) > InteractionController.SHAPE_MIN_DRAG) {
             onCommitShape(shape)
-            selection()?.select(listOf(shape))
+            if (shapeConfig().keepSelected) selection()?.select(listOf(shape))
             onSelectionChanged()
         } else if (shape != null) {
             shapeTap(shape.start)
@@ -1875,7 +1875,7 @@ class InfiniteInteraction(
         onPendingShape(null)
         if (draft.worthKeeping(InteractionController.SHAPE_MIN_DRAG)) {
             onCommitShape(draft.connector)
-            selection()?.select(listOf(draft.connector))
+            if (shapeConfig().keepSelected) selection()?.select(listOf(draft.connector))
         } else {
             selectShapeAt(draft.connector.start.at)
         }
@@ -1932,7 +1932,7 @@ class InfiniteInteraction(
         mode = CanvasPointerMode.IDLE
         // Leave the new shape selected, as a note does, so it can be resized or turned straight
         // away. The chrome only shows over a settled selection, so the handles arrive at pen up.
-        selection()?.select(listOf(shape))
+        if (shapeConfig().keepSelected) selection()?.select(listOf(shape))
         onSelectionChanged()
         requestRender()
     }

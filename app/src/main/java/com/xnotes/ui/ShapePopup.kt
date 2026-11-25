@@ -114,6 +114,9 @@ fun ShapeConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
                 }
             }
         })
+        MenuCard(buildList<MenuGroup> {
+            add { MenuSwitch(stringResource(R.string.caption_keep_selected), config.keepSelected) { emit(config.copy(keepSelected = it)) } }
+        })
     }
 }
 
@@ -127,8 +130,7 @@ private fun ShapePager(config: ShapeConfig, hidden: Set<String>, order: List<Str
     if (pages.isEmpty()) return
     val all = ShapePresets.pages.map { it.key }
     val initial = pages.indexOfFirst { it.key == all.getOrNull(config.shapePage) }.coerceAtLeast(0)
-    val rows = pages.maxOf { (it.presets.size + ShapePresets.COLUMNS - 1) / ShapePresets.COLUMNS }
-    ChipPager(pages.size, initial, { pageLabel(pages[it]) }, rows, { onPage(all.indexOf(pages[it].key)) }) { page ->
+    ChipPager(pages.size, initial, { pageLabel(pages[it]) }, { (pages[it].presets.size + ShapePresets.COLUMNS - 1) / ShapePresets.COLUMNS }, { onPage(all.indexOf(pages[it].key)) }) { page ->
         for (row in pages[page].presets.chunked(ShapePresets.COLUMNS)) {
             Row(horizontalArrangement = Arrangement.spacedBy(GAP.dp)) {
                 for (p in row) MenuTile(ShapeIcons.of(p), chipLabel(p), selected = p.key == config.preset, size = CHIP.dp, latex = chipLatex(p), outlined = true) { onPick(p) }
@@ -144,7 +146,7 @@ private fun ConnectorPager(config: ShapeConfig, hidden: Set<String>, order: List
     if (pages.isEmpty()) return
     val all = ConnectorPresets.pages.map { it.key }
     val initial = pages.indexOfFirst { it.key == all.getOrNull(config.connectorPage) }.coerceAtLeast(0)
-    ChipPager(pages.size, initial, { connectorPageLabel(pages[it]) }, ConnectorPresets.ROWS, { onPage(all.indexOf(pages[it].key)) }) { page ->
+    ChipPager(pages.size, initial, { connectorPageLabel(pages[it]) }, { (pages[it].presets.size + ConnectorPresets.COLUMNS - 1) / ConnectorPresets.COLUMNS }, { onPage(all.indexOf(pages[it].key)) }) { page ->
         for (row in pages[page].presets.chunked(ConnectorPresets.COLUMNS)) {
             Row(horizontalArrangement = Arrangement.spacedBy(GAP.dp)) {
                 for (p in row) MenuTile(ShapeIcons.connector(p), stringResource(connectorLabel(p.key)), selected = p.key == config.preset, size = CHIP.dp, outlined = true) { onPick(p) }
@@ -154,15 +156,16 @@ private fun ConnectorPager(config: ShapeConfig, hidden: Set<String>, order: List
 }
 
 /**
- * Chips swiped sideways a page at a time: the page's caption above with its dots, and every page
- * [rows] chips tall so a swipe never makes the popup jump. Remembers its page through [onPage].
+ * Chips swiped sideways a page at a time: the page's caption above with its dots. The pager is as
+ * tall as the page's [rows], easing between two pages as a swipe crosses, so a short page leaves no
+ * empty room under it and the popup never jumps. Remembers its page through [onPage].
  */
 @Composable
 private fun ChipPager(
     pageCount: Int,
     initialPage: Int,
     caption: (Int) -> Int,
-    rows: Int,
+    rows: (Int) -> Int,
     onPage: (Int) -> Unit,
     content: @Composable (Int) -> Unit,
 ) {
@@ -179,7 +182,11 @@ private fun ChipPager(
             }
         }
     }
-    HorizontalPager(state = state, modifier = Modifier.fillMaxWidth().height((rows * CHIP + (rows - 1) * GAP).dp), verticalAlignment = Alignment.Top) { page ->
+    fun tall(page: Int): Float = rows(page).let { it * CHIP + (it - 1) * GAP }.toFloat()
+    val offset = state.currentPageOffsetFraction
+    val next = (state.currentPage + if (offset < 0f) -1 else 1).coerceIn(0, pageCount - 1)
+    val height = tall(state.currentPage) + (tall(next) - tall(state.currentPage)) * kotlin.math.abs(offset)
+    HorizontalPager(state = state, modifier = Modifier.fillMaxWidth().height(height.dp), verticalAlignment = Alignment.Top) { page ->
         Column(verticalArrangement = Arrangement.spacedBy(GAP.dp)) { content(page) }
     }
 }
