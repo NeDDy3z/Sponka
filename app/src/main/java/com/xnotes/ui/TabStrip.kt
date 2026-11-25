@@ -107,6 +107,7 @@ internal fun TabStrip(
     onCloseSplit: (() -> Unit)?,
     onColor: (OpenTab, com.xnotes.core.model.Rgba?) -> Unit,
     onCloseOthers: () -> Unit,
+    onOpenNote: () -> Unit,
 ) {
     val palette = LocalPalette.current
     // The strip is the toolbar's colour; the shown tab stands out as a selection does in a menu.
@@ -151,7 +152,7 @@ internal fun TabStrip(
                 if (caret == slots.size) DropLine(vertical = false)
             }
         }
-        TabCounter(tabs, slots, active, visible, shown != null, onSelect, onClose, onMove, onMoveFirst, onSplit, onSwap, onUnsplit, onCloseSplit, onColor, onCloseOthers)
+        TabCounter(tabs, slots, active, visible, shown != null, onSelect, onClose, onMove, onMoveFirst, onSplit, onSwap, onUnsplit, onCloseSplit, onColor, onCloseOthers, onOpenNote)
     }
 }
 
@@ -404,6 +405,7 @@ private fun TabCounter(
     onCloseSplit: (() -> Unit)?,
     onColor: (OpenTab, com.xnotes.core.model.Rgba?) -> Unit,
     onCloseOthers: () -> Unit,
+    onOpenNote: () -> Unit,
 ) {
     val palette = LocalPalette.current
     var open by remember { mutableStateOf(false) }
@@ -469,6 +471,7 @@ private fun TabCounter(
                     MenuItem(stringResource(R.string.close_tab), XnotesIcons.close, danger = true) { open = false; onClose(tab) }
                 }
                 else -> Column(Modifier.width(LIST_WIDTH).padding(horizontal = 8.dp, vertical = 2.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    ListRow(XnotesIcons.folder, stringResource(R.string.open_note)) { open = false; onOpenNote() }
                     ListRow(XnotesIcons.close, stringResource(R.string.close_all_tabs), danger = true) { open = false; onCloseOthers() }
                     if (onCloseSplit != null) ListRow(XnotesIcons.split, stringResource(R.string.close_split)) { open = false; onCloseSplit() }
                     Spacer(Modifier.height(4.dp))

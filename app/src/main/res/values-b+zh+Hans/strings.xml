@@ -1654,4 +1654,5 @@
     <string name="file_info">信息</string>
     <string name="file_info_name">名称</string>
     <string name="file_info_location">位置</string>
+    <string name="open_note">打开笔记</string>
 </resources>

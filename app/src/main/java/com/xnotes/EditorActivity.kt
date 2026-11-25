@@ -1519,6 +1519,13 @@ private fun EditorScreen(
                 val tabs = editor.openTabs
                 val pane = editor.active
                 val second = editor.secondary?.takeIf { it.noteOpen }
+                var openingNote by remember { mutableStateOf(false) }
+                if (openingNote) {
+                    com.xnotes.ui.OpenNoteDialog(editor, onDismiss = { openingNote = false }) { uri ->
+                        openingNote = false
+                        editor.active.openInPane?.invoke(uri)
+                    }
+                }
                 if (tabs.size >= 2 && pane.noteOpen) {
                     com.xnotes.ui.TabStrip(
                         tabs = tabs,
@@ -1541,6 +1548,7 @@ private fun EditorScreen(
                         onCloseSplit = second?.let { p -> { closePane(p) } },
                         onColor = { t, c -> editor.colorTab(t.uri, c) },
                         onCloseOthers = { editor.keepOnlyTabs(editor.openPanes.mapNotNull { it.shownUri }) },
+                        onOpenNote = { openingNote = true },
                     )
                 }
             }

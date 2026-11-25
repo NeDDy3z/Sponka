@@ -1683,4 +1683,5 @@
     <string name="file_info">Informations</string>
     <string name="file_info_name">Nom</string>
     <string name="file_info_location">Emplacement</string>
+    <string name="open_note">Ouvrir une note</string>
 </resources>

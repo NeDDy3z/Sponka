@@ -191,3 +191,97 @@ internal fun DocumentLinkDialog(editor: Editor, onDismiss: () -> Unit, onPick: (
             }
     }
 }
+
+/**
+ * Picks any file under the top folder to open: folder by folder from the top, or by a search of
+ * names through every folder. [onPick] gets the file's uri.
+ */
+@Composable
+internal fun OpenNoteDialog(editor: Editor, onDismiss: () -> Unit, onPick: (uri: String) -> Unit) {
+    val palette = LocalPalette.current
+    val root = editor.browseRoot ?: return onDismiss()
+    val rootId = remember(root) { editor.browseRootDocId(root) }
+    val rootName by produceState("", root) { value = withContext(Dispatchers.IO) { editor.browseRootName(root) }.orEmpty() }
+    val path = remember { mutableStateListOf<Pair<String, String>>() }
+    val here = path.lastOrNull()?.first ?: rootId
+    val entries by produceState(editor.cachedChildren(root, here), root, here) {
+        value = withContext(Dispatchers.IO) { editor.browseChildren(root, here) }
+    }
+    var query by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue("")) }
+    val wanted = query.text.trim()
+    // Each hit with the folder it is in, found walking the tree off the main thread.
+    val hits by produceState<List<Pair<BrowseEntry, String>>?>(null, root, wanted) {
+        if (wanted.isEmpty()) { value = null; return@produceState }
+        kotlinx.coroutines.delay(250)
+        value = withContext(Dispatchers.IO) {
+            val out = ArrayList<Pair<BrowseEntry, String>>()
+            val queue = ArrayDeque<Pair<String, String>>().apply { addLast(rootId to "") }
+            while (queue.isNotEmpty() && out.size < SEARCH_LIMIT) {
+                val (docId, where) = queue.removeFirst()
+                for (f in runCatching { editor.browseChildren(root, docId) }.getOrDefault(emptyList())) {
+                    if (f.isDir) queue.addLast(editor.browseDocId(f.documentUri) to "$where${f.name}/")
+                    else if (f.name.contains(wanted, ignoreCase = true) && com.xnotes.core.util.ReaderKind.isListed(f.name)) out.add(f to "$rootName/$where")
+                }
+            }
+            out
+        }
+    }
+    SheetDialog(
+        title = stringResource(R.string.open_note),
+        onDismiss = onDismiss,
+        gap = 8.dp,
+        foot = { DialogButtons { DialogButton(stringResource(R.string.cancel), onClick = onDismiss) } },
+    ) {
+        DialogField(query, { query = it }, placeholder = stringResource(R.string.search))
+        Column(Modifier.fillMaxWidth().height(380.dp)) {
+            if (wanted.isEmpty()) {
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+                    Crumb("$rootName/", current = path.isEmpty()) { path.clear() }
+                    path.forEachIndexed { i, (_, name) ->
+                        Crumb("$name/", current = i == path.lastIndex) { while (path.size > i + 1) path.removeAt(path.lastIndex) }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+            }
+            val list = if (wanted.isEmpty()) {
+                entries?.filter { it.isDir || com.xnotes.core.util.ReaderKind.isListed(it.name) }
+                    ?.sortedWith(compareBy<BrowseEntry> { !it.isDir }.thenBy(naturalOrder) { it.name })?.map { it to null }
+            } else hits
+            when {
+                list == null -> EmptyNote(stringResource(R.string.loading))
+                list.isEmpty() -> EmptyNote(stringResource(if (wanted.isEmpty()) R.string.no_files_here else R.string.no_matches))
+                else -> LazyColumn(Modifier.fillMaxWidth()) {
+                    items(list, key = { it.first.documentUri }) { (f, where) ->
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                                .clip(MaterialTheme.shapes.small)
+                                .clickable {
+                                    if (f.isDir) path.add(editor.browseDocId(f.documentUri) to f.name) else onPick(f.documentUri)
+                                }
+                                .padding(horizontal = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            val icon = when {
+                                f.isDir -> XnotesIcons.folder
+                                com.xnotes.core.util.DocumentKind.ofName(f.name) == com.xnotes.core.util.DocumentKind.CANVAS -> XnotesIcons.canvas
+                                else -> XnotesIcons.file
+                            }
+                            Icon(icon, null, tint = palette.textDim.toComposeColor(), modifier = Modifier.size(20.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(f.name, color = palette.text.toComposeColor(), fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                if (where != null) Text(where, color = palette.textDim.toComposeColor(), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                            if (f.isDir) Icon(XnotesIcons.next, null, tint = palette.textDim.toComposeColor(), modifier = Modifier.size(16.dp))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** A name search stops after this many hits, so a huge tree answers quickly. */
+private const val SEARCH_LIMIT = 200
