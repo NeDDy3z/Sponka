@@ -14,6 +14,7 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import com.xnotes.core.geometry.Pt
 import com.xnotes.core.geometry.Rect
+import com.xnotes.core.model.ImageItem
 import com.xnotes.core.model.Page
 import com.xnotes.core.model.Stroke
 import com.xnotes.core.model.TapeItem
@@ -543,6 +544,32 @@ class CanvasView @JvmOverloads constructor(
                 }
             }
         }
+
+        // Animated GIFs play over the page, their first frame held in its caches.
+        var playing = false
+        r.withSave {
+            r.translate(origin.x, origin.y)
+            r.scale(st.zoom, st.zoom)
+            for (i in drawable) {
+                val pr = st.pageRects.getOrNull(i) ?: continue
+                if (!pr.intersects(visible)) continue
+                val page = st.document.pages[i]
+                if (room != null && room.page === page) continue
+                val visLocal = st.displayRectToPage(page, visible.translate(-pr.left, -pr.top))
+                r.withSave {
+                    r.clipRect(pr)
+                    r.translate(pr.left, pr.top)
+                    st.applyPageTransform(r, page)
+                    for (item in page.items) {
+                        if (item !is ImageItem || st.isLiftedItem(item) || !item.bounds().intersects(visLocal)) continue
+                        val movie = AnimatedGifs.movieOf(item.image) ?: continue
+                        AnimatedGifs.drawFrame(canvas, item, movie)
+                        playing = true
+                    }
+                }
+            }
+        }
+        if (playing) postInvalidateDelayed(AnimatedGifs.FRAME_MS)
 
         // Outlines go on last, over each page's soft edge and the sharp viewport alike.
         if (st.pageBorders) {
