@@ -1678,4 +1678,5 @@
     <string name="pencilcase_clear">Tout effacer</string>
     <string name="pencilcase_clear_title">Vider la trousse ?</string>
     <string name="pencilcase_clear_text">Tous les outils enregistrés seront supprimés. Cette action est irréversible.</string>
+    <string name="show_file_extension">Extension de fichier</string>
 </resources>

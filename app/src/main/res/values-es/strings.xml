@@ -1702,4 +1702,5 @@
     <string name="pencilcase_clear">Borrar todo</string>
     <string name="pencilcase_clear_title">¿Vaciar el estuche?</string>
     <string name="pencilcase_clear_text">Se quitarán todas las herramientas guardadas. No se puede deshacer.</string>
+    <string name="show_file_extension">Extensión de archivo</string>
 </resources>

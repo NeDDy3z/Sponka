@@ -1727,4 +1727,5 @@
     <string name="pencilcase_clear">Очистить всё</string>
     <string name="pencilcase_clear_title">Очистить пенал?</string>
     <string name="pencilcase_clear_text">Все сохранённые инструменты будут удалены. Это нельзя отменить.</string>
+    <string name="show_file_extension">Расширение файла</string>
 </resources>

@@ -392,6 +392,8 @@ internal fun ViewOptionsMenu(
     onShowHidden: (Boolean) -> Unit,
     showUnsupported: Boolean,
     onShowUnsupported: (Boolean) -> Unit,
+    showExtensions: Boolean,
+    onShowExtensions: (Boolean) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val layout = view.layout
@@ -460,7 +462,7 @@ internal fun ViewOptionsMenu(
                 add {
                     // The Timeline's cards carry only the kind and the colour code.
                     val full = layout != ExplorerLayout.TIMELINE
-                    val shown = if (full) listOf(view.showKind, view.showPages, view.showTime, view.showSize, view.showColour) else listOf(view.showKind, view.showColour)
+                    val shown = if (full) listOf(view.showKind, showExtensions, view.showPages, view.showTime, view.showSize, view.showColour) else listOf(view.showKind, view.showColour)
                     ViewPicker(stringResource(R.string.opt_show_on_tiles), stringResource(R.string.shown_of, shown.count { it }, shown.size), listWidth = 200.dp) {
                         @Composable
                         fun mark(label: String, on: Boolean, flip: () -> ExplorerView) = DropdownMenuItem(
@@ -470,6 +472,12 @@ internal fun ViewOptionsMenu(
                         )
                         mark(stringResource(R.string.group_kind), view.showKind) { view.copy(showKind = !view.showKind) }
                         if (full) {
+                            // The names' extensions are one setting for every folder, the sidebar's too.
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.show_file_extension)) },
+                                onClick = { onShowExtensions(!showExtensions) },
+                                leadingIcon = { RowCheck(showExtensions) },
+                            )
                             mark(stringResource(R.string.show_page_count), view.showPages) { view.copy(showPages = !view.showPages) }
                             mark(stringResource(R.string.show_time), view.showTime) { view.copy(showTime = !view.showTime) }
                             mark(stringResource(R.string.sort_size), view.showSize) { view.copy(showSize = !view.showSize) }

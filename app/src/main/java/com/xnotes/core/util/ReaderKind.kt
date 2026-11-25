@@ -31,6 +31,10 @@ enum class ReaderKind(val label: String, vararg val extensions: String) {
 
         fun isReadable(name: String): Boolean = ofName(name) != null
 
+        /** [name] without the extension of a document or a reader file, as the explorer shows names unless asked for extensions. */
+        fun stripListedSuffix(name: String): String =
+            if (isReadable(name)) name.substringBeforeLast('.').ifEmpty { name } else DocumentKind.stripSuffix(name)
+
         /** Whether [name] is an e-book, which is kept as it is rather than turned into a note's text. */
         fun isBook(name: String): Boolean = ofName(name).let { it == EPUB || it == FB2 || it == MOBI }
 

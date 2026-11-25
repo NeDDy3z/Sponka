@@ -155,7 +155,7 @@ internal class ExplorerBody(
     /** How many of the folder's own items show under [restLabel]. */
     val restCount: Int get() = folders.size + groups.sumOf { it.items.size }
 
-    fun label(e: BrowseEntry): String = if (e.isDir || showExtensions) e.name else DocumentKind.stripSuffix(e.name)
+    fun label(e: BrowseEntry): String = if (e.isDir || showExtensions) e.name else ReaderKind.stripListedSuffix(e.name)
 
     fun meta(e: BrowseEntry): DocMetaStore.Meta? = metas[e.documentUri]
 
@@ -262,16 +262,22 @@ internal fun ThumbImage(img: ImageBitmap?, whole: Boolean, modifier: Modifier = 
 @Composable
 internal fun ThumbBadges(b: ExplorerBody, e: BrowseEntry, inset: Dp = 8.dp) {
     Box(Modifier.fillMaxSize().padding(inset)) {
-        val kind = b.kind(e)
-        if (b.view.showKind && (kind == EntryKind.PDF || kind == EntryKind.CANVAS)) {
-            TileBadge(kindIcon(kind), if (kind == EntryKind.PDF) "PDF" else stringResource(R.string.kind_canvas), Modifier.align(Alignment.BottomStart))
-        }
-        if (b.view.showKind && kind == EntryKind.FILE) {
-            TileBadge(kindIcon(kind), ReaderKind.badge(e.name).orEmpty(), Modifier.align(Alignment.BottomStart))
-        }
+        KindBadge(b, e, Modifier.align(Alignment.BottomStart))
         val pages = b.pages(e)
         if (b.view.showPages && pages > 1) TileBadge(XnotesIcons.pages, "$pages", Modifier.align(Alignment.BottomEnd))
         ExportRing(e, Modifier.align(Alignment.TopEnd))
+    }
+}
+
+/** The pill naming a file's kind, when the view shows kinds and the kind is not a plain note. */
+@Composable
+internal fun KindBadge(b: ExplorerBody, e: BrowseEntry, modifier: Modifier = Modifier) {
+    if (!b.view.showKind) return
+    when (val kind = b.kind(e)) {
+        EntryKind.PDF -> TileBadge(kindIcon(kind), "PDF", modifier)
+        EntryKind.CANVAS -> TileBadge(kindIcon(kind), stringResource(R.string.kind_canvas), modifier)
+        EntryKind.FILE -> TileBadge(kindIcon(kind), ReaderKind.badge(e.name).orEmpty(), modifier)
+        else -> {}
     }
 }
 
@@ -636,6 +642,7 @@ internal fun GalleryItem(b: ExplorerBody, e: BrowseEntry, shelf: Dp) {
                     if (selecting) CheckRing(selected, Modifier.align(Alignment.TopStart).padding(6.dp))
                     ExportRing(e, Modifier.align(Alignment.TopEnd).padding(6.dp))
                     if (b.view.showPages && pages > 1) TileBadge(XnotesIcons.pages, "$pages", Modifier.align(Alignment.BottomEnd).padding(6.dp))
+                    KindBadge(b, e, Modifier.align(Alignment.BottomStart).padding(6.dp))
                 }
             }
         }
@@ -645,13 +652,7 @@ internal fun GalleryItem(b: ExplorerBody, e: BrowseEntry, shelf: Dp) {
             ConflictMarked(e) { Text(b.label(e), color = palette.text.toComposeColor(), fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
         }
         Spacer(Modifier.height(3.dp))
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp), modifier = Modifier.padding(horizontal = 4.dp)) {
-            if (b.view.showKind && (kind == EntryKind.PDF || kind == EntryKind.CANVAS)) {
-                Icon(kindIcon(kind), null, tint = palette.textDim.toComposeColor(), modifier = Modifier.size(13.dp))
-            }
-            val count = if (b.view.showPages && kind == EntryKind.CANVAS) stringResource(R.string.kind_canvas) else null
-            Text(listOfNotNull(count, b.metaText(e).ifEmpty { null }).joinToString(" · "), color = palette.textDim.toComposeColor(), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
+        Text(b.metaText(e), color = palette.textDim.toComposeColor(), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 4.dp))
     }
 }
 

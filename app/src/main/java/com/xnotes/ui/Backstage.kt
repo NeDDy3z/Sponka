@@ -2064,6 +2064,8 @@ private fun ExplorerSection(
                                 onShowHidden = { editor.setShowHidden(it) },
                                 showUnsupported = prefs.showUnsupported,
                                 onShowUnsupported = { editor.setShowUnsupported(it) },
+                                showExtensions = prefs.showExtensions,
+                                onShowExtensions = { editor.applyHomePreferences(editor.preferences.copy(showExtensions = it)) },
                                 onDismiss = { optionsOpen = false },
                             )
                         }

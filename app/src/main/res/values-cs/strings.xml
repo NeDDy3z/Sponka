@@ -1727,4 +1727,5 @@
     <string name="pencilcase_clear">Vymazat vše</string>
     <string name="pencilcase_clear_title">Vymazat penál?</string>
     <string name="pencilcase_clear_text">Všechny uložené nástroje budou odstraněny. Tuto akci nelze vrátit.</string>
+    <string name="show_file_extension">Přípona souboru</string>
 </resources>

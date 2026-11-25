@@ -99,7 +99,7 @@ private fun TreeRow(e: BrowseEntry, depth: Int, open: Boolean, showExtensions: B
         Spacer(Modifier.width(10.dp))
         ConflictMarked(e) {
             Text(
-                if (e.isDir || showExtensions) e.name else DocumentKind.stripSuffix(e.name),
+                if (e.isDir || showExtensions) e.name else com.xnotes.core.util.ReaderKind.stripListedSuffix(e.name),
                 color = palette.text.toComposeColor(),
                 fontSize = 14.sp,
                 maxLines = 1,
