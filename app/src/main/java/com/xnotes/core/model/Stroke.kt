@@ -254,6 +254,12 @@ class Stroke(
 
     val isEmpty get() = pts.n == 0
 
+    /** How wide the ink came out, its pressure and direction included: the middle of its widths, else its set width. */
+    fun drawnWidth(): Double {
+        val widths = geometry().halfWidths.takeIf { it.isNotEmpty() }?.sorted() ?: return config.baseWidth
+        return widths[widths.size / 2] * 2.0
+    }
+
     /** Lazily-built ribbon geometry; rebuilt only when samples change. */
     fun geometry(): StrokeGeometry {
         wet?.let { return it.geometry() }

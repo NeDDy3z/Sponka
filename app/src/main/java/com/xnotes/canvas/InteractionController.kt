@@ -1744,7 +1744,8 @@ class InteractionController(
     /** Replace the (uncommitted) live stroke with a recognized [ShapeItem], as one undoable add. */
     private fun commitRecognizedShape(stroke: Stroke, pageIndex: Int, rec: RecognizedShape) {
         val page = state.document.pages.getOrNull(pageIndex) ?: return
-        val strokeWidth = stroke.config.baseWidth * SHAPE_PEN_PARITY
+        // As thick as the ink it replaces looked, not as its pen is set: pressure draws a pen thinner.
+        val strokeWidth = stroke.drawnWidth()
         val color = stroke.config.rgba // the as-drawn ink colour (not renderColor's alpha-scaled one)
         val dashed = stroke.tool == Tool.DASHED // a dashed pen snaps to a dashed shape
         // A neon pen snaps to a neon shape (the highlighter never snaps).
@@ -3126,7 +3127,7 @@ class InteractionController(
         // A draft this press finished left its polygon selected; the new shape takes over from it.
         clearSelection()
         val startLocal = state.toPageSpace(pageIndex, content)
-        pendingShape = shapeConfig.startShape(startLocal, inkColor, shapeConfig.strokeWidth * SHAPE_PEN_PARITY)
+        pendingShape = shapeConfig.startShape(startLocal, inkColor, shapeConfig.strokeWidth)
         shapeAnchor = startLocal
         shapeAspect = pendingShape?.function?.naturalAspect()?.takeIf { it > 1e-9 }?.let { 1.0 / it }
         shapePageIndex = pageIndex
@@ -3312,7 +3313,7 @@ class InteractionController(
         val pi = state.pageIndexAtContent(content) ?: return
         val page = state.document.pages[pi]
         clearSelection()
-        val width = shapeConfig.strokeWidth * SHAPE_PEN_PARITY
+        val width = shapeConfig.strokeWidth
         val draft = ConnectorDraft.startAt(state.toPageSpace(pi, content), page.items, dotReach()) {
             shapeConfig.startConnector(it, inkColor, width)
         } ?: return
@@ -3416,7 +3417,7 @@ class InteractionController(
         val pi = polygonPage ?: return
         if (state.pageRects.getOrNull(pi) == null) return
         val pts = draft.preview(content?.let { state.toPageSpace(pi, it) })
-        pendingShape = if (pts.size >= 2) shapeConfig.copy(fill = false).placedShape(pts, false, inkColor, shapeConfig.strokeWidth * SHAPE_PEN_PARITY) else null
+        pendingShape = if (pts.size >= 2) shapeConfig.copy(fill = false).placedShape(pts, false, inkColor, shapeConfig.strokeWidth) else null
         shapePageIndex = pi
         requestRender()
     }
@@ -3443,7 +3444,7 @@ class InteractionController(
         shapePageIndex = null
         if (draft != null && pi != null && draft.points.size >= (if (closed) 3 else 2)) {
             val page = state.document.pages[pi]
-            val shape = shapeConfig.placedShape(draft.points, closed, inkColor, shapeConfig.strokeWidth * SHAPE_PEN_PARITY)
+            val shape = shapeConfig.placedShape(draft.points, closed, inkColor, shapeConfig.strokeWidth)
             page.items.add(shape)
             state.appendToCache(page, shape)
             history.push(AddItem(page, shape))
@@ -6292,10 +6293,6 @@ class InteractionController(
 
         /** Hold-to-snap: minimum samples before recognition is even attempted (mirrors the recognizer). */
         const val SHAPE_MIN_SAMPLES = 8
-
-        /** Shape size -> thickness: the midpoint of the default pen's pressure width range (m=0.35..1.0),
-         *  so a shape reads as thick as a same-size pen instead of as a flat full-width line. */
-        const val SHAPE_PEN_PARITY = 0.675
 
         /** With the Perfect switch on, a line/arrow keeps its angle to whole steps of this (deg). */
         const val SHAPE_PERFECT_STEP_DEG = 15.0

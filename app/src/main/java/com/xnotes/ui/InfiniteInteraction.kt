@@ -1605,7 +1605,7 @@ class InfiniteInteraction(
         val cfg = shapeConfig()
         val pts = draft.preview(at)
         pendingShape = if (pts.size >= 2) {
-            cfg.copy(fill = false).placedShape(pts, false, inkColor(), cfg.strokeWidth * InteractionController.SHAPE_PEN_PARITY)
+            cfg.copy(fill = false).placedShape(pts, false, inkColor(), cfg.strokeWidth)
         } else {
             null
         }
@@ -1630,7 +1630,7 @@ class InfiniteInteraction(
         onPendingShape(null)
         if (draft.points.size >= (if (closed) 3 else 2)) {
             val cfg = shapeConfig()
-            val shape = cfg.placedShape(draft.points, closed, inkColor(), cfg.strokeWidth * InteractionController.SHAPE_PEN_PARITY)
+            val shape = cfg.placedShape(draft.points, closed, inkColor(), cfg.strokeWidth)
             onCommitShape(shape)
             selection()?.select(listOf(shape))
             onSelectionChanged()
@@ -1656,7 +1656,7 @@ class InfiniteInteraction(
     private fun beginShape(vx: Double, vy: Double) {
         val cfg = shapeConfig()
         val at = viewport.viewportToContent(Pt(vx, vy))
-        pendingShape = cfg.startShape(at, inkColor(), cfg.strokeWidth * InteractionController.SHAPE_PEN_PARITY)
+        pendingShape = cfg.startShape(at, inkColor(), cfg.strokeWidth)
         shapeAnchor = at
         shapeAspect = pendingShape?.function?.naturalAspect()?.takeIf { it > 1e-9 }?.let { 1.0 / it }
         mode = CanvasPointerMode.SHAPE
@@ -1844,7 +1844,7 @@ class InfiniteInteraction(
         val cfg = shapeConfig()
         val at = viewport.viewportToContent(Pt(vx, vy))
         val reach = OverlayTessellator.DOT_TOUCH_PX / viewport.zoom
-        val width = cfg.strokeWidth * InteractionController.SHAPE_PEN_PARITY
+        val width = cfg.strokeWidth
         val draft = ConnectorDraft.startAt(at, glueTargetsNear(at, reach), reach) { cfg.startConnector(it, inkColor(), width) } ?: return
         connectorDraft = draft
         mode = CanvasPointerMode.CONNECT
@@ -1914,7 +1914,8 @@ class InfiniteInteraction(
         val path = stroke.tip?.let { stroke.samples + it } ?: stroke.samples
         if (path.size < InteractionController.SHAPE_MIN_SAMPLES) return
         val rec = ShapeRecognizer.recognize(path) ?: return
-        val width = stroke.config.baseWidth * InteractionController.SHAPE_PEN_PARITY
+        // As thick as the ink it replaces looked, not as its pen is set: pressure draws a pen thinner.
+        val width = stroke.drawnWidth()
         val color = stroke.config.rgba // the as-drawn colour, not the alpha-scaled render one
         val dashed = stroke.tool == Tool.DASHED // a dashed pen snaps to a dashed shape
         val shape = rec.toShape(
