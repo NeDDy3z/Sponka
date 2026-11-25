@@ -1642,4 +1642,11 @@
     <string name="close_split">关闭分屏</string>
     <string name="unsplit_tab">取消分屏</string>
     <string name="swap_sides">交换左右</string>
+    <string name="pencilcase_show">显示笔袋</string>
+    <string name="pencilcase_width_mark">粗细</string>
+    <string name="pencilcase_width_dot">圆点</string>
+    <string name="pencilcase_width_number">数字</string>
+    <string name="pencilcase_clear">全部清除</string>
+    <string name="pencilcase_clear_title">清空笔袋？</string>
+    <string name="pencilcase_clear_text">所有已保存的工具都将被移除。此操作无法撤销。</string>
 </resources>

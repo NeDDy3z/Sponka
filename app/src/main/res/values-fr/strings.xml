@@ -1671,4 +1671,11 @@
     <string name="close_split">Fermer l\'écran partagé</string>
     <string name="unsplit_tab">Séparer</string>
     <string name="swap_sides">Inverser les côtés</string>
+    <string name="pencilcase_show">Afficher la trousse</string>
+    <string name="pencilcase_width_mark">Épaisseur</string>
+    <string name="pencilcase_width_dot">Point</string>
+    <string name="pencilcase_width_number">Nombre</string>
+    <string name="pencilcase_clear">Tout effacer</string>
+    <string name="pencilcase_clear_title">Vider la trousse ?</string>
+    <string name="pencilcase_clear_text">Tous les outils enregistrés seront supprimés. Cette action est irréversible.</string>
 </resources>

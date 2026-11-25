@@ -23,6 +23,10 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.DesignServices
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
@@ -83,6 +87,7 @@ fun BoxScope.Pencilcase(
     popupHost: ToolPopupHost,
     onEdit: (index: Int, item: PencilcaseItem) -> Unit,
     canPick: (PencilcaseItem) -> Boolean = { true },
+    widthMark: String = "number",
 ) {
     val palette = LocalPalette.current
     var offset by remember { mutableStateOf(Offset.Zero) }
@@ -280,6 +285,7 @@ fun BoxScope.Pencilcase(
                             val dimmed = current == Mode.USE && !canPick(item)
                             ItemButton(
                                 item,
+                                widthMark,
                                 if (current == Mode.REMOVE) stringResource(R.string.pencilcase_remove, label) else label,
                                 tint = when {
                                     dimmed || current == Mode.EDIT && item.tool !in EDITABLE -> palette.border
@@ -478,9 +484,9 @@ private fun CaseButton(
     )
 }
 
-/** A saved tool: its icon in its colour, a dot sized by a pen's width, and a light backdrop when the colour blends into the bar. */
+/** A saved tool: its icon in its colour, a pen's width as a dot or a number per [widthMark], and a light backdrop when the colour blends into the bar. */
 @Composable
-private fun ItemButton(item: PencilcaseItem, description: String, tint: Color, enabled: Boolean, onClick: () -> Unit) {
+private fun ItemButton(item: PencilcaseItem, widthMark: String, description: String, tint: Color, enabled: Boolean, onClick: () -> Unit) {
     val palette = LocalPalette.current
     val bar = MenuDefaults.containerColor.luminance()
     val lum = tint.luminance()
@@ -494,7 +500,7 @@ private fun ItemButton(item: PencilcaseItem, description: String, tint: Color, e
                 .then(if (blends) Modifier.background(palette.text.toComposeColor().copy(alpha = 0.3f), CircleShape) else Modifier)
                 .size(18.dp),
         )
-        if (item.tool.isStroke) {
+        if (item.tool.isStroke && widthMark == "dot") {
             val range = ToolConversions.widthRange(item.tool)
             val f = ((item.config.baseWidth - range.start) / (range.endInclusive - range.start)).coerceIn(0.0, 1.0).toFloat()
             Box(
@@ -505,6 +511,99 @@ private fun ItemButton(item: PencilcaseItem, description: String, tint: Color, e
                     .then(if (blends) Modifier.border(1.dp, palette.textDim.toComposeColor(), CircleShape) else Modifier)
                     .background(tint, CircleShape),
             )
+        }
+        if (item.tool.isStroke && widthMark == "number") {
+            // The thickness as the tool menu's slider shows it.
+            val width = ToolConversions.snapWidth(item.tool, item.config.baseWidth)
+            androidx.compose.material3.Text(
+                "%.1f".format(width).trimEnd('0').trimEnd('.', ','),
+                color = palette.text.toComposeColor(),
+                fontSize = 9.sp,
+                lineHeight = 9.sp,
+                maxLines = 1,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .offset(6.dp, 6.dp)
+                    .background(MenuDefaults.containerColor, CircleShape)
+                    .padding(horizontal = 2.dp),
+            )
+        }
+    }
+}
+
+/** The toolbar's pencilcase button: its menu shows or hides the bar, sets how a pen's thickness is marked and clears every saved tool. */
+@Composable
+fun PencilcaseButton(editor: Editor) {
+    var open by remember { mutableStateOf(false) }
+    var clearing by remember { mutableStateOf(false) }
+    Box {
+        ToolbarIcon(Icons.Outlined.DesignServices, stringResource(R.string.toolbar_pencilcase), active = editor.showPencilcase) { open = true }
+        if (open) {
+            ToolMenu(stringResource(R.string.toolbar_pencilcase), { open = false }) {
+                MenuCard(buildList<MenuGroup> {
+                    add { MenuSwitch(stringResource(R.string.pencilcase_show), editor.showPencilcase) { editor.setShowPencilcase(it) } }
+                    add {
+                        MenuRow(stringResource(R.string.pencilcase_width_mark)) {
+                            val marks = listOf("none", "dot", "number")
+                            ChoiceDropdown(
+                                listOf(stringResource(R.string.none), stringResource(R.string.pencilcase_width_dot), stringResource(R.string.pencilcase_width_number)),
+                                marks.indexOf(editor.pencilcaseWidthMark).coerceAtLeast(0),
+                            ) { editor.setPencilcaseWidthMark(marks[it]) }
+                        }
+                    }
+                })
+                if (editor.pencilcase.isNotEmpty()) {
+                    MenuAction(stringResource(R.string.pencilcase_clear), XnotesIcons.trash, Modifier.fillMaxWidth()) { open = false; clearing = true }
+                }
+            }
+        }
+        if (clearing) {
+            SheetDialog(
+                title = stringResource(R.string.pencilcase_clear_title),
+                onDismiss = { clearing = false },
+                text = stringResource(R.string.pencilcase_clear_text),
+                foot = {
+                    ConfirmButtons(stringResource(R.string.pencilcase_clear), { clearing = false }, kind = ButtonKind.DESTROY) {
+                        clearing = false
+                        editor.clearPencilcase()
+                    }
+                },
+            )
+        }
+    }
+}
+
+/** A box showing the chosen one of [options]; a tap lists them all. */
+@Composable
+private fun ChoiceDropdown(options: List<String>, selected: Int, onSelect: (Int) -> Unit) {
+    val palette = LocalPalette.current
+    val shape = MaterialTheme.shapes.small
+    var open by remember { mutableStateOf(false) }
+    Box {
+        Row(
+            Modifier
+                .width(120.dp)
+                .height(36.dp)
+                .clip(shape)
+                .background(palette.bg.toComposeColor())
+                .border(1.dp, palette.border.toComposeColor(), shape)
+                .clickable(role = androidx.compose.ui.semantics.Role.DropdownList) { open = true }
+                .padding(start = 12.dp, end = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            androidx.compose.material3.Text(
+                options[selected],
+                color = palette.text.toComposeColor(),
+                fontSize = 13.sp,
+                maxLines = 1,
+                modifier = Modifier.weight(1f),
+            )
+            Icon(XnotesIcons.chevronDown, null, tint = palette.textDim.toComposeColor(), modifier = Modifier.size(14.dp))
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            options.forEachIndexed { i, label ->
+                ChoiceMenuItem(selected = i == selected, onClick = { open = false; onSelect(i) }) { fg -> androidx.compose.material3.Text(label, color = fg) }
+            }
         }
     }
 }

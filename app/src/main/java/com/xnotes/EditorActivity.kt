@@ -2083,6 +2083,7 @@ private fun EditorPane(
                                 onRename = editor::renamePencilcaseItem,
                                 popupHost = canvas,
                                 onEdit = editor::updatePencilcaseItem,
+                                widthMark = editor.pencilcaseWidthMark,
                             )
                         }
                         CanvasToastPill(canvas)
@@ -2189,6 +2190,7 @@ private fun EditorPane(
                                     onRename = editor::renamePencilcaseItem,
                                     popupHost = editor,
                                     onEdit = editor::updatePencilcaseItem,
+                                widthMark = editor.pencilcaseWidthMark,
                                 )
                             }
                             ZoomLockHint(editor)

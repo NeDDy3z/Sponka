@@ -1695,4 +1695,11 @@
     <string name="close_split">Cerrar pantalla dividida</string>
     <string name="unsplit_tab">Separar</string>
     <string name="swap_sides">Intercambiar lados</string>
+    <string name="pencilcase_show">Mostrar estuche</string>
+    <string name="pencilcase_width_mark">Grosor</string>
+    <string name="pencilcase_width_dot">Punto</string>
+    <string name="pencilcase_width_number">Número</string>
+    <string name="pencilcase_clear">Borrar todo</string>
+    <string name="pencilcase_clear_title">¿Vaciar el estuche?</string>
+    <string name="pencilcase_clear_text">Se quitarán todas las herramientas guardadas. No se puede deshacer.</string>
 </resources>

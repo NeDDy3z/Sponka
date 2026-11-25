@@ -1720,4 +1720,11 @@
     <string name="close_split">Zavřít rozdělenou obrazovku</string>
     <string name="unsplit_tab">Zrušit rozdělení</string>
     <string name="swap_sides">Prohodit strany</string>
+    <string name="pencilcase_show">Zobrazit penál</string>
+    <string name="pencilcase_width_mark">Tloušťka</string>
+    <string name="pencilcase_width_dot">Tečka</string>
+    <string name="pencilcase_width_number">Číslo</string>
+    <string name="pencilcase_clear">Vymazat vše</string>
+    <string name="pencilcase_clear_title">Vymazat penál?</string>
+    <string name="pencilcase_clear_text">Všechny uložené nástroje budou odstraněny. Tuto akci nelze vrátit.</string>
 </resources>

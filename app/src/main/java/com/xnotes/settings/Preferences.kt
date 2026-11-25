@@ -101,6 +101,8 @@ data class Preferences(
     val showZoomBar: Boolean = false,
     /** Whether the floating pencilcase bar of saved tools is drawn over the page or canvas. */
     val showPencilcase: Boolean = false,
+    /** How a saved pen's thickness is marked on its pencilcase button: "none", "dot" or "number". */
+    val pencilcaseWidthMark: String = "number",
     /** Whether the text margins are drawn on every page as dashed lines. */
     val showMargins: Boolean = false,
     /** User zoom floor: when enabled, no zoom path goes below [minZoomPercent]%. */
@@ -247,6 +249,7 @@ data class Preferences(
         .put("hide_page_borders", hidePageBorders)
         .put("show_zoom_bar", showZoomBar)
         .put("show_pencilcase", showPencilcase)
+        .put("pencilcase_width_mark", pencilcaseWidthMark)
         .put("show_margins", showMargins)
         .put("min_zoom_enabled", minZoomEnabled)
         .put("min_zoom_percent", minZoomPercent)
@@ -435,6 +438,7 @@ data class Preferences(
                 hidePageBorders = o.optBoolean("hide_page_borders", false),
                 showZoomBar = o.optBoolean("show_zoom_bar", false),
                 showPencilcase = o.optBoolean("show_pencilcase", false),
+                pencilcaseWidthMark = o.optString("pencilcase_width_mark", "number").let { if (it == "none" || it == "dot") it else "number" },
                 showMargins = o.optBoolean("show_margins", false),
                 minZoomEnabled = o.optBoolean("min_zoom_enabled", false),
                 minZoomPercent = o.optInt("min_zoom_percent", 50).coerceIn(ZOOM_LIMIT_MIN_PCT, ZOOM_LIMIT_MAX_PCT),

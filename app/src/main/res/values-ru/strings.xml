@@ -1720,4 +1720,11 @@
     <string name="close_split">Закрыть разделённый экран</string>
     <string name="unsplit_tab">Убрать разделение</string>
     <string name="swap_sides">Поменять стороны</string>
+    <string name="pencilcase_show">Показывать пенал</string>
+    <string name="pencilcase_width_mark">Толщина</string>
+    <string name="pencilcase_width_dot">Точка</string>
+    <string name="pencilcase_width_number">Число</string>
+    <string name="pencilcase_clear">Очистить всё</string>
+    <string name="pencilcase_clear_title">Очистить пенал?</string>
+    <string name="pencilcase_clear_text">Все сохранённые инструменты будут удалены. Это нельзя отменить.</string>
 </resources>

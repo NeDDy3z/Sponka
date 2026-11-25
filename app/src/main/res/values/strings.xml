@@ -1673,4 +1673,11 @@
     <string name="close_split">Close split screen</string>
     <string name="unsplit_tab">Unsplit</string>
     <string name="swap_sides">Swap sides</string>
+    <string name="pencilcase_show">Show pencilcase</string>
+    <string name="pencilcase_width_mark">Thickness</string>
+    <string name="pencilcase_width_dot">Dot</string>
+    <string name="pencilcase_width_number">Number</string>
+    <string name="pencilcase_clear">Clear all</string>
+    <string name="pencilcase_clear_title">Clear pencilcase?</string>
+    <string name="pencilcase_clear_text">Every saved tool will be removed. This cannot be undone.</string>
 </resources>

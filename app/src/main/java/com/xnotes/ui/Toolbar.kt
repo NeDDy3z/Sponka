@@ -29,8 +29,6 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.DesignServices
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -246,7 +244,7 @@ private fun ToolbarItemView(
         ToolbarItem.VIEW -> ViewButton(editor)
 
         ToolbarItem.PENCILCASE ->
-            ToolbarIcon(Icons.Outlined.DesignServices, stringResource(R.string.toolbar_pencilcase), active = editor.showPencilcase) { editor.toggleShowPencilcase() }
+            PencilcaseButton(editor)
 
         ToolbarItem.COLORS -> editor.toolbarColors.take(editor.toolbarColorCount).forEachIndexed { i, color ->
             Box {

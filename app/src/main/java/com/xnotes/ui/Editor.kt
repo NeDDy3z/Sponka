@@ -9264,7 +9264,14 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     val showPencilcase: Boolean
         get() { prefsVersion; return preferences.showPencilcase }
 
-    fun toggleShowPencilcase() = applyHomePreferences(preferences.copy(showPencilcase = !showPencilcase))
+    fun setShowPencilcase(on: Boolean) = applyHomePreferences(preferences.copy(showPencilcase = on))
+
+    val pencilcaseWidthMark: String
+        get() { prefsVersion; return preferences.pencilcaseWidthMark }
+
+    fun setPencilcaseWidthMark(mark: String) = applyHomePreferences(preferences.copy(pencilcaseWidthMark = mark))
+
+    fun clearPencilcase() = setPencilcase(emptyList())
 
     /** Save [item] at the end of the pencilcase; one already in it is not saved twice. */
     fun addToPencilcase(item: com.xnotes.core.tools.PencilcaseItem) {
