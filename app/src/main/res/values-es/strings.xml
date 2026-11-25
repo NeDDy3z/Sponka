@@ -1704,4 +1704,7 @@
     <string name="pencilcase_clear_text">Se quitarán todas las herramientas guardadas. No se puede deshacer.</string>
     <string name="show_file_extension">Extensión de archivo</string>
     <string name="caption_keep_selected">Mantener seleccionada la forma dibujada</string>
+    <string name="file_info">Información</string>
+    <string name="file_info_name">Nombre</string>
+    <string name="file_info_location">Ubicación</string>
 </resources>

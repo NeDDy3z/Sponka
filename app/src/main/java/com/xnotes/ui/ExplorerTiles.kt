@@ -349,6 +349,8 @@ internal fun convertLabel(e: BrowseEntry): Int? = if (e.isDir) null else when (D
 @Composable
 internal fun EntryMenuFor(b: ExplorerBody, e: BrowseEntry, expanded: Boolean, onDismiss: () -> Unit) {
     val m = b.host.menu
+    var info by remember { mutableStateOf(false) }
+    if (info) FileInfoDialog(b, e) { info = false }
     // Reader files have no share/copy/export block: those flows name and render editable documents.
     val readOnly = DocumentKind.ofName(e.name) == null
     EntryMenu(
@@ -374,7 +376,52 @@ internal fun EntryMenuFor(b: ExplorerBody, e: BrowseEntry, expanded: Boolean, on
         hidden = b.editor.isHidden(e.documentUri),
         onToggleHidden = { m.toggleHidden(e) },
         onSaveAsTemplate = if (DocumentKind.ofName(e.name).let { it == DocumentKind.NOTE || it == DocumentKind.CANVAS }) ({ m.saveAsTemplate(e) }) else null,
+        onInfo = if (e.isDir) null else ({ info = true }),
     )
+}
+
+/** What is known about file [e]: its name, kind, pages, size, dates and where it is stored. */
+@Composable
+private fun FileInfoDialog(b: ExplorerBody, e: BrowseEntry, onDismiss: () -> Unit) {
+    val palette = LocalPalette.current
+    val dates = remember { java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT) }
+    val kind = b.kind(e)
+    val pages = b.pages(e).takeIf { it > 0 && (kind == EntryKind.NOTE || kind == EntryKind.PDF) }
+    val rows = listOfNotNull(
+        stringResource(R.string.file_info_name) to e.name,
+        stringResource(R.string.group_kind) to kindLabel(kind),
+        pages?.let { stringResource(R.string.pages) to "$it" },
+        stringResource(R.string.sort_size) to formatSize(e.size),
+        e.created.takeIf { it > 0 }?.let { stringResource(R.string.sort_created) to dates.format(java.util.Date(it)) },
+        e.modified.takeIf { it > 0 }?.let { stringResource(R.string.sort_modified) to dates.format(java.util.Date(it)) },
+        stringResource(R.string.file_info_location) to readablePath(e.documentUri),
+    )
+    SheetDialog(
+        title = stringResource(R.string.file_info),
+        onDismiss = onDismiss,
+        foot = { SheetButton(stringResource(R.string.close), Modifier.fillMaxWidth(), onClick = onDismiss) },
+    ) {
+        androidx.compose.foundation.text.selection.SelectionContainer {
+            Column(Modifier.padding(horizontal = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                for ((label, value) in rows) {
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(label, color = palette.textDim.toComposeColor(), fontSize = 12.sp)
+                        Text(value, color = palette.text.toComposeColor(), fontSize = 14.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** A stored file's path as the device's file managers show it, for shared storage; the provider's own id otherwise. */
+internal fun readablePath(documentUri: String): String {
+    val uri = android.net.Uri.parse(documentUri)
+    val id = runCatching { android.provider.DocumentsContract.getDocumentId(uri) }.getOrNull() ?: return documentUri
+    if (uri.authority != "com.android.externalstorage.documents") return id
+    val volume = id.substringBefore(':')
+    val base = if (volume == "primary") "/storage/emulated/0" else "/storage/$volume"
+    return "$base/${id.substringAfter(':', "")}"
 }
 
 /** Keeps a tile's coordinates registered for hit-testing a drag, and drops them when it leaves. */

@@ -1680,4 +1680,7 @@
     <string name="pencilcase_clear_text">Tous les outils enregistrés seront supprimés. Cette action est irréversible.</string>
     <string name="show_file_extension">Extension de fichier</string>
     <string name="caption_keep_selected">Garder la forme dessinée sélectionnée</string>
+    <string name="file_info">Informations</string>
+    <string name="file_info_name">Nom</string>
+    <string name="file_info_location">Emplacement</string>
 </resources>

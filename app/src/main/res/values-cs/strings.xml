@@ -1729,4 +1729,7 @@
     <string name="pencilcase_clear_text">Všechny uložené nástroje budou odstraněny. Tuto akci nelze vrátit.</string>
     <string name="show_file_extension">Přípona souboru</string>
     <string name="caption_keep_selected">Ponechat nakreslený tvar vybraný</string>
+    <string name="file_info">Informace</string>
+    <string name="file_info_name">Název</string>
+    <string name="file_info_location">Umístění</string>
 </resources>

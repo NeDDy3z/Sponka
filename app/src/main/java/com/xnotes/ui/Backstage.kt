@@ -2548,6 +2548,7 @@ internal fun EntryMenu(
     hidden: Boolean = false,
     onToggleHidden: (() -> Unit)? = null,
     onSaveAsTemplate: (() -> Unit)? = null,
+    onInfo: (() -> Unit)? = null,
 ) {
     // A submenu (and the colour swatches) swaps the menu's contents in place, with a back row on top;
     // closing the menu resets it so it always reopens on the main list.
@@ -2594,6 +2595,7 @@ internal fun EntryMenu(
             else -> {
                 if (onSyncConflict != null) MenuItem(stringResource(R.string.sync_conflict), XnotesIcons.warning, onClick = run(onSyncConflict))
                 if (onPreview != null) MenuItem(stringResource(R.string.preview), XnotesIcons.eye, onClick = run(onPreview))
+                if (onInfo != null) MenuItem(stringResource(R.string.file_info), XnotesIcons.info, onClick = run(onInfo))
                 MenuItem(stringResource(R.string.rename), XnotesIcons.edit, onClick = run { onRename?.invoke() })
                 if (onShare != null) MenuItem(stringResource(R.string.share), XnotesIcons.share, onClick = run(onShare))
                 // A group with a single entry shows that entry itself rather than a submenu of one.

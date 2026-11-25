@@ -1682,4 +1682,7 @@
     <string name="pencilcase_clear_text">Every saved tool will be removed. This cannot be undone.</string>
     <string name="show_file_extension">File extension</string>
     <string name="caption_keep_selected">Keep drawn shape selected</string>
+    <string name="file_info">Info</string>
+    <string name="file_info_name">Name</string>
+    <string name="file_info_location">Location</string>
 </resources>
