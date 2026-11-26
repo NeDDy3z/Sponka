@@ -6136,11 +6136,16 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         return uri
     }
 
-    /** Saves the picked `.xnote` at [file] into a new file under [parentDocId] (named after [rawName]);
-     *  returns its URI, or null. Streamed copy, so a big embedded PDF never loads into RAM. IO. */
-    fun createNoteFileFromFile(treeUri: String, parentDocId: String, rawName: String, file: java.io.File): String? {
-        runCatching { java.io.FileInputStream(file).use { codec.read(it) } }.getOrNull() ?: return null // validate it's a real .xnote (no PDF extraction)
-        val name = uniqueDocumentName(treeUri, parentDocId, rawName, com.xnotes.core.util.DocumentKind.NOTE)
+    /** Saves the picked `.xnote` or `.xcanvas` ([sourceName] tells which) at [file] into a new file under [parentDocId]
+     *  (named after [rawName]); returns its URI, or null. Streamed copy, so a big embedded PDF never loads into RAM. IO. */
+    fun createNoteFileFromFile(treeUri: String, parentDocId: String, rawName: String, file: java.io.File, sourceName: String = ""): String? {
+        val kind = com.xnotes.core.util.DocumentKind.ofName(sourceName)?.takeIf { it == com.xnotes.core.util.DocumentKind.CANVAS }
+            ?: com.xnotes.core.util.DocumentKind.NOTE
+        val reads = runCatching { // validate it reads (no PDF extraction)
+            java.io.FileInputStream(file).use { if (kind == com.xnotes.core.util.DocumentKind.CANVAS) canvasCodec.read(it) else codec.read(it) }
+        }.isSuccess
+        if (!reads) return null
+        val name = uniqueDocumentName(treeUri, parentDocId, rawName, kind)
         return createNoteFile(treeUri, parentDocId, name) { out -> copyStream(java.io.FileInputStream(file), out) { importCancelled.get() } }
     }
 
@@ -6662,7 +6667,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
                 else pick.make { createPdfNoteFile(treeUri, parentDocId, rawName, staged, it) }
             ImportKind.IMAGE -> createImageNoteFile(treeUri, parentDocId, rawName, staged)
             ImportKind.TEXT -> createTextNoteFile(treeUri, parentDocId, rawName, staged, item.sourceName, item.mime)
-            ImportKind.OPEN -> createNoteFileFromFile(treeUri, parentDocId, rawName, staged)
+            ImportKind.OPEN -> createNoteFileFromFile(treeUri, parentDocId, rawName, staged, item.sourceName)
             ImportKind.BOOK -> createFileCopy(treeUri, parentDocId, rawName, staged, item.sourceName.substringAfterLast('.', "").lowercase())
         }
 

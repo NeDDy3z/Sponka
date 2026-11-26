@@ -1255,7 +1255,7 @@ private fun EditorScreen(
                     if (export) exportSettingsLauncher.launch("sponka-${if (withNotes) "backup" else "settings"}-${java.time.LocalDate.now()}.zip")
                     else importSettingsLauncher.launch(arrayOf("application/zip", "application/octet-stream"))
                 },
-                onImportPdf = { importPdfLauncher.launch(importMimeTypes) },
+                onImportPdf = { importPdfLauncher.launch(importMimeTypes + arrayOf("application/octet-stream", "application/zip")) }, // .xnote/.xcanvas have no registered type
                 onOpenFile = { uri ->
                     val name = displayNameOf(resolver, Uri.parse(uri)).orEmpty()
                     when {
