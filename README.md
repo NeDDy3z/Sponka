@@ -45,15 +45,19 @@ App icon by [@failure-404](https://github.com/failure-404).
 
 * **Coming to all platforms** (soon), so you can be productive on all your devices (*using the sync features*).
 
-## Roadmap
-
-Our roadmap lives outside this README so it stays up to date automatically as work progresses:
+## Roadmap & Features
 
 <p>
-<a href="https://github.com/NeDDy3z/Sponka/projects"><img src="https://img.shields.io/badge/GitHub%20Projects-Roadmap%20Board-1f6feb?style=flat-square&logo=github" alt="Roadmap Board" /></a>
 <a href="https://github.com/NeDDy3z/Sponka/issues?q=is%3Aopen+label%3Aroadmap"><img src="https://img.shields.io/github/issues/NeDDy3z/Sponka/roadmap?style=flat-square&label=planned%20items&color=8957e5" alt="Planned Items" /></a>
 <a href="https://github.com/NeDDy3z/Sponka/milestones"><img src="https://img.shields.io/github/milestones/progress-percent/NeDDy3z/Sponka/1?style=flat-square&label=next%20milestone&color=2ea44f" alt="Next Milestone" /></a>
 </p>
+
+Some of the major features planned for the near future:
+- **Drawing & Painting**
+- **Real-time Collaboration**
+- **Additional Cloud Sync Providers**
+
+Beyond these milestones, I do my best to implement community requests, though I have to prioritize some over others. As a general rule: if I assign myself to an issue, it means it is either actively in development or next in line :D
 
 ## Install
 
