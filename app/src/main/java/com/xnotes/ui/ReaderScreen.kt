@@ -200,7 +200,7 @@ internal fun ReaderScreen(
 
 private const val PERMILLE = 1000
 
-private val SLIDE_KINDS = setOf(ReaderKind.PPTX, ReaderKind.PPT)
+private val SLIDE_KINDS = setOf(ReaderKind.PPTX, ReaderKind.PPT, ReaderKind.ODP)
 
 /** Width over height of the paper format a book is paged on; null for the screen's own shape. */
 private fun paperAspect(p: Preferences): Float? {

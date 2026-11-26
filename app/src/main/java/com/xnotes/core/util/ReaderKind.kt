@@ -14,6 +14,7 @@ enum class ReaderKind(val label: String, vararg val extensions: String) {
     RTF("RTF", "rtf"),
     XML("XML", "xml"),
     ODT("ODT", "odt"),
+    ODP("ODP", "odp"),
     PPT("PPT", "ppt"),
     TEX("TEX", "tex"),
     EPUB("EPUB", "epub"),

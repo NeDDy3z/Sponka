@@ -289,6 +289,9 @@ object OfficeHtml {
         var spent = 0L
         val out = StringBuilder()
         val p = newParser().apply { setInput(content.inputStream(), "UTF-8") }
+        // A presentation (ODP) is read the same way, each of its pages as a slide.
+        val slides = Regex("<draw:page[\\s>]").findAll(String(content, Charsets.UTF_8)).count()
+        var slide = 0
         val closers = ArrayList<String>() // what each open element closes with, so spans and paragraphs end where they began
         var inBody = false
         var skip = 0
@@ -298,7 +301,7 @@ object OfficeHtml {
                 XmlPullParser.START_TAG -> {
                     val name = local(p.name)
                     if (skip > 0) { skip++; e = p.next(); continue }
-                    if (name == "text" && p.name.startsWith("office:")) inBody = true
+                    if ((name == "text" || name == "presentation") && p.name.startsWith("office:")) inBody = true
                     if (!inBody) { e = p.next(); continue }
                     val fmt = attr(p, "style-name")?.let(styles::get)
                     fun wrap(open: String, close: String) {
@@ -314,6 +317,10 @@ object OfficeHtml {
                         closers.add(c)
                     }
                     when (name) {
+                        "page" -> if (p.name == "draw:page") {
+                            slide++
+                            wrap("<div class=\"slide\"><div class=\"slide-no\">${ReaderHtml.esc(labels.slide(slide, slides))}</div>", "</div>")
+                        } else closers.add("")
                         "h" -> { val level = (attr(p, "outline-level")?.toIntOrNull() ?: 1).coerceIn(1, 6); wrap("<h$level>", "</h$level>") }
                         "p" -> wrap("<p>", "</p>")
                         "span" -> wrap("", "")
@@ -347,7 +354,7 @@ object OfficeHtml {
                 XmlPullParser.END_TAG -> {
                     if (skip > 0) skip--
                     else if (inBody) {
-                        if (local(p.name) == "text" && p.name.startsWith("office:")) inBody = false
+                        if ((local(p.name) == "text" || local(p.name) == "presentation") && p.name.startsWith("office:")) inBody = false
                         else closers.removeLastOrNull()?.let(out::append)
                     }
                 }
