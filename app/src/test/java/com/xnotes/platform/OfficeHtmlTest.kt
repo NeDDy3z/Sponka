@@ -51,17 +51,4 @@ class OfficeHtmlTest {
         assertTrue(html.contains("<p>after</p>"))
         assertFalse(html.contains("footnote"))
     }
-
-    @Test
-    fun odpReadsEachPageAsASlide() {
-        val content = """<office:document-content xmlns:office="o" xmlns:text="t" xmlns:draw="d">
-            <office:body><office:presentation>
-            <draw:page draw:name="p1"><draw:frame><draw:text-box><text:p>First</text:p></draw:text-box></draw:frame></draw:page>
-            <draw:page draw:name="p2"><draw:frame><draw:text-box><text:p>Second</text:p></draw:text-box></draw:frame></draw:page>
-            </office:presentation></office:body></office:document-content>"""
-        val zip = ReaderHtml.ZipRead { if (it == "content.xml") content.toByteArray() else null }
-        val html = OfficeHtml.odt(zip, parser, ReaderHtml.Labels(slide = { n, total -> "S$n/$total" }))
-        assertTrue(html, html.contains("<div class=\"slide\"><div class=\"slide-no\">S1/2</div><p>First</p></div>"))
-        assertTrue(html, html.contains("S2/2</div><p>Second</p></div>"))
-    }
 }

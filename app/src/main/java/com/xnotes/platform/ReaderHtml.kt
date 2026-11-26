@@ -60,12 +60,24 @@ object ReaderHtml {
     fun page(body: String, c: Colors, wide: Boolean = false, paged: Boolean = false): String = shell(body, c, wide, if (paged) PAGED_CSS else "")
 
     /**
-     * [body] cut into parts small enough to page through quickly: one per book chapter, a long
-     * part cut again after the first paragraph past [max] characters. Laying a whole book out in
-     * columns takes the WebView minutes.
+     * [body] cut into parts of about [max] characters at chapter, slide or paragraph ends, so the
+     * WebView lays out one part at a time. A whole book at once takes it minutes.
      */
-    fun pageChunks(body: String, max: Int = 100_000): List<String> =
-        body.split(Regex("(?=<section class=\"chapter\")")).filter { it.isNotBlank() }.flatMap { cutLong(it, max) }.ifEmpty { listOf(body) }
+    fun pageChunks(body: String, max: Int = 100_000): List<String> {
+        val parts = ArrayList<String>()
+        val pending = StringBuilder()
+        // Short chapters and slides share a part; a long one is cut after a paragraph.
+        for (section in body.split(Regex("(?=<section class=\"(?:chapter|slide)\")"))) {
+            if (section.isBlank()) continue
+            // A slide is drawn whole, so only flowing text is cut.
+            for (piece in if (section.startsWith("<section class=\"slide\"")) listOf(section) else cutLong(section, max)) {
+                if (pending.isNotEmpty() && pending.length + piece.length > max) { parts += pending.toString(); pending.clear() }
+                pending.append(piece)
+            }
+        }
+        if (pending.isNotEmpty()) parts += pending.toString()
+        return parts.ifEmpty { listOf(body) }
+    }
 
     private fun cutLong(html: String, max: Int): List<String> {
         val out = ArrayList<String>()
@@ -693,6 +705,171 @@ object ReaderHtml {
         return out.toString()
     }
 
+    /** A length such as 2.5cm, 12pt or 1in, in centimetres. */
+    private fun odfCm(v: String?): Double? {
+        val m = Regex("(-?[0-9.]+)([a-z]*)").matchEntire(v?.trim() ?: return null) ?: return null
+        val n = m.groupValues[1].toDoubleOrNull() ?: return null
+        return when (m.groupValues[2]) { "cm", "" -> n; "mm" -> n / 10; "in" -> n * 2.54; "pt" -> n * 2.54 / 72; "pc" -> n * 2.54 / 6; "px" -> n * 2.54 / 96; else -> null }
+    }
+
+    /** An OpenDocument presentation, each page drawn where its shapes sit on its own colours, like [pptx]. */
+    fun odp(zip: ZipRead, newParser: () -> XmlPullParser, labels: Labels = Labels()): String {
+        val content = zip.read("content.xml") ?: throw IllegalArgumentException("not an OpenDocument file")
+        // Every named style's properties, flattened, with "parent" pointing at the style it builds on.
+        val styles = HashMap<String, HashMap<String, String>>()
+        val layouts = HashMap<String, Pair<Double, Double>>()
+        val masters = HashMap<String, Pair<String?, String?>>() // page layout, page style
+        val fills = HashMap<String, String>() // gradients as CSS, fill images as their path
+        for (bytes in listOfNotNull(zip.read("styles.xml"), content)) {
+            var style: HashMap<String, String>? = null
+            var layout: String? = null
+            walk(newParser, bytes, onStart = { p, name ->
+                when (name) {
+                    "style" -> style = styles.getOrPut(p.attr("name") ?: "") { HashMap() }.also { s -> p.attr("parent-style-name")?.let { s["parent"] = it } }
+                    "graphic-properties", "paragraph-properties", "text-properties", "drawing-page-properties" ->
+                        style?.let { s -> for (i in 0 until p.attributeCount) s[local(p.getAttributeName(i))] = p.getAttributeValue(i) }
+                    "page-layout" -> layout = p.attr("name")
+                    "page-layout-properties" -> layout?.let { l ->
+                        val w = odfCm(p.attr("page-width")); val h = odfCm(p.attr("page-height"))
+                        if (w != null && h != null && w > 0 && h > 0) layouts[l] = w to h
+                    }
+                    "master-page" -> p.attr("name")?.let { masters[it] = p.attr("page-layout-name") to p.attr("style-name") }
+                    "gradient" -> p.attr("name")?.let { fills[it] = "linear-gradient(${p.attr("start-color") ?: "#ffffff"},${p.attr("end-color") ?: "#ffffff"})" }
+                    "fill-image" -> p.attr("name")?.let { n -> p.attr("href")?.let { fills[n] = it } }
+                }
+            }, onEnd = { name -> if (name == "style") style = null })
+        }
+        fun look(name: String?, key: String): String? {
+            var n = name
+            repeat(8) {
+                val s = styles[n ?: return null] ?: return null
+                s[key]?.let { return it }
+                n = s["parent"]
+            }
+            return null
+        }
+        val images = Images(zip, labels)
+        var size = 28.0 to 21.0
+        fun pct(v: Double, of: Double) = String.format(java.util.Locale.ROOT, "%.3f%%", v * 100 / of)
+        fun textCss(style: String?): String {
+            if (style == null) return ""
+            val css = StringBuilder()
+            look(style, "color")?.let { css.append("color:").append(it).append(';') }
+            odfCm(look(style, "font-size"))?.let { css.append("font-size:").append(String.format(java.util.Locale.ROOT, "%.3fcqw", it / size.first * 100)).append(';') }
+            look(style, "font-weight")?.let { if (it == "bold" || (it.toIntOrNull() ?: 0) >= 600) css.append("font-weight:bold;") }
+            if (look(style, "font-style") == "italic") css.append("font-style:italic;")
+            look(style, "text-underline-style")?.let { if (it != "none") css.append("text-decoration:underline;") }
+            return css.toString()
+        }
+        // A fill as CSS and, for a picture fill, the picture's path.
+        fun fillOf(style: String?): Pair<String?, String?> = when (look(style, "fill")) {
+            "solid" -> look(style, "fill-color") to null
+            "gradient" -> fills[look(style, "fill-gradient-name")] to null
+            "bitmap" -> null to fills[look(style, "fill-image-name")]
+            else -> null to null
+        }
+
+        val total = Regex("<draw:page[\\s>]").findAll(String(content, Charsets.UTF_8)).count()
+        if (total == 0) return "<p class=\"missing\">${esc(labels.empty)}</p>"
+        val out = StringBuilder()
+        var number = 0
+        var depth = 0
+        var slide: StringBuilder? = null
+        var background = "#ffffff"
+        var notes = StringBuilder()
+        var inNotes = false
+        var shape: StringBuilder? = null
+        var shapeAt = 0
+        var shapeCss = ""
+        var picture = false
+        var para: StringBuilder? = null
+        var paraStyle: String? = null
+        val spans = ArrayList<String?>()
+        var lists = 0
+        walk(newParser, content, onStart = { p, name ->
+            depth++
+            when (name) {
+                "page" -> if (!inNotes) {
+                    slide = StringBuilder(); notes = StringBuilder(); background = "#ffffff"
+                    val master = masters[p.attr("master-page-name")]
+                    size = master?.first?.let { layouts[it] } ?: size
+                    // shortcut: the master page's own shapes (logos, footers) are not drawn, only its fill.
+                    val from = listOf(p.attr("style-name"), master?.second).firstOrNull { look(it, "fill").let { f -> f != null && f != "none" } }
+                    val (css, image) = fillOf(from)
+                    css?.let { background = it }
+                    image?.let { slide?.append("<div class=\"shape pic\" style=\"left:0;top:0;width:100%;height:100%\">")?.append(images.tag(it))?.append("</div>") }
+                }
+                "notes" -> inNotes = true
+                "frame", "custom-shape", "rect", "ellipse" -> if (shape == null && !inNotes) {
+                    val x = odfCm(p.attr("x")); val y = odfCm(p.attr("y")); val w = odfCm(p.attr("width")); val h = odfCm(p.attr("height"))
+                    if (x != null && y != null && w != null && h != null) {
+                        val graphic = p.attr("style-name")
+                        val css = StringBuilder("left:${pct(x, size.first)};top:${pct(y, size.second)};width:${pct(w, size.first)};height:${pct(h, size.second)};")
+                        css.append(String.format(java.util.Locale.ROOT, "font-size:%.3fcqw;", 18 * 2.54 / 72 / size.first * 100))
+                        css.append(textCss(graphic)).append(textCss(p.attr("text-style-name")))
+                        fillOf(graphic).first?.let { css.append("background:").append(it).append(';') }
+                        if (name == "ellipse") css.append("border-radius:50%;")
+                        css.append("justify-content:").append(when (look(graphic, "textarea-vertical-align")) { "middle" -> "center"; "bottom" -> "flex-end"; else -> "flex-start" }).append(';')
+                        shape = StringBuilder(); shapeAt = depth; shapeCss = css.toString(); picture = false
+                    }
+                }
+                "image" -> if (!picture) shape?.let { s -> p.attr("href")?.let { s.append(images.tag(it)); picture = true } }
+                "p", "h" -> { para = StringBuilder(); paraStyle = p.attr("style-name"); spans.clear() }
+                "span" -> spans.add(p.attr("style-name"))
+                "s" -> para?.append("&nbsp;".repeat(p.attr("c")?.toIntOrNull()?.coerceIn(1, 50) ?: 1))
+                "tab" -> para?.append(' ')
+                "line-break" -> para?.append("<br>")
+                "list" -> lists++
+            }
+        }, onText = { t ->
+            para?.let { b ->
+                // Notes sit outside the slide, so they keep the reader's own type.
+                val css = if (inNotes) "" else textCss(spans.lastOrNull())
+                if (css.isEmpty()) b.append(esc(t)) else b.append("<span style=\"").append(css).append("\">").append(esc(t)).append("</span>")
+            }
+        }, onEnd = { name ->
+            when (name) {
+                "span" -> spans.removeLastOrNull()
+                "list" -> lists--
+                "p", "h" -> para?.let { text ->
+                    if (inNotes) {
+                        if (text.isNotBlank()) notes.append("<p>").append(text).append("</p>")
+                    } else shape?.let { s ->
+                        val css = StringBuilder()
+                        look(paraStyle, "text-align")?.let { a ->
+                            css.append("text-align:").append(when (a) { "center" -> "center"; "end", "right" -> "right"; "justify" -> "justify"; else -> "left" }).append(';')
+                        }
+                        css.append(textCss(paraStyle))
+                        val bullet = lists > 0 && text.isNotBlank()
+                        if (bullet) css.append(String.format(java.util.Locale.ROOT, "padding-left:%.1fem;text-indent:-1.1em;", 1.1 + (lists - 1) * 1.2))
+                        s.append(if (css.isEmpty()) "<p>" else "<p style=\"$css\">")
+                        if (bullet) s.append("• ")
+                        s.append(if (text.isBlank()) "&nbsp;" else text).append("</p>")
+                    }
+                    para = null
+                }
+                "frame", "custom-shape", "rect", "ellipse" -> if (depth == shapeAt) shape?.let { s ->
+                    if (s.isNotEmpty() || "background:" in shapeCss) {
+                        slide?.append(if (picture) "<div class=\"shape pic\" style=\"" else "<div class=\"shape\" style=\"")?.append(shapeCss)?.append("\">")?.append(s)?.append("</div>")
+                    }
+                    shape = null
+                }
+                "notes" -> inNotes = false
+                "page" -> if (!inNotes) slide?.let { s ->
+                    number++
+                    out.append("<section class=\"slide\"><div class=\"slide-no\">").append(esc(labels.slide(number, total))).append("</div>")
+                    out.append("<div class=\"deck-slide\" style=\"aspect-ratio:").append(String.format(java.util.Locale.ROOT, "%.3f/%.3f", size.first, size.second))
+                        .append(";background:").append(background).append(";color:#000000\">").append(s).append("</div>")
+                    if (notes.isNotEmpty()) out.append("<div class=\"notes\"><b>").append(esc(labels.notes)).append("</b>").append(notes).append("</div>")
+                    out.append("</section>")
+                    slide = null
+                }
+            }
+            depth--
+        })
+        return out.toString()
+    }
+
     /** A placeholder's or shape's box on the slide, in EMU. */
     private class Frame(val x: Long, val y: Long, val cx: Long, val cy: Long)
 
@@ -873,7 +1050,8 @@ object ReaderHtml {
                 }
                 val b = block
                 if (b == null) {
-                    if ("grpSpPr" in stack) when (name) {
+                    // The slide's own tree has a grpSpPr too, often with a zero chExt; only real groups map space.
+                    if ("grpSpPr" in stack && groups.isNotEmpty()) when (name) {
                         "off" -> groupOff = (p.attr("x")?.toLongOrNull() ?: 0) to (p.attr("y")?.toLongOrNull() ?: 0)
                         "ext" -> groupExt = (p.attr("cx")?.toLongOrNull() ?: 0) to (p.attr("cy")?.toLongOrNull() ?: 0)
                         "chOff" -> groupChild = (p.attr("x")?.toLongOrNull() ?: 0) to (p.attr("y")?.toLongOrNull() ?: 0)
@@ -881,9 +1059,10 @@ object ReaderHtml {
                             val (ox, oy) = groupOff ?: (0L to 0L)
                             val (ex, ey) = groupExt ?: (1L to 1L)
                             val (cxo, cyo) = groupChild ?: (0L to 0L)
-                            val cw = (p.attr("cx")?.toLongOrNull() ?: ex).coerceAtLeast(1)
-                            val ch = (p.attr("cy")?.toLongOrNull() ?: ey).coerceAtLeast(1)
-                            groups[groups.lastIndex] = doubleArrayOf(ox.toDouble(), oy.toDouble(), cxo.toDouble(), cyo.toDouble(), ex.toDouble() / cw, ey.toDouble() / ch)
+                            val cw = p.attr("cx")?.toLongOrNull() ?: ex
+                            val ch = p.attr("cy")?.toLongOrNull() ?: ey
+                            fun scale(e: Long, c: Long) = if (e > 0 && c > 0) e.toDouble() / c else 1.0
+                            groups[groups.lastIndex] = doubleArrayOf(ox.toDouble(), oy.toDouble(), cxo.toDouble(), cyo.toDouble(), scale(ex, cw), scale(ey, ch))
                         }
                     }
                     return@walk

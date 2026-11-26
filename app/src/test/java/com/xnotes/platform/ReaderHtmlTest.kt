@@ -157,6 +157,42 @@ class ReaderHtmlTest {
     }
 
     @Test
+    fun pptxWithAChildExtentOnTheSlideTreeStillDrawsTheSlide() {
+        val ns = "xmlns:p=\"p\" xmlns:a=\"a\" xmlns:r=\"r\""
+        val pres = """<p:presentation $ns><p:sldIdLst><p:sldId id="256" r:id="rId2"/></p:sldIdLst><p:sldSz cx="1000" cy="1000"/></p:presentation>"""
+        val presRels = """<Relationships><Relationship Id="rId2" Type="t/slide" Target="slides/slide1.xml"/></Relationships>"""
+        val slide = """<p:sld $ns><p:cSld><p:spTree><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>
+            <p:sp><p:spPr><a:xfrm><a:off x="100" y="200"/><a:ext cx="500" cy="300"/></a:xfrm></p:spPr><p:txBody><a:p><a:r><a:t>Title</a:t></a:r></a:p></p:txBody></p:sp>
+            </p:spTree></p:cSld></p:sld>"""
+        val html = ReaderHtml.pptx(zip("ppt/presentation.xml" to pres, "ppt/_rels/presentation.xml.rels" to presRels, "ppt/slides/slide1.xml" to slide), parser)
+        assertTrue(html, html.contains("<div class=\"shape\" style=\"left:10.000%;top:20.000%;width:50.000%;height:30.000%;"))
+    }
+
+    @Test
+    fun odpDrawsEachPageWithItsShapesInPlaceAndNotesBelow() {
+        val styles = """<office:document-styles xmlns:office="o" xmlns:style="s" xmlns:fo="f" xmlns:draw="d"><office:automatic-styles>
+            <style:page-layout style:name="PM1"><style:page-layout-properties fo:page-width="20cm" fo:page-height="10cm"/></style:page-layout>
+            </office:automatic-styles><office:master-styles><style:master-page style:name="M" style:page-layout-name="PM1"/></office:master-styles></office:document-styles>"""
+        val content = """<office:document-content xmlns:office="o" xmlns:style="s" xmlns:fo="f" xmlns:draw="d" xmlns:text="t" xmlns:svg="v" xmlns:presentation="p">
+            <office:automatic-styles>
+            <style:style style:name="dp1" style:family="drawing-page"><style:drawing-page-properties draw:fill="solid" draw:fill-color="#0b0f19"/></style:style>
+            <style:style style:name="gr1" style:family="graphic"><style:graphic-properties draw:fill="none" draw:textarea-vertical-align="middle"/></style:style>
+            <style:style style:name="P1" style:family="paragraph"><style:paragraph-properties fo:text-align="center"/></style:style>
+            <style:style style:name="T1" style:family="text"><style:text-properties fo:color="#22d3ee" fo:font-size="20pt" fo:font-weight="bold"/></style:style>
+            </office:automatic-styles><office:body><office:presentation>
+            <draw:page draw:style-name="dp1" draw:master-page-name="M">
+              <draw:custom-shape draw:style-name="gr1" svg:x="2cm" svg:y="1cm" svg:width="10cm" svg:height="5cm"><text:p text:style-name="P1"><text:span text:style-name="T1">ITER</text:span></text:p></draw:custom-shape>
+              <presentation:notes><draw:frame svg:x="0cm" svg:y="0cm" svg:width="1cm" svg:height="1cm"><draw:text-box><text:p>Said aloud</text:p></draw:text-box></draw:frame></presentation:notes>
+            </draw:page></office:presentation></office:body></office:document-content>"""
+        val html = ReaderHtml.odp(zip("styles.xml" to styles, "content.xml" to content), parser, ReaderHtml.Labels(slide = { n, total -> "S$n/$total" }, notes = "Notes"))
+        assertTrue(html, html.contains("S1/1</div><div class=\"deck-slide\" style=\"aspect-ratio:20.000/10.000;background:#0b0f19;"))
+        assertTrue(html, html.contains("left:10.000%;top:10.000%;width:50.000%;height:50.000%;"))
+        assertTrue(html, html.contains("justify-content:center;"))
+        assertTrue(html, html.contains("<p style=\"text-align:center;\"><span style=\"color:#22d3ee;font-size:3.528cqw;font-weight:bold;\">ITER</span></p>"))
+        assertTrue(html, html.contains("<div class=\"notes\"><b>Notes</b><p>Said aloud</p></div>"))
+    }
+
+    @Test
     fun xlsxShowsSheetsWithSharedStringsNumbersAndDates() {
         val wb = """<workbook xmlns:r="r"><sheets><sheet name="Data" sheetId="1" r:id="rId1"/><sheet name="Empty" sheetId="2" r:id="rId2"/></sheets></workbook>"""
         val wbRels = """<Relationships><Relationship Id="rId1" Type="x/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="x/worksheet" Target="/xl/worksheets/sheet2.xml"/></Relationships>"""
@@ -240,5 +276,9 @@ class ReaderHtmlTest {
         assertTrue(chunks.size > 3)
         assertTrue(chunks.drop(2).dropLast(1).all { it.endsWith("</p>") })
         assertEquals(listOf("<p>x</p>"), ReaderHtml.pageChunks("<p>x</p>"))
+        val big = "<section class=\"slide\">" + "<p>x</p>".repeat(20) + "</section>"
+        assertEquals(listOf(big), ReaderHtml.pageChunks(big, max = 20))
+        val slides = "<section class=\"slide\">1</section><section class=\"slide\">2</section><section class=\"slide\">3</section>"
+        assertEquals(listOf("<section class=\"slide\">1</section><section class=\"slide\">2</section>", "<section class=\"slide\">3</section>"), ReaderHtml.pageChunks(slides, max = 70))
     }
 }

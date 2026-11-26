@@ -50,6 +50,7 @@ import com.xnotes.ui.icons.XnotesIcons
 import com.xnotes.ui.theme.LocalPalette
 import com.xnotes.ui.theme.toComposeColor
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -101,7 +102,7 @@ internal fun ReaderScreen(
     var count by remember(file.uri) { mutableIntStateOf(1) }
     // How far through the whole file the reader is, from 0 to 1.
     var bookAt by remember(file.uri) { mutableFloatStateOf(0f) }
-    // Paged, a book is shown a part at a time, since laying it all out in columns takes minutes.
+    // A file is shown a part at a time, since laying it all out at once takes the WebView long.
     val chunks = remember(content) { (content as? ReaderContent.Html)?.let { ReaderHtml.pageChunks(it.body) } ?: listOf("") }
     var chunk by remember(file.uri) { mutableIntStateOf(0) }
     // Where the next load opens, as a fraction of what it shows; null keeps the place as it was.
@@ -114,24 +115,23 @@ internal fun ReaderScreen(
     var shownPaged by remember { mutableStateOf(paged) }
     if (shownPaged != paged && content is ReaderContent.Html) {
         shownPaged = paged
-        if (paged) {
-            val t = bookAt * chunks.size
-            chunk = t.toInt().coerceAtMost(chunks.lastIndex)
-            enterAt = t - chunk
-        } else {
-            enterAt = bookAt
-        }
+        enterAt = (bookAt * chunks.size - chunk).coerceIn(0f, 1f)
     }
     Column(Modifier.fillMaxSize().background(palette.paper.toComposeColor())) {
         if (finding) FindBar(query, { query = it }, findStatus, { webView?.findNext(false) }, { webView?.findNext(true) }, { finding = false })
         Box(Modifier.weight(1f).fillMaxWidth()) {
             CompositionLocalProvider(LocalPalette provides palette) {
                 when (val c = content) {
-                    null -> ReaderMessage(stringResource(R.string.loading), palette.text)
+                    null -> {
+                        // Like a note opening: only a read slow enough to notice shows the spinner.
+                        var slow by remember { mutableStateOf(false) }
+                        LaunchedEffect(Unit) { delay(160); slow = true }
+                        if (slow) com.xnotes.SpinnerDialog(stringResource(R.string.loading), onCancel = onClose)
+                    }
                     ReaderContent.Failed -> ReaderMessage(stringResource(R.string.reader_open_failed), palette.text)
                     is ReaderContent.Html -> {
                         val part = chunk.coerceIn(0, chunks.lastIndex)
-                        val html = remember(c, palette, paged, part) { ReaderHtml.page(if (paged) chunks[part] else c.body, readerColors(palette), c.wide, paged) }
+                        val html = remember(c, palette, paged, part) { ReaderHtml.page(chunks[part], readerColors(palette), c.wide, paged) }
                         // A paper format shows its page whole in the middle, the app's background round it.
                         val aspect = if (paged) paperAspect(prefs) else null
                         Box(
@@ -155,7 +155,7 @@ internal fun ReaderScreen(
                                 onPositionChange = { a, n ->
                                     if (!scrubbing) at = a
                                     count = n
-                                    bookAt = if (paged) (part + a / n.toFloat()) / chunks.size else a / PERMILLE.toFloat()
+                                    bookAt = (part + a / n.toFloat()) / chunks.size
                                 },
                             ) { url -> openLink(context, url, onWikiLink) }
                         }
@@ -174,10 +174,8 @@ internal fun ReaderScreen(
                 },
             ) {
                 val scrub = Modifier.weight(1f).padding(horizontal = SCRUBBER_ROOM)
-                if (paged) {
-                    // The arrows and the count go by the part shown; the scrubber spans the whole file.
-                    ToolbarIcon(XnotesIcons.prev, stringResource(R.string.previous_page), enabled = at > 0 || chunk > 0) { webView?.turn(-1) }
-                    Label("${at + 1} " + stringResource(R.string.page_of_count, count), Modifier.widthIn(min = 64.dp))
+                val scrubber = @Composable {
+                    // The scrubber spans the whole file, across its parts.
                     PageScrubber(
                         scrubTo ?: (bookAt * PERMILLE).roundToInt(), PERMILLE, emptyList(), scrubbing,
                         onScrub = { scrubbing = true; scrubTo = it },
@@ -188,10 +186,16 @@ internal fun ReaderScreen(
                         },
                         modifier = scrub,
                     )
+                }
+                if (paged) {
+                    // The arrows and the count go by the part shown.
+                    ToolbarIcon(XnotesIcons.prev, stringResource(R.string.previous_page), enabled = at > 0 || chunk > 0) { webView?.turn(-1) }
+                    Label("${at + 1} " + stringResource(R.string.page_of_count, count), Modifier.widthIn(min = 64.dp))
+                    scrubber()
                     ToolbarIcon(XnotesIcons.next, stringResource(R.string.next_page), enabled = at < count - 1 || chunk < chunks.lastIndex) { webView?.turn(1) }
                 } else {
-                    Label("${at / 10}%", Modifier.padding(start = 12.dp).widthIn(min = 44.dp))
-                    PageScrubber(at, PERMILLE, emptyList(), scrubbing, onScrub = { scrubbing = true; at = it; webView?.showPermille(it) }, onLetGo = { scrubbing = false }, modifier = scrub)
+                    Label("${(scrubTo ?: (bookAt * PERMILLE).roundToInt()) / 10}%", Modifier.padding(start = 12.dp).widthIn(min = 44.dp))
+                    scrubber()
                 }
             }
         }
@@ -327,6 +331,8 @@ private fun ReaderWebView(
                 var downY = 0f
                 var swiping = false
                 var moved = false
+                var atTop = false
+                var atBottom = false
                 val taps = GestureDetector(ctx, object : GestureDetector.SimpleOnGestureListener() {
                     override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
                         // Paged, a tap near either side turns the page; anywhere else shows or hides the islands.
@@ -343,7 +349,10 @@ private fun ReaderWebView(
                 setOnTouchListener { v, e ->
                     taps.onTouchEvent(e)
                     when (e.actionMasked) {
-                        MotionEvent.ACTION_DOWN -> { downX = e.x; downY = e.y; swiping = false; moved = false }
+                        MotionEvent.ACTION_DOWN -> {
+                            downX = e.x; downY = e.y; swiping = false; moved = false
+                            atTop = !canScrollVertically(-1); atBottom = !canScrollVertically(1)
+                        }
                         MotionEvent.ACTION_MOVE -> {
                             val dx = e.x - downX
                             if (!moved && (abs(dx) > slop || abs(e.y - downY) > slop)) { moved = true; onMoveNow.value() }
@@ -353,7 +362,12 @@ private fun ReaderWebView(
                                 MotionEvent.obtain(e).apply { action = MotionEvent.ACTION_CANCEL }.also { v.onTouchEvent(it) }.recycle()
                             }
                         }
-                        MotionEvent.ACTION_UP -> if (swiping) turn(if (e.x < downX) 1 else -1)
+                        MotionEvent.ACTION_UP -> when {
+                            swiping -> turn(if (e.x < downX) 1 else -1)
+                            // Scrolling, a pull on past either end of the part opens the next or the previous one.
+                            !paged && atBottom && downY - e.y > slop * 4 -> onEdgeNow.value(1)
+                            !paged && atTop && e.y - downY > slop * 4 -> onEdgeNow.value(-1)
+                        }
                     }
                     // Paged, the WebView never scrolls itself: pages only turn whole.
                     paged && (swiping || e.actionMasked == MotionEvent.ACTION_MOVE)
