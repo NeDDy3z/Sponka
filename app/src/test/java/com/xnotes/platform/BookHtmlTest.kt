@@ -66,4 +66,72 @@ class BookHtmlTest {
         val html = BookHtml.mobi(header + record0 + text)
         assertEquals("<p>Hello</p>", html)
     }
+
+    @Test
+    fun epubCoverPrefersTheCoverImageItemThenTheCoverMeta() {
+        val container = "META-INF/container.xml" to "<container><rootfile full-path=\"OPS/book.opf\"/></container>"
+        val byProperty = zip(
+            container,
+            "OPS/book.opf" to """<package><metadata><meta name="cover" content="other"/></metadata><manifest>
+                <item id="other" href="img/other.jpg" media-type="image/jpeg"/>
+                <item id="c" href="img/front.png" media-type="image/png" properties="cover-image"/>
+                </manifest></package>""",
+            "OPS/img/front.png" to "FRONT",
+            "OPS/img/other.jpg" to "OTHER",
+        )
+        assertEquals("FRONT", BookHtml.epubCover(byProperty)?.let { String(it) })
+        val byMeta = zip(
+            container,
+            "OPS/book.opf" to """<package><metadata><meta name="cover" content="pic"/></metadata><manifest>
+                <item id="pic" href="pic.jpg" media-type="image/jpeg"/></manifest></package>""",
+            "OPS/pic.jpg" to "PIC",
+        )
+        assertEquals("PIC", BookHtml.epubCover(byMeta)?.let { String(it) })
+        val none = zip(container, "OPS/book.opf" to "<package><manifest><item id=\"t\" href=\"t.xhtml\" media-type=\"application/xhtml+xml\"/></manifest></package>")
+        assertEquals(null, BookHtml.epubCover(none))
+    }
+
+    @Test
+    fun fb2CoverDecodesTheBinaryItsCoverpageNames() {
+        val data = java.util.Base64.getEncoder().encodeToString("COVER".toByteArray())
+        val fb2 = """<FictionBook xmlns:l="http://www.w3.org/1999/xlink"><description><title-info>
+            <coverpage><image l:href="#c.jpg"/></coverpage></title-info></description><body/>
+            <binary id="x.jpg" content-type="image/jpeg">AAAA</binary>
+            <binary id="c.jpg" content-type="image/jpeg">
+            $data
+            </binary></FictionBook>"""
+        assertEquals("COVER", BookHtml.fb2Cover(fb2.toByteArray())?.let { String(it) })
+        assertEquals(null, BookHtml.fb2Cover("<FictionBook><body/></FictionBook>".toByteArray()))
+    }
+
+    @Test
+    fun mobiCoverFollowsTheExthCoverOffset() {
+        val r0 = ByteArray(0x110)
+        fun u16(at: Int, v: Int) { r0[at] = (v shr 8).toByte(); r0[at + 1] = v.toByte() }
+        fun u32(at: Int, v: Int) { u16(at, v ushr 16); u16(at + 2, v and 0xffff) }
+        u16(0, 1)
+        "MOBI".toByteArray().copyInto(r0, 16)
+        u32(20, 0xE8)
+        u32(28, 65001)
+        u32(0x6C, 1)
+        u32(0x80, 0x40)
+        "EXTH".toByteArray().copyInto(r0, 0xF8)
+        u32(0xF8 + 4, 24)
+        u32(0xF8 + 8, 1)
+        u32(0xF8 + 12, 201)
+        u32(0xF8 + 16, 12)
+        u32(0xF8 + 20, 1)
+        val images = listOf("FIRST".toByteArray(), "COVER".toByteArray())
+        val start = 78 + 8 * 3
+        val header = ByteArray(start)
+        header[77] = 3
+        var at = start
+        for ((i, size) in listOf(r0.size, images[0].size, images[1].size).withIndex()) {
+            val p = 78 + i * 8
+            header[p] = (at ushr 24).toByte(); header[p + 1] = (at ushr 16).toByte(); header[p + 2] = (at ushr 8).toByte(); header[p + 3] = at.toByte()
+            at += size
+        }
+        val book = header + r0 + images[0] + images[1]
+        assertEquals("COVER", BookHtml.mobiCover(book)?.let { String(it) })
+    }
 }

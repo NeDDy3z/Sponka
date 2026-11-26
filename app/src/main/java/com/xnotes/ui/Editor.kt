@@ -5334,28 +5334,58 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      */
     private fun thumbKey(uri: String, name: String?, modified: Long): String =
         if (DocumentKind.ofName(name.orEmpty()) == DocumentKind.PDF) "$uri@$modified" else uri
-    /** A Markdown file's or image's first page (memory-cached only); null for the other reader kinds, which tile as text. */
+    /** A Markdown file's or image's first page, or a book's cover else its first page (memory-cached only); null for the other reader kinds, which tile as text. */
     private suspend fun readerThumbnail(uri: String, name: String): ImageBitmap? {
         val kind = com.xnotes.core.util.ReaderKind.ofName(name)
-        if (kind != com.xnotes.core.util.ReaderKind.MARKDOWN && kind != com.xnotes.core.util.ReaderKind.IMAGE) return null
+        val book = com.xnotes.core.util.ReaderKind.isBook(name)
+        if (kind != com.xnotes.core.util.ReaderKind.MARKDOWN && kind != com.xnotes.core.util.ReaderKind.IMAGE && !book) return null
         val key = "reader|$uri"
         synchronized(noteThumbs) { noteThumbs.get(key)?.let { return it } }
         return withContext(thumbDispatcher) {
             delay(150)
             if (!isActive) return@withContext null
-            val bmp = run {
+            // A book without a cover shows its first page, as any other reader file does.
+            val bmp = ((if (book) runCatching { bookCover(uri, kind) }.getOrNull() else null) ?: run {
                 // Printed the way the reader shows it, then its first page drawn like a PDF's.
                 val pdf = java.io.File.createTempFile("preview", ".pdf", appContext.cacheDir)
                 try {
-                    readerFileToPdf(appContext, this@Editor, ReaderFile(uri, name), pdf)
+                    readerFileToPdf(appContext, this@Editor, ReaderFile(uri, name), pdf, preview = true)
                         ?.let { com.xnotes.platform.ReaderPdf.renderFirstPage(appContext, android.net.Uri.fromFile(it), pageThumbPx) }
                 } finally {
                     pdf.delete()
                 }
-            }?.asImageBitmap() ?: return@withContext null
+            })?.asImageBitmap() ?: return@withContext null
             synchronized(noteThumbs) { noteThumbs.put(key, bmp) }
             bmp
         }
+    }
+
+    /** A book's cover image, decoded down to about a page thumbnail's height; null when it has none. IO. */
+    private fun bookCover(uri: String, kind: com.xnotes.core.util.ReaderKind?): android.graphics.Bitmap? {
+        val u = android.net.Uri.parse(uri)
+        fun bytes() = appContext.contentResolver.openInputStream(u)?.use { it.readBytes() }
+        val cover = when (kind) {
+            com.xnotes.core.util.ReaderKind.EPUB -> {
+                // A zip is read from a file, so the book is copied out first.
+                val temp = java.io.File.createTempFile("cover", ".epub", appContext.cacheDir)
+                try {
+                    appContext.contentResolver.openInputStream(u)?.use { input -> temp.outputStream().use { input.copyTo(it) } } ?: return null
+                    java.util.zip.ZipFile(temp).use { zip ->
+                        com.xnotes.platform.BookHtml.epubCover(com.xnotes.platform.ReaderHtml.ZipRead { path -> zip.getEntry(path)?.let { e -> zip.getInputStream(e).use { it.readBytes() } } })
+                    }
+                } finally {
+                    temp.delete()
+                }
+            }
+            com.xnotes.core.util.ReaderKind.FB2 -> bytes()?.let { com.xnotes.platform.BookHtml.fb2Cover(it) }
+            com.xnotes.core.util.ReaderKind.MOBI -> bytes()?.let { com.xnotes.platform.BookHtml.mobiCover(it) }
+            else -> null
+        } ?: return null
+        val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        android.graphics.BitmapFactory.decodeByteArray(cover, 0, cover.size, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        val sample = com.xnotes.platform.sampleSize(bounds.outWidth, bounds.outHeight, pageThumbPx, pageThumbPx)
+        return android.graphics.BitmapFactory.decodeByteArray(cover, 0, cover.size, android.graphics.BitmapFactory.Options().apply { inSampleSize = sample })
     }
 
     /** The square side (px) explorer tiles render at — fixed so rotation/column changes don't re-render. */

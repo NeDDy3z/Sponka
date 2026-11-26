@@ -12,6 +12,9 @@ import java.util.Base64
 object BookHtml {
 
     private const val MAX_IMAGE_BYTES = 6 * 1024 * 1024
+
+    /** The EXTH record holding a Mobipocket book's cover, as an offset into its images. */
+    private const val EXTH_COVER = 201
     private const val MAX_IMAGE_TOTAL = 60 * 1024 * 1024
 
     // --- EPUB ---
@@ -59,7 +62,33 @@ object BookHtml {
         return out.toString()
     }
 
+    /** An EPUB's cover: the package's cover-image item, the image its cover meta names, or an image called cover; null when none. */
+    fun epubCover(zip: ReaderHtml.ZipRead): ByteArray? {
+        val container = zip.read("META-INF/container.xml")?.let { String(it) } ?: return null
+        val opfPath = Regex("full-path=\"([^\"]+)\"").find(container)?.groupValues?.get(1) ?: return null
+        val opf = zip.read(opfPath)?.let { String(it) } ?: return null
+        val items = Regex("<(?:\\w+:)?item\\b[^>]*>").findAll(opf).map { it.value }.filter { attrOf(it, "media-type").orEmpty().startsWith("image/") }.toList()
+        val named = Regex("<(?:\\w+:)?meta\\b[^>]*>").findAll(opf).map { it.value }.firstOrNull { attrOf(it, "name") == "cover" }?.let { attrOf(it, "content") }
+        val item = items.firstOrNull { attrOf(it, "properties").orEmpty().split(' ').contains("cover-image") }
+            ?: named?.let { id -> items.firstOrNull { attrOf(it, "id") == id } }
+            ?: items.firstOrNull { (attrOf(it, "id").orEmpty() + attrOf(it, "href").orEmpty()).contains("cover", ignoreCase = true) }
+            ?: return null
+        val href = attrOf(item, "href") ?: return null
+        return zip.read(ReaderHtml.resolvePath(opfPath.substringBeforeLast('/', ""), decode(href)))
+    }
+
     // --- FB2 ---
+
+    /** A FictionBook's cover: the binary its coverpage image points at; null when none. */
+    fun fb2Cover(bytes: ByteArray): ByteArray? {
+        // Tags and base64 are ASCII, so any of FictionBook's encodings reads the same here.
+        val text = String(bytes, Charsets.ISO_8859_1)
+        val cover = Regex("<(?:\\w+:)?coverpage\\b[\\s\\S]*?</(?:\\w+:)?coverpage>").find(text)?.value ?: return null
+        val id = Regex("href\\s*=\\s*[\"']#([^\"']+)").find(cover)?.groupValues?.get(1) ?: return null
+        val binary = Regex("<(?:\\w+:)?binary\\b[^>]*>").findAll(text).firstOrNull { attrOf(it.value, "id") == id } ?: return null
+        val end = text.indexOf('<', binary.range.last + 1).takeIf { it >= 0 } ?: return null
+        return runCatching { Base64.getMimeDecoder().decode(text.substring(binary.range.last + 1, end).trim()) }.getOrNull()
+    }
 
     /** A FictionBook, its title and cover first; its images come from the base64 binaries at the end of the file. */
     fun fb2(bytes: ByteArray, newParser: () -> XmlPullParser, labels: ReaderHtml.Labels = ReaderHtml.Labels()): String {
@@ -183,6 +212,9 @@ object BookHtml {
         return html.ifBlank { "<p class=\"missing\">${ReaderHtml.esc(labels.empty)}</p>" }
     }
 
+    /** A Mobipocket book's cover: the image its EXTH cover offset names; null when none or unreadable. */
+    fun mobiCover(bytes: ByteArray): ByteArray? = runCatching { MobiBook(bytes).cover() }.getOrNull()
+
     /** The PalmDB records of a Mobipocket file and what its first record says about them. */
     internal class MobiBook(private val bytes: ByteArray) {
         private val offsets: IntArray
@@ -223,6 +255,23 @@ object BookHtml {
                 out.write(if (compression == 2) palmDoc(body) else body)
             }
             return String(out.toByteArray(), if (utf8) Charsets.UTF_8 else charset("windows-1252"))
+        }
+
+        /** The image record EXTH entry 201 points at, counted from the first image; null without one. */
+        fun cover(): ByteArray? {
+            val r0 = record(0)
+            if (r0.size < 0x84 || String(r0, 16, 4, Charsets.ISO_8859_1) != "MOBI" || u32(r0, 0x80) and 0x40 == 0) return null
+            val exth = 16 + u32(r0, 20)
+            if (exth + 12 > r0.size || String(r0, exth, 4, Charsets.ISO_8859_1) != "EXTH") return null
+            var at = exth + 12
+            for (n in 0 until u32(r0, exth + 8)) {
+                if (at + 8 > r0.size) break
+                val length = u32(r0, at + 4)
+                if (u32(r0, at) == EXTH_COVER && length >= 12) return image(u32(r0, at + 8) + 1)
+                if (length < 8) break
+                at += length
+            }
+            return null
         }
 
         /** The [index]th image (from 1), as an image tag counts them from the first image record. */
