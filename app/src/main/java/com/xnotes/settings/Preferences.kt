@@ -193,8 +193,10 @@ data class Preferences(
     val readerDark: Boolean? = null,
     /** The page a book is laid out on to be read: "screen" (this device's screen), "a6", "a5", "a4" or "letter". */
     val readerPageFormat: String = "screen",
-    /** Whether read-only files show one page at a time instead of one long scroll. */
-    val readerPaged: Boolean = false,
+    /** How read-only files are shown by default: one of [READER_VIEWS]. */
+    val readerView: String = "scroll",
+    /** The view a read-only file was given instead of [readerView], by its uri. */
+    val readerFileViews: Map<String, String> = emptyMap(),
     /** Whether a book's pages are turned sideways. */
     val readerLandscape: Boolean = false,
     /** A book's text size, in percent. */
@@ -340,7 +342,8 @@ data class Preferences(
         .put("reading_quick_tool", readingQuickTool)
         .apply { readerDark?.let { put("reader_dark", it) } }
         .put("reader_page_format", readerPageFormat)
-        .put("reader_paged", readerPaged)
+        .put("reader_view", readerView)
+        .put("reader_file_views", JSONObject(readerFileViews))
         .put("reader_landscape", readerLandscape)
         .put("reader_text_zoom", readerTextZoom)
         .put("pdf_heading_bookmarks", pdfHeadingBookmarks)
@@ -352,6 +355,9 @@ data class Preferences(
     companion object {
         /** The page formats a book can be laid out on, in the order they are offered. */
         val READER_PAGE_FORMATS = listOf("screen", "a6", "a5", "a4", "letter")
+
+        /** One long scroll, pages down or across, one page at a time, or two side by side. */
+        val READER_VIEWS = listOf("scroll", "vertical", "horizontal", "single", "double")
 
         /** The accent a two-tone setting saved without a seed of its own has always loaded as. */
         val LEGACY_ACCENT = Rgba(0, 230, 118, 255)
@@ -525,7 +531,10 @@ data class Preferences(
                 readingQuickTool = o.optString("reading_quick_tool", "auto").let { if (it in listOf("bookmark", "search", "none")) it else "auto" },
                 readerDark = if (o.has("reader_dark")) o.optBoolean("reader_dark") else null,
                 readerPageFormat = o.optString("reader_page_format", "screen").let { if (it in READER_PAGE_FORMATS) it else "screen" },
-                readerPaged = o.optBoolean("reader_paged", false),
+                readerView = o.optString("reader_view", "scroll").let { if (it in READER_VIEWS) it else "scroll" },
+                readerFileViews = o.optJSONObject("reader_file_views")?.let { f ->
+                    f.keys().asSequence().mapNotNull { k -> f.optString(k).takeIf { it in READER_VIEWS }?.let { k to it } }.toMap()
+                }.orEmpty(),
                 readerLandscape = o.optBoolean("reader_landscape", false),
                 readerTextZoom = o.optInt("reader_text_zoom", 100).coerceIn(25, 300),
                 pdfHeadingBookmarks = o.optBoolean("pdf_heading_bookmarks", true),

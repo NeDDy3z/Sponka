@@ -1658,5 +1658,7 @@
     <string name="find_in_page">页内查找</string>
     <string name="reader_open_failed">无法打开此文件。</string>
     <string name="reader_close">关闭阅读器</string>
-    <string name="reader_paged">一次一页</string>
+    <string name="reader_scroll">滚动</string>
+    <string name="reader_two_pages">双页</string>
+    <string name="default_for_all_files">所有文件的默认设置</string>
 </resources>

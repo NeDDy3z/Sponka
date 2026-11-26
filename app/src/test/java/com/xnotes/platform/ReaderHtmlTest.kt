@@ -281,4 +281,19 @@ class ReaderHtmlTest {
         val slides = "<section class=\"slide\">1</section><section class=\"slide\">2</section><section class=\"slide\">3</section>"
         assertEquals(listOf("<section class=\"slide\">1</section><section class=\"slide\">2</section>", "<section class=\"slide\">3</section>"), ReaderHtml.pageChunks(slides, max = 70))
     }
+
+    @Test
+    fun docxTakesItsPageAndStylesAndRunLooks() {
+        val ns = "xmlns:w=\"w\""
+        val styles = """<w:styles $ns><w:docDefaults><w:rPrDefault><w:rPr><w:sz w:val="22"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="160" w:line="276" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>
+            <w:style w:type="paragraph" w:styleId="Quote"><w:pPr><w:jc w:val="center"/></w:pPr><w:rPr><w:color w:val="404040"/></w:rPr></w:style></w:styles>"""
+        val document = """<w:document $ns><w:body>
+            <w:p><w:pPr><w:pStyle w:val="Quote"/></w:pPr><w:r><w:rPr><w:sz w:val="28"/></w:rPr><w:t>Big</w:t></w:r></w:p>
+            <w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr>
+            </w:body></w:document>"""
+        val html = ReaderHtml.docx(zip("word/styles.xml" to styles, "word/document.xml" to document), parser)
+        assertTrue(html, html.startsWith("<article class=\"doc\" data-page=\"21.001 29.700 2.540 2.540 2.540 2.540\""))
+        assertTrue(html, html.contains("font-size:11.0pt;line-height:1.15;"))
+        assertTrue(html, html.contains("<p style=\"margin-bottom:8.0pt;text-align:center;color:#404040;\"><span style=\"font-size:14.0pt;\">Big</span></p>"))
+    }
 }

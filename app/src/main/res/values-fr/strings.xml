@@ -1687,5 +1687,7 @@
     <string name="find_in_page">Rechercher dans la page</string>
     <string name="reader_open_failed">Impossible d\'ouvrir ce fichier.</string>
     <string name="reader_close">Fermer le lecteur</string>
-    <string name="reader_paged">Une page à la fois</string>
+    <string name="reader_scroll">Défilement</string>
+    <string name="reader_two_pages">Deux pages</string>
+    <string name="default_for_all_files">Par défaut pour tous les fichiers</string>
 </resources>

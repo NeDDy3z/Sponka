@@ -56,14 +56,29 @@ object ReaderHtml {
 
     // --- page shell ---
 
-    /** Wraps [body] in a full page styled with [c]; [wide] drops the reading-width cap (tables, slides); [paged] lays it out one screen-wide column per page. */
-    fun page(body: String, c: Colors, wide: Boolean = false, paged: Boolean = false): String = shell(body, c, wide, if (paged) PAGED_CSS else "")
+    /** Wraps [body] in a full page styled with [c]; [wide] drops the reading-width cap (tables, slides). */
+    fun page(body: String, c: Colors, wide: Boolean = false): String = shell(body, c, wide, "")
+
+    /**
+     * [body] cut into pages by the reader's own script, the only one the page lets run ([nonce]).
+     * [view] is "vertical", "horizontal", "single" or "double"; [paper] is the page size and margins
+     * in cm ("w h top right bottom left") or "screen". A document's own page ([docPage]) wins over it.
+     */
+    fun pagedPage(body: String, c: Colors, view: String, paper: String, nonce: String): String =
+        shell(
+            "<div id=\"src\">$body</div><div id=\"pages\"></div><script nonce=\"$nonce\">$PAGER_JS</script>",
+            c, wide = true, extraCss = pagesCss(c), bodyAttrs = " class=\"$view\" data-paper=\"$paper\"", nonce = nonce, minScale = true,
+        )
 
     /**
      * [body] cut into parts of about [max] characters at chapter, slide or paragraph ends, so the
      * WebView lays out one part at a time. A whole book at once takes it minutes.
      */
     fun pageChunks(body: String, max: Int = 100_000): List<String> {
+        // A document's parts each keep its page and look.
+        Regex("^<article class=\"doc\"[^>]*>").find(body)?.takeIf { body.endsWith("</article>") }?.let { open ->
+            return pageChunks(body.substring(open.range.last + 1, body.length - "</article>".length), max).map { open.value + it + "</article>" }
+        }
         val parts = ArrayList<String>()
         val pending = StringBuilder()
         // Short chapters and slides share a part; a long one is cut after a paragraph.
@@ -92,16 +107,109 @@ object ReaderHtml {
         return out
     }
 
-    // Each column plus its gap is exactly one view wide, so page n starts at n view widths.
-    private val PAGED_CSS = """
-        html{height:100%}
-        body{height:100vh;box-sizing:border-box;max-width:none;margin:0;padding:76px 22px 84px;column-width:calc(100vw - 44px);column-gap:44px;column-fill:auto}
-        img{max-height:calc(100vh - 160px);object-fit:contain}
-        pre{white-space:pre-wrap;overflow:visible}
-        table{display:table;overflow:visible}
-        tr,img,pre,blockquote,.slide,.callout,.props{break-inside:avoid}
-        h1,h2,h3,h4,h5,h6{break-after:avoid}
-        section.chapter+section.chapter{break-before:column}
+    private fun pagesCss(c: Colors) = """
+        body{max-width:none;margin:0;padding:0;overflow-wrap:break-word;background:${c.surface}}
+        #src{display:none}
+        #pages{display:flex;flex-direction:column;align-items:center;gap:16px;width:max-content;min-width:100%}
+        .page{box-sizing:border-box;flex:none;overflow:hidden;background:${c.background};box-shadow:0 1px 5px rgba(0,0,0,.4)}
+        .page:has(> .doc){background:#fff}
+        .page > .content{height:100%;overflow:hidden;width:auto!important;max-width:none!important;padding:0!important;margin:0!important;box-shadow:none!important}
+        .page > .content > :first-child{margin-top:0}
+        .page img{max-width:100%;object-fit:contain}
+        .page pre{white-space:pre-wrap;overflow:visible}
+        .page table{display:table;overflow:visible}
+        body.horizontal #pages,body.single #pages,body.double #pages{flex-direction:row;align-items:center;min-width:0}
+        body.single #pages,body.double #pages{gap:0}
+        .spread{display:flex;flex:none;align-items:center;justify-content:center;gap:12px;box-sizing:border-box}
+        body.horizontal #pages{box-sizing:border-box}
+    """.trimIndent()
+
+    // Moves the content into fixed-size pages, splitting lists, tables and long paragraphs between
+    // them, then fits the pages to the screen. It tells the app the page count and the page in view
+    // through the title ("count|page"), and the app turns pages with R.go(n).
+    private val PAGER_JS = """
+        (function(){
+        var b=document.body,src=document.getElementById('src'),out=document.getElementById('pages'),view=b.className,cm=96/2.54;
+        var doc=src.querySelector('article.doc'),spec=(doc&&doc.getAttribute('data-page'))||b.getAttribute('data-paper')||'screen',W,H,M;
+        var de=document.documentElement;
+        if(spec==='screen'){W=de.clientWidth;H=de.clientHeight;M=[76,22,84,22];}
+        else{var v=spec.split(' ').map(Number);W=v[0]*cm;H=v[1]*cm;M=v.slice(2).map(function(x){return x*cm;});}
+        var per=view==='double'?2:1,c,stack=[],placed=0,pages=[];
+        function newPage(){
+          var p=document.createElement('div');p.className='page';
+          p.style.cssText='width:'+W+'px;height:'+H+'px;padding:'+M.join('px ')+'px';
+          c=doc?doc.cloneNode(false):document.createElement('div');c.removeAttribute('data-page');c.classList.add('content');
+          p.appendChild(c);out.appendChild(p);pages.push(p);placed=0;
+          var parent=c;for(var i=0;i<stack.length;i++){var k=stack[i].o.cloneNode(false);k.removeAttribute('id');parent.appendChild(k);stack[i].k=k;parent=k;}
+        }
+        function target(){return stack.length?stack[stack.length-1].k:c;}
+        function over(){return c.scrollHeight>c.clientHeight+1;}
+        var BOX=/^(SECTION|ARTICLE|DIV|UL|OL|TABLE|TBODY|THEAD|BLOCKQUOTE)$/,TEXT=/^(P|LI|H[1-6]|PRE|BLOCKQUOTE|DD|DT|TD)$/;
+        function flow(n){
+          var t=target();t.appendChild(n);
+          if(!over()){if(n.nodeType===1||n.textContent.trim())placed++;return;}
+          t.removeChild(n);
+          if(n.nodeType===1&&BOX.test(n.tagName)&&n.children.length>1){
+            var k=n.cloneNode(false);t.appendChild(k);stack.push({o:n,k:k});
+            Array.prototype.slice.call(n.childNodes).forEach(flow);stack.pop();return;
+          }
+          if(placed>0){newPage();flow(n);return;}
+          if(n.nodeType===1&&TEXT.test(n.tagName)&&cut(n))return;
+          target().appendChild(n);placed++;
+        }
+        // Splits a block too tall for an empty page after the last word that still fits.
+        function cut(el){
+          target().appendChild(el);
+          var limit=c.getBoundingClientRect().top+c.clientHeight,w=document.createTreeWalker(el,NodeFilter.SHOW_TEXT),pts=[],n;
+          while((n=w.nextNode()))for(var i=0;i<n.data.length;i++)if(n.data.charCodeAt(i)===32)pts.push([n,i+1]);
+          var r=document.createRange(),lo=0,hi=pts.length-1,best=-1;
+          while(lo<=hi){var m=(lo+hi)>>1;r.setStart(el,0);r.setEnd(pts[m][0],pts[m][1]);var rs=r.getClientRects(),bot=rs.length?rs[rs.length-1].bottom:0;if(bot<=limit){best=m;lo=m+1;}else hi=m-1;}
+          if(best<0){el.parentNode.removeChild(el);return false;}
+          r.setStart(pts[best][0],pts[best][1]);r.setEndAfter(el.lastChild);
+          var k=el.cloneNode(false);k.removeAttribute('id');k.appendChild(r.extractContents());k.style.textIndent='0';
+          placed++;newPage();flow(k);return true;
+        }
+        // The layout viewport, which a pinch or wide content never changes.
+        var z=1,vw=de.clientWidth,vh=de.clientHeight;
+        function fit(){
+          vw=de.clientWidth;vh=de.clientHeight;
+          if(view==='vertical')z=Math.min(1,(vw-24)/W);
+          else if(view==='horizontal')z=Math.min(1,(vh-160)/H);
+          else z=Math.min((vw-24-(per-1)*12)/(per*W),(vh-160)/H);
+          out.style.zoom=z;
+          if(view==='vertical')out.style.padding=(76/z)+'px 0 '+(84/z)+'px';
+          else if(view==='horizontal'){out.style.height=(vh/z)+'px';out.style.padding=(76/z)+'px '+(16/z)+'px '+(84/z)+'px';}
+          else Array.prototype.forEach.call(out.children,function(s){s.style.width=(vw/z)+'px';s.style.height=(vh/z)+'px';s.style.padding=(76/z)+'px 0 '+(84/z)+'px';});
+        }
+        function at(){
+          if(view==='single'||view==='double')return Math.min(pages.length-1,Math.round(scrollX/vw)*per);
+          var a=pages[0].getBoundingClientRect(),s=pages.length>1?(view==='vertical'?pages[1].getBoundingClientRect().top-a.top:pages[1].getBoundingClientRect().left-a.left):1;
+          var i=view==='vertical'?Math.floor((vh/2-a.top)/s):Math.floor((vw/2-a.left)/s);
+          return Math.max(0,Math.min(pages.length-1,i));
+        }
+        function report(){var t=pages.length+'|'+at();if(document.title!==t)document.title=t;}
+        function go(i){
+          i=Math.max(0,Math.min(pages.length-1,i));
+          if(view==='single'||view==='double')scrollTo(Math.floor(i/per)*vw,0);
+          else{var r=pages[i].getBoundingClientRect();if(view==='vertical')scrollTo(scrollX,r.top+scrollY-76);else scrollTo(r.left+scrollX-16,scrollY);}
+          report();
+        }
+        function run(){
+          Array.prototype.slice.call((doc||src).childNodes).forEach(function(n){if(!c)newPage();flow(n);});
+          if(!c)newPage();
+          src.parentNode.removeChild(src);
+          if(view==='single'||view==='double'){
+            var all=pages.slice();out.innerHTML='';
+            for(var i=0;i<all.length;i+=per){var sp=document.createElement('div');sp.className='spread';for(var j=i;j<Math.min(i+per,all.length);j++)sp.appendChild(all[j]);out.appendChild(sp);}
+          }
+          Array.prototype.forEach.call(document.querySelectorAll('.page img'),function(im){im.style.maxHeight=(H-M[0]-M[2])+'px';});
+          fit();report();
+          addEventListener('scroll',report,{passive:true});
+          addEventListener('resize',function(){fit();report();});
+        }
+        window.R={go:go};
+        if(document.readyState==='complete')run();else addEventListener('load',run);
+        })();
     """.trimIndent()
 
     /** [page] laid out for print: backgrounds kept, nothing clipped by scroll boxes, blocks not split across pages. */
@@ -118,7 +226,7 @@ object ReaderHtml {
         section.chapter+section.chapter{break-before:page}
     """.trimIndent())
 
-    private fun shell(body: String, c: Colors, wide: Boolean, extraCss: String): String {
+    private fun shell(body: String, c: Colors, wide: Boolean, extraCss: String, bodyAttrs: String = "", nonce: String? = null, minScale: Boolean = false): String {
         val css = """
             html{-webkit-text-size-adjust:100%}
             body{background:${c.background};color:${c.text};font-family:sans-serif;font-size:17px;line-height:1.6;margin:0 auto;padding:76px 18px 84px;${if (wide) "" else "max-width:820px;"}overflow-wrap:break-word;word-wrap:break-word}
@@ -173,9 +281,19 @@ object ReaderHtml {
             .x-v{color:${c.muted}}
             .x-c{color:${c.muted};font-style:italic}
             .poem{margin:.8em 0 .8em 1.5em}
+            .doc{display:block;background:#fff;color:#000;font-size:11pt;line-height:1.15;margin:0 auto;box-sizing:border-box;max-width:100%;box-shadow:0 1px 5px rgba(0,0,0,.4)}
+            .doc a{color:#1155cc}
+            .doc p,.doc h1,.doc h2,.doc h3,.doc h4,.doc h5,.doc h6{margin:0}
+            .doc table{display:table}
+            .doc ul,.doc ol{margin:0;padding-left:1.6em}
+            .doc li > p{margin-left:0!important;text-indent:0!important}
+            .doc th,.doc td{border-color:#999}
         """.trimIndent()
-        return "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">" +
-            "<style>$css\n$extraCss</style></head><body>$body</body></html>"
+        // Only the reader's own script may run; anything a file brings stays inert.
+        val policy = "default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src " + (nonce?.let { "'nonce-$it'" } ?: "'none'")
+        return "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1${if (minScale) ", minimum-scale=1" else ""}\">" +
+            "<meta http-equiv=\"Content-Security-Policy\" content=\"$policy\">" +
+            "<style>$css\n$extraCss</style></head><body$bodyAttrs>$body</body></html>"
     }
 
     // --- Markdown ---
@@ -526,6 +644,9 @@ object ReaderHtml {
         val document = zip.read("word/document.xml") ?: throw IllegalArgumentException("not a Word document")
         val rels = rels(newParser, zip.read("word/_rels/document.xml.rels"), "word")
         val headings = docxHeadings(newParser, zip.read("word/styles.xml"))
+        val (defaults, styleCss) = docxStyles(newParser, zip.read("word/styles.xml"))
+        var pageSize = 21.0 to 29.7
+        var margins = listOf(2.54, 2.54, 2.54, 2.54)
         val ordered = docxNumbering(newParser, zip.read("word/numbering.xml"))
         val images = Images(zip, labels)
 
@@ -533,7 +654,7 @@ object ReaderHtml {
         val lists = ArrayList<Boolean>() // open list levels, true = ordered
         fun closeLists() { while (lists.isNotEmpty()) out.append(if (lists.removeAt(lists.lastIndex)) "</ol>" else "</ul>") }
 
-        class Para { val html = StringBuilder(); var style: String? = null; var numId: String? = null; var ilvl = 0; var align: String? = null }
+        class Para { val html = StringBuilder(); var style: String? = null; var numId: String? = null; var ilvl = 0; var align: String? = null; val css = LinkedHashMap<String, String>() }
         // A stack, because a text box inside a paragraph holds paragraphs of its own.
         val paras = ArrayList<Para>()
         var inPPr = false
@@ -541,6 +662,7 @@ object ReaderHtml {
         var inText = false
         var skipDepth = 0 // inside mc:Fallback, which repeats mc:Choice
         var bold = false; var italic = false; var underline = false; var strike = false; var vert: String? = null
+        val runCss = LinkedHashMap<String, String>()
         val linkOpen = ArrayList<Boolean>()
 
         walk(newParser, document, onStart = { p, name ->
@@ -556,7 +678,11 @@ object ReaderHtml {
                 "numId" -> if (inPPr) paras.lastOrNull()?.numId = p.attr("val")
                 "ilvl" -> if (inPPr) paras.lastOrNull()?.ilvl = p.attr("val")?.toIntOrNull() ?: 0
                 "jc" -> if (inPPr) paras.lastOrNull()?.align = p.attr("val")
-                "r" -> { bold = false; italic = false; underline = false; strike = false; vert = null }
+                "spacing", "ind" -> if (inPPr) paras.lastOrNull()?.let { docxCss(p, name, it.css) }
+                "sz", "color", "rFonts", "highlight", "shd" -> if (inRPr) docxCss(p, name, runCss)
+                "pgSz" -> { val w = twipsCm(p.attr("w")); val h = twipsCm(p.attr("h")); if (w != null && h != null && w > 0 && h > 0) pageSize = w to h }
+                "pgMar" -> margins = listOf("top", "right", "bottom", "left").mapIndexed { i, k -> twipsCm(p.attr(k))?.coerceAtLeast(0.0) ?: margins[i] }
+                "r" -> { bold = false; italic = false; underline = false; strike = false; vert = null; runCss.clear() }
                 "rPr" -> inRPr = !inPPr
                 "b" -> if (inRPr) bold = !isOff(p.attr("val"))
                 "i" -> if (inRPr) italic = !isOff(p.attr("val"))
@@ -575,7 +701,12 @@ object ReaderHtml {
                 "blip" -> p.attr("embed")?.let { rels[it] }?.let { paras.lastOrNull()?.html?.append(images.tag(it.target)) }
                 "imagedata" -> p.relId()?.let { rels[it] }?.let { paras.lastOrNull()?.html?.append(images.tag(it.target)) }
             }
-        }, onText = { if (inText && skipDepth == 0) paras.lastOrNull()?.html?.append(styled(it, bold, italic, underline, strike, vert)) }, onEnd = { name ->
+        }, onText = {
+            if (inText && skipDepth == 0) paras.lastOrNull()?.html?.let { h ->
+                val text = styled(it, bold, italic, underline, strike, vert)
+                if (runCss.isEmpty() || text.isEmpty()) h.append(text) else h.append("<span style=\"").append(cssOf(runCss)).append("\">").append(text).append("</span>")
+            }
+        }, onEnd = { name ->
             if (skipDepth > 0) { skipDepth--; return@walk }
             when (name) {
                 "t" -> inText = false
@@ -592,8 +723,16 @@ object ReaderHtml {
                     val ilvl = para.ilvl
                     val level = para.style?.let { headings[it] ?: headingFromId(it) }
                     val listId = para.numId?.takeIf { it != "0" }
+                    // The paragraph's style, then its own settings over it.
+                    val look = LinkedHashMap<String, String>().apply {
+                        // Spacing is not inherited, so the base paragraph spacing goes on each paragraph.
+                        defaults.filterKeys { it.startsWith("margin") || it == "text-indent" }.let(::putAll)
+                        para.style?.let { styleCss[it] }?.let(::putAll)
+                        putAll(para.css)
+                    }
+                    val styleAttr = if (look.isEmpty()) "" else " style=\"${cssOf(look)}\""
                     when {
-                        level != null && level > 0 -> { closeLists(); out.append("<h$level>$content</h$level>") }
+                        level != null && level > 0 -> { closeLists(); out.append("<h$level$styleAttr>$content</h$level>") }
                         level == 0 -> { closeLists(); out.append("<p class=\"subtitle\">$content</p>") }
                         listId != null -> {
                             val isOrdered = ordered[listId]?.get(ilvl) ?: false
@@ -606,15 +745,97 @@ object ReaderHtml {
                         content.isBlank() -> { closeLists(); out.append("<p class=\"gap\"></p>") }
                         else -> {
                             closeLists()
-                            val css = when (align) { "center" -> "center"; "right", "end" -> "right"; "both", "distribute" -> "justify"; else -> null }
-                            out.append(if (css != null) "<p style=\"text-align:$css\">" else "<p>").append(content).append("</p>")
+                            when (align) { "center" -> "center"; "right", "end" -> "right"; "both", "distribute" -> "justify"; "left", "start" -> "left"; else -> null }?.let { look["text-align"] = it }
+                            out.append(if (look.isEmpty()) "<p>" else "<p style=\"${cssOf(look)}\">").append(content).append("</p>")
                         }
                     }
                 }
             }
         })
         closeLists()
-        return out.toString().ifBlank { "<p class=\"missing\">${esc(labels.empty)}</p>" }
+        if (out.isBlank()) return "<p class=\"missing\">${esc(labels.empty)}</p>"
+        return docPage(pageSize, margins, cssOf(defaults.filterKeys { !it.startsWith("margin") && it != "text-indent" }), out.toString())
+    }
+
+    /** Twentieths of a point, as Word measures, in centimetres. */
+    private fun twipsCm(v: String?): Double? = v?.toDoubleOrNull()?.let { it / 1440 * 2.54 }
+
+    private fun twipsPt(v: String?): String? = v?.toDoubleOrNull()?.let { String.format(java.util.Locale.ROOT, "%.1fpt", it / 20) }
+
+    internal fun cssOf(css: Map<String, String>) = css.entries.joinToString("") { "${it.key}:${it.value};" }
+
+    /**
+     * A document laid out on pages: its page size and margins in cm for the reader's pages, and
+     * its base look ([css]). It keeps its own colours, like paper, whatever the reader's theme.
+     */
+    internal fun docPage(size: Pair<Double, Double>, margins: List<Double>, css: String, body: String): String {
+        fun cm(v: Double) = String.format(java.util.Locale.ROOT, "%.3f", v)
+        val page = (listOf(size.first, size.second) + margins).joinToString(" ") { cm(it) }
+        // Scrolling, it is one long sheet as wide as its page, its margins narrower on a small screen.
+        val sheet = "width:${cm(size.first)}cm;padding:" + margins.joinToString(" ") { "min(${cm(it)}cm,6vw)" } + ";"
+        return "<article class=\"doc\" data-page=\"$page\" style=\"$sheet$css\">$body</article>"
+    }
+
+    /** One Word paragraph or run setting as CSS, into [css]. */
+    private fun docxCss(p: XmlPullParser, name: String, css: MutableMap<String, String>) {
+        when (name) {
+            "jc" -> when (p.attr("val")) { "center" -> "center"; "right", "end" -> "right"; "both", "distribute" -> "justify"; "left", "start" -> "left"; else -> null }?.let { css["text-align"] = it }
+            "spacing" -> {
+                twipsPt(p.attr("before"))?.let { css["margin-top"] = it }
+                twipsPt(p.attr("after"))?.let { css["margin-bottom"] = it }
+                p.attr("line")?.toDoubleOrNull()?.let { line ->
+                    css["line-height"] = if ((p.attr("lineRule") ?: "auto") == "auto") String.format(java.util.Locale.ROOT, "%.2f", line / 240) else twipsPt(line.toString())!!
+                }
+            }
+            "ind" -> {
+                (twipsPt(p.attr("left")) ?: twipsPt(p.attr("start")))?.let { css["margin-left"] = it }
+                (twipsPt(p.attr("right")) ?: twipsPt(p.attr("end")))?.let { css["margin-right"] = it }
+                twipsPt(p.attr("firstLine"))?.let { css["text-indent"] = it }
+                twipsPt(p.attr("hanging"))?.let { css["text-indent"] = "-$it" }
+            }
+            "sz" -> p.attr("val")?.toDoubleOrNull()?.let { css["font-size"] = String.format(java.util.Locale.ROOT, "%.1fpt", it / 2) }
+            "color" -> p.attr("val")?.takeIf { it.length == 6 && it != "auto" }?.let { css["color"] = "#$it" }
+            "rFonts" -> p.attr("ascii")?.let { css["font-family"] = "'${it.replace("'", "")}',sans-serif" }
+            "highlight" -> p.attr("val")?.takeIf { it != "none" }?.let { css["background"] = it.lowercase() }
+            "shd" -> p.attr("fill")?.takeIf { it.length == 6 && it != "auto" }?.let { css["background"] = "#$it" }
+            "b" -> css["font-weight"] = if (isOff(p.attr("val"))) "normal" else "bold"
+            "i" -> css["font-style"] = if (isOff(p.attr("val"))) "normal" else "italic"
+        }
+    }
+
+    /** The document's default look, and each style's own look over the styles it is based on. */
+    private fun docxStyles(newParser: () -> XmlPullParser, bytes: ByteArray?): Pair<Map<String, String>, Map<String, Map<String, String>>> {
+        val defaults = LinkedHashMap<String, String>()
+        if (bytes == null) return defaults to emptyMap()
+        val own = HashMap<String, LinkedHashMap<String, String>>()
+        val basedOn = HashMap<String, String>()
+        var id: String? = null
+        var normal: String? = null
+        var inDefaults = false
+        walk(newParser, bytes, onStart = { p, name ->
+            when (name) {
+                "docDefaults" -> inDefaults = true
+                "style" -> {
+                    id = p.attr("styleId")?.takeIf { p.attr("type") == "paragraph" }
+                    if (id != null && (p.attr("default") == "1" || p.attr("default") == "true")) normal = id
+                }
+                "basedOn" -> id?.let { s -> p.attr("val")?.let { basedOn[s] = it } }
+                "jc", "spacing", "ind", "sz", "color", "rFonts", "b", "i" -> when {
+                    inDefaults -> docxCss(p, name, defaults)
+                    id != null -> docxCss(p, name, own.getOrPut(id!!) { LinkedHashMap() })
+                }
+            }
+        }, onEnd = { name ->
+            if (name == "docDefaults") inDefaults = false
+            if (name == "style") id = null
+        })
+        fun resolve(s: String, depth: Int = 0): Map<String, String> {
+            val parent = basedOn[s]?.takeIf { depth < 10 }?.let { resolve(it, depth + 1) }.orEmpty()
+            return LinkedHashMap(parent).apply { own[s]?.let(::putAll) }
+        }
+        // Paragraphs without a style take the default one, so it is the document's base look.
+        normal?.let { defaults.putAll(resolve(it)) }
+        return defaults to own.keys.associateWith { resolve(it) }
     }
 
     private fun headingFromId(id: String): Int? {
@@ -706,7 +927,7 @@ object ReaderHtml {
     }
 
     /** A length such as 2.5cm, 12pt or 1in, in centimetres. */
-    private fun odfCm(v: String?): Double? {
+    internal fun odfCm(v: String?): Double? {
         val m = Regex("(-?[0-9.]+)([a-z]*)").matchEntire(v?.trim() ?: return null) ?: return null
         val n = m.groupValues[1].toDoubleOrNull() ?: return null
         return when (m.groupValues[2]) { "cm", "" -> n; "mm" -> n / 10; "in" -> n * 2.54; "pt" -> n * 2.54 / 72; "pc" -> n * 2.54 / 6; "px" -> n * 2.54 / 96; else -> null }

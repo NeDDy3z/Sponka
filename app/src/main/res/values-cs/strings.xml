@@ -1736,5 +1736,7 @@
     <string name="find_in_page">Najít na stránce</string>
     <string name="reader_open_failed">Tento soubor se nepodařilo otevřít.</string>
     <string name="reader_close">Zavřít čtečku</string>
-    <string name="reader_paged">Jedna stránka najednou</string>
+    <string name="reader_scroll">Posouvání</string>
+    <string name="reader_two_pages">Dvě stránky</string>
+    <string name="default_for_all_files">Výchozí pro všechny soubory</string>
 </resources>

@@ -1689,5 +1689,7 @@
     <string name="find_in_page">Find in page</string>
     <string name="reader_open_failed">Couldn\'t open this file.</string>
     <string name="reader_close">Close reader</string>
-    <string name="reader_paged">One page at a time</string>
+    <string name="reader_scroll">Scroll</string>
+    <string name="reader_two_pages">Two pages</string>
+    <string name="default_for_all_files">Default for all files</string>
 </resources>

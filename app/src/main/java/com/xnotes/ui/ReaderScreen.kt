@@ -12,10 +12,8 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -34,7 +32,6 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -74,8 +71,10 @@ internal fun ReaderScreen(
     val dark = prefs.readerDark ?: appPalette.isDark
     // The app theme itself, or its other light/dark variant when the reader is switched.
     val palette = remember(appPalette, dark) { if (dark == appPalette.isDark) appPalette else editor.readerPalette(dark) }
-    // Slides are pages already and do not break into columns, so a deck always scrolls.
-    val paged = prefs.readerPaged && ReaderKind.ofName(file.name) !in SLIDE_KINDS
+    val view = readerViewOf(prefs, file)
+    val paged = view != "scroll"
+    // The page script is the only one the page lets run, by this key.
+    val nonce = remember(file.uri) { java.util.UUID.randomUUID().toString().replace("-", "") }
     BackHandler(onBack = onClose)
 
     val content by produceState<ReaderContent?>(null, file.uri) {
@@ -112,9 +111,9 @@ internal fun ReaderScreen(
         val target = t.toInt().coerceAtMost(chunks.lastIndex)
         if (target == chunk) webView?.showFraction(t - target) else { enterAt = t - target; chunk = target }
     }
-    var shownPaged by remember { mutableStateOf(paged) }
-    if (shownPaged != paged && content is ReaderContent.Html) {
-        shownPaged = paged
+    var shownView by remember { mutableStateOf(view) }
+    if (shownView != view && content is ReaderContent.Html) {
+        shownView = view
         enterAt = (bookAt * chunks.size - chunk).coerceIn(0f, 1f)
     }
     Column(Modifier.fillMaxSize().background(palette.paper.toComposeColor())) {
@@ -131,16 +130,15 @@ internal fun ReaderScreen(
                     ReaderContent.Failed -> ReaderMessage(stringResource(R.string.reader_open_failed), palette.text)
                     is ReaderContent.Html -> {
                         val part = chunk.coerceIn(0, chunks.lastIndex)
-                        val html = remember(c, palette, paged, part) { ReaderHtml.page(chunks[part], readerColors(palette), c.wide, paged) }
-                        // A paper format shows its page whole in the middle, the app's background round it.
-                        val aspect = if (paged) paperAspect(prefs) else null
-                        Box(
-                            Modifier.fillMaxSize().background((if (aspect != null) appPalette.bg else palette.paper).toComposeColor()),
-                            contentAlignment = Alignment.Center,
-                        ) {
+                        val paper = readerPaper(prefs)
+                        val html = remember(c, palette, view, part, paper) {
+                            if (paged) ReaderHtml.pagedPage(chunks[part], readerColors(palette), view, paper, nonce)
+                            else ReaderHtml.page(chunks[part], readerColors(palette), c.wide)
+                        }
+                        Box(Modifier.fillMaxSize()) {
                             ReaderWebView(
-                                html, palette.paper, prefs.readerTextZoom, paged, enterAt,
-                                modifier = if (aspect == null) Modifier.fillMaxSize() else Modifier.padding(16.dp).aspectRatio(aspect).shadow(4.dp).border(1.dp, appPalette.border.toComposeColor()),
+                                html, palette.paper, prefs.readerTextZoom, view, enterAt,
+                                modifier = Modifier.fillMaxSize(),
                                 onCreated = { wv ->
                                     webView = wv
                                     wv.setFindListener { active, n, _ -> webHits = (if (n == 0) 0 else active + 1) to n }
@@ -170,7 +168,7 @@ internal fun ReaderScreen(
                 onClose = onClose,
                 actions = {
                     ToolbarIcon(XnotesIcons.search, stringResource(R.string.find_in_page), active = finding) { finding = !finding }
-                    FileReaderSettingsButton(editor, fullscreen, onToggleFullscreen) { panelOpen = it }
+                    FileReaderSettingsButton(editor, file, fullscreen, onToggleFullscreen) { panelOpen = it }
                 },
             ) {
                 val scrub = Modifier.weight(1f).padding(horizontal = SCRUBBER_ROOM)
@@ -204,18 +202,27 @@ internal fun ReaderScreen(
 
 private const val PERMILLE = 1000
 
-private val SLIDE_KINDS = setOf(ReaderKind.PPTX, ReaderKind.PPT, ReaderKind.ODP)
+/** Slide decks: their slides are pages already, so they only scroll. */
+internal val READER_SLIDE_KINDS = setOf(ReaderKind.PPTX, ReaderKind.PPT, ReaderKind.ODP)
 
-/** Width over height of the paper format a book is paged on; null for the screen's own shape. */
-private fun paperAspect(p: Preferences): Float? {
-    val (w, h) = when (p.readerPageFormat) {
-        "a6" -> 105f to 148f
-        "a5" -> 148f to 210f
-        "a4" -> 210f to 297f
-        "letter" -> 216f to 279f
-        else -> return null
+/** Files that bring their own page size and margins. */
+internal val READER_DOC_KINDS = setOf(ReaderKind.DOCX, ReaderKind.ODT)
+
+/** How [file] is shown: its own choice, else the default for all files. */
+internal fun readerViewOf(p: Preferences, file: ReaderFile): String =
+    if (ReaderKind.ofName(file.name) in READER_SLIDE_KINDS) "scroll" else p.readerFileViews[file.uri] ?: p.readerView
+
+/** The paper a flowing file is paged on, in cm as "width height top right bottom left", or "screen". */
+private fun readerPaper(p: Preferences): String {
+    val (w, h, m) = when (p.readerPageFormat) {
+        "a6" -> Triple(10.5, 14.8, 1.2)
+        "a5" -> Triple(14.8, 21.0, 1.6)
+        "a4" -> Triple(21.0, 29.7, 2.2)
+        "letter" -> Triple(21.6, 27.9, 2.2)
+        else -> return "screen"
     }
-    return if (p.readerLandscape) h / w else w / h
+    val (pw, ph) = if (p.readerLandscape) h to w else w to h
+    return "$pw $ph $m $m $m $m"
 }
 
 @Composable
@@ -225,9 +232,13 @@ private fun ReaderMessage(message: String, text: Rgba) {
     }
 }
 
-/** A WebView that tells how far its content reaches, which paging and the scrubber are worked out from. */
+/**
+ * A WebView that tells where the reader is: scrolling, how far down it is; in pages, the page in
+ * view of how many, which the page script reports through the page title.
+ */
 internal class ReaderWebView(context: Context) : WebView(context) {
-    var paged = false
+    /** "scroll", or one of the page views. */
+    var view = "scroll"
     var onPosition: (Int, Int) -> Unit = { _, _ -> }
 
     /** Hears a page turn run past the first or the last page, -1 or 1. */
@@ -236,18 +247,23 @@ internal class ReaderWebView(context: Context) : WebView(context) {
     /** Where to put the reader once a reload lands, as a fraction of the way through; null to leave it. */
     var restoreAt: Float? = null
 
-    private val rangeX get() = computeHorizontalScrollRange()
+    private var pages = 0
+    private var pageAt = 0
+
+    val paged get() = view != "scroll"
+
+    /** Whether pages only turn whole, by a tap or a swipe, rather than scroll. */
+    val turnsWhole get() = view == "single" || view == "double"
+
     private val rangeY get() = computeVerticalScrollRange()
 
-    fun pageCount(): Int = if (width == 0) 1 else ((rangeX + width / 2) / width).coerceAtLeast(1)
+    fun pageCount(): Int = pages.coerceAtLeast(1)
 
-    fun showPage(page: Int) = scrollTo(page.coerceIn(0, pageCount() - 1) * width, 0)
+    fun showPage(page: Int) = evaluateJavascript("window.R&&R.go(${page.coerceIn(0, pageCount() - 1)})", null)
 
-    fun pageNow(): Int = (scrollX.toFloat() / width.coerceAtLeast(1)).roundToInt()
-
-    /** Turn [by] pages, on into the next or the previous part past either end. */
+    /** Turn [by] pages (by spreads, two side by side), on into the next or the previous part past either end. */
     fun turn(by: Int) {
-        val page = pageNow() + by
+        val page = pageAt + by * (if (view == "double") 2 else 1)
         if (page < 0 || page >= pageCount()) onEdge(by) else showPage(page)
     }
 
@@ -255,32 +271,42 @@ internal class ReaderWebView(context: Context) : WebView(context) {
 
     /** How far through the reader is, from 0 to 1. */
     fun fraction(): Float =
-        if (paged) pageNow().toFloat() / pageCount()
+        if (paged) pageAt.toFloat() / pageCount()
         else (rangeY - height).let { max -> if (max <= 0) 0f else scrollY.toFloat() / max }
 
     fun showFraction(f: Float) {
         if (paged) showPage((pageCount() * f).toInt()) else showPermille((f * PERMILLE).roundToInt())
     }
 
+    /** A new page is loading: its pages are not counted yet. */
+    fun reset() { pages = 0; pageAt = 0 }
+
+    /** The page script's "count|page" report. */
+    fun pagesReported(title: String?) {
+        val (n, i) = title?.split('|')?.takeIf { it.size == 2 }?.map { it.toIntOrNull() ?: return } ?: return
+        val first = pages == 0
+        pages = n.coerceAtLeast(1); pageAt = i.coerceIn(0, pages - 1)
+        onPosition(pageAt, pages)
+        if (first) restoreAt?.let { restoreAt = null; showFraction(it) }
+    }
+
     override fun onDraw(canvas: android.graphics.Canvas) {
         super.onDraw(canvas)
         // Each frame may follow a scroll or a relayout; the callback only changes state when the numbers do.
-        if (paged) {
-            val n = pageCount()
-            onPosition(pageNow().coerceIn(0, n - 1), n)
-        } else {
+        if (!paged) {
             val max = rangeY - height
             onPosition(if (max <= 0) 0 else (scrollY.toLong() * PERMILLE / max).toInt().coerceIn(0, PERMILLE), PERMILLE)
         }
     }
 }
 
+@SuppressLint("SetJavaScriptEnabled")
 @Composable
 private fun ReaderWebView(
     html: String,
     background: Rgba,
     textZoom: Int,
-    pagedMode: Boolean,
+    view: String,
     enterAt: Float?,
     modifier: Modifier,
     onCreated: (ReaderWebView) -> Unit,
@@ -302,8 +328,9 @@ private fun ReaderWebView(
             ReaderWebView(ctx).apply {
                 // Wrapping its content, a WebView measures 100vh by the content, which breaks the paged columns.
                 layoutParams = android.view.ViewGroup.LayoutParams(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.MATCH_PARENT)
-                // Scripts, file access and the network stay off: the page is only the file's own content.
-                settings.javaScriptEnabled = false
+                // File access and the network stay off. Scripts run only for the page script: the page's
+                // policy blocks any script that has not its key, so whatever a file brings stays inert.
+                settings.javaScriptEnabled = true
                 settings.allowFileAccess = false
                 settings.allowContentAccess = false
                 settings.blockNetworkLoads = true
@@ -311,6 +338,9 @@ private fun ReaderWebView(
                 settings.displayZoomControls = false
                 this.onPosition = { a, n -> onPositionNow.value(a, n) }
                 this.onEdge = { onEdgeNow.value(it) }
+                webChromeClient = object : android.webkit.WebChromeClient() {
+                    override fun onReceivedTitle(view: WebView, title: String?) = pagesReported(title)
+                }
                 webViewClient = object : WebViewClient() {
                     override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                         val url = request.url.toString()
@@ -321,6 +351,8 @@ private fun ReaderWebView(
 
                     override fun onPageFinished(view: WebView, url: String?) {
                         // A colour or layout change reloads the same text, so the old fraction still points at about the same place.
+                        // Pages restore once the page script has counted them.
+                        if (paged) return
                         val f = restoreAt ?: return
                         restoreAt = null
                         view.postDelayed({ showFraction(f) }, 80)
@@ -338,8 +370,8 @@ private fun ReaderWebView(
                         // Paged, a tap near either side turns the page; anywhere else shows or hides the islands.
                         val third = width / 4f
                         when {
-                            paged && e.x < third -> turn(-1)
-                            paged && e.x > width - third -> turn(1)
+                            turnsWhole && e.x < third -> turn(-1)
+                            turnsWhole && e.x > width - third -> turn(1)
                             else -> onTapNow.value()
                         }
                         return false
@@ -351,12 +383,13 @@ private fun ReaderWebView(
                     when (e.actionMasked) {
                         MotionEvent.ACTION_DOWN -> {
                             downX = e.x; downY = e.y; swiping = false; moved = false
-                            atTop = !canScrollVertically(-1); atBottom = !canScrollVertically(1)
+                            atTop = if (view == "horizontal") !canScrollHorizontally(-1) else !canScrollVertically(-1)
+                            atBottom = if (view == "horizontal") !canScrollHorizontally(1) else !canScrollVertically(1)
                         }
                         MotionEvent.ACTION_MOVE -> {
                             val dx = e.x - downX
                             if (!moved && (abs(dx) > slop || abs(e.y - downY) > slop)) { moved = true; onMoveNow.value() }
-                            if (paged && !swiping && abs(dx) > slop && abs(dx) > abs(e.y - downY)) {
+                            if (turnsWhole && !swiping && abs(dx) > slop && abs(dx) > abs(e.y - downY)) {
                                 swiping = true
                                 // The page under the finger lets go of the press, so no link fires on lifting.
                                 MotionEvent.obtain(e).apply { action = MotionEvent.ACTION_CANCEL }.also { v.onTouchEvent(it) }.recycle()
@@ -365,12 +398,12 @@ private fun ReaderWebView(
                         MotionEvent.ACTION_UP -> when {
                             swiping -> turn(if (e.x < downX) 1 else -1)
                             // Scrolling, a pull on past either end of the part opens the next or the previous one.
-                            !paged && atBottom && downY - e.y > slop * 4 -> onEdgeNow.value(1)
-                            !paged && atTop && e.y - downY > slop * 4 -> onEdgeNow.value(-1)
+                            !turnsWhole && atBottom && (if (view == "horizontal") downX - e.x else downY - e.y) > slop * 4 -> onEdgeNow.value(1)
+                            !turnsWhole && atTop && (if (view == "horizontal") e.x - downX else e.y - downY) > slop * 4 -> onEdgeNow.value(-1)
                         }
                     }
-                    // Paged, the WebView never scrolls itself: pages only turn whole.
-                    paged && (swiping || e.actionMasked == MotionEvent.ACTION_MOVE)
+                    // One or two pages at a time, the WebView never scrolls itself: pages only turn whole.
+                    turnsWhole && (swiping || e.actionMasked == MotionEvent.ACTION_MOVE)
                 }
                 onCreated(this)
             }
@@ -378,13 +411,15 @@ private fun ReaderWebView(
         update = { wv ->
             wv.setBackgroundColor(background.toComposeColor().toArgb())
             if (wv.settings.textZoom != textZoom) wv.settings.textZoom = textZoom
-            wv.settings.setSupportZoom(!pagedMode)
-            val tag = "$pagedMode|$html"
+            wv.settings.setSupportZoom(view == "scroll" || view == "vertical")
+            // Pages are cut for one text size, so a new size cuts them again.
+            val tag = if (view == "scroll") "$view|$html" else "$view|$textZoom|$html"
             if (wv.tag != tag) {
                 wv.restoreAt = enterAt ?: if (wv.tag != null) wv.fraction() else null
                 onEntered()
                 wv.tag = tag
-                wv.paged = pagedMode
+                wv.view = view
+                wv.reset()
                 wv.loadDataWithBaseURL(null, html, "text/html", "utf-8", null)
             }
         },

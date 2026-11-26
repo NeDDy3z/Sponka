@@ -242,22 +242,34 @@ private fun readerFormatLabel(format: String): String = when (format) {
     else -> format.uppercase()
 }
 
+@Composable
+private fun readerViewLabel(view: String): String = stringResource(
+    when (view) {
+        "vertical" -> R.string.reader_vertical
+        "horizontal" -> R.string.reader_horizontal
+        "single" -> R.string.reader_single_page
+        "double" -> R.string.reader_two_pages
+        else -> R.string.reader_scroll
+    },
+)
+
 /** The gear of a read-only file and its panel; [onOpenChange] hears it open and shut, so the islands stay up meanwhile. */
 @Composable
-internal fun FileReaderSettingsButton(editor: Editor, fullscreen: Boolean, onToggleFullscreen: () -> Unit, onOpenChange: (Boolean) -> Unit) {
+internal fun FileReaderSettingsButton(editor: Editor, file: ReaderFile, fullscreen: Boolean, onToggleFullscreen: () -> Unit, onOpenChange: (Boolean) -> Unit) {
     var open by remember { mutableStateOf(false) }
     DisposableEffect(open) {
         onOpenChange(open)
         onDispose { if (open) onOpenChange(false) }
     }
-    SettingsButton(open, { open = it }) { FileReaderPanel(editor, fullscreen, onToggleFullscreen) { open = false } }
+    SettingsButton(open, { open = it }) { FileReaderPanel(editor, file, fullscreen, onToggleFullscreen) { open = false } }
 }
 
-/** Light or dark, the bars docked or floating, one page at a time on a paper format, and the text's size. */
+/** Light or dark, the bars docked or floating, the file's view and paper, and the text's size. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ColumnScope.FileReaderPanel(editor: Editor, fullscreen: Boolean, onToggleFullscreen: () -> Unit, close: () -> Unit) {
+private fun ColumnScope.FileReaderPanel(editor: Editor, file: ReaderFile, fullscreen: Boolean, onToggleFullscreen: () -> Unit, close: () -> Unit) {
     val p = remember(editor.prefsVersion) { editor.preferences }
+    val openedDefault = remember { p.readerView }
     val dark = p.readerDark ?: LocalPalette.current.isDark
     fun set(next: com.xnotes.settings.Preferences) = editor.applyHomePreferences(next)
     PanelCloseRow(close)
@@ -282,9 +294,24 @@ private fun ColumnScope.FileReaderPanel(editor: Editor, fullscreen: Boolean, onT
         }
     }
     Spacer(Modifier.height(10.dp))
-    PanelCard {
-        PanelToggle(stringResource(R.string.reader_paged), p.readerPaged) { set(p.copy(readerPaged = it)) }
-        if (p.readerPaged) {
+    val kind = com.xnotes.core.util.ReaderKind.ofName(file.name)
+    // A deck's slides are its pages already, so it only scrolls.
+    if (kind !in READER_SLIDE_KINDS) PanelCard {
+        val view = readerViewOf(p, file)
+        // This file keeps its own view; the newest few hundred are remembered.
+        fun withFileView(v: String) = (p.readerFileViews - file.uri + (file.uri to v)).entries.toList().takeLast(200).associate { it.key to it.value }
+        PanelCaption(stringResource(R.string.title_view))
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            for (v in com.xnotes.settings.Preferences.READER_VIEWS) {
+                PanelChip(readerViewLabel(v), selected = v == view) { set(p.copy(readerFileViews = withFileView(v))) }
+            }
+        }
+        PanelCheck(stringResource(R.string.default_for_all_files), view == p.readerView) { on ->
+            set(p.copy(readerView = if (on) view else openedDefault.takeIf { it != view } ?: "scroll", readerFileViews = withFileView(view)))
+        }
+        // A Word or OpenDocument file brings its own page size.
+        if (view != "scroll" && kind !in READER_DOC_KINDS) {
+            Spacer(Modifier.height(4.dp))
             PanelCaption(stringResource(R.string.page_size))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 for (f in com.xnotes.settings.Preferences.READER_PAGE_FORMATS) {

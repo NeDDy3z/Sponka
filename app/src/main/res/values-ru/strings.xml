@@ -1736,5 +1736,7 @@
     <string name="find_in_page">Найти на странице</string>
     <string name="reader_open_failed">Не удалось открыть этот файл.</string>
     <string name="reader_close">Закрыть просмотр</string>
-    <string name="reader_paged">По одной странице</string>
+    <string name="reader_scroll">Прокрутка</string>
+    <string name="reader_two_pages">Две страницы</string>
+    <string name="default_for_all_files">По умолчанию для всех файлов</string>
 </resources>
