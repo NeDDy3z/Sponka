@@ -87,6 +87,7 @@ internal fun readerHtmlBody(context: Context, editor: Editor, file: ReaderFile, 
         ReaderKind.RTF -> ReaderContent.Html(com.xnotes.platform.OfficeHtml.rtf(readText(context, uri), labels), wide = false)
         ReaderKind.TEX -> ReaderContent.Html(com.xnotes.platform.OfficeHtml.tex(readText(context, uri), labels), wide = false)
         ReaderKind.XML -> ReaderContent.Html(com.xnotes.platform.OfficeHtml.xml(readText(context, uri), labels), wide = true)
+        ReaderKind.HTML -> ReaderContent.Html(com.xnotes.platform.BookHtml.html(readText(context, uri), labels), wide = false)
         ReaderKind.ODT -> ReaderContent.Html(withZip(context, uri) { com.xnotes.platform.OfficeHtml.odt(it, ::newParser, labels) }, wide = false)
         ReaderKind.ODP -> ReaderContent.Html(withZip(context, uri) { ReaderHtml.odp(it, ::newParser, labels) }, wide = false)
         ReaderKind.PPT -> ReaderContent.Html(com.xnotes.platform.OfficeHtml.ppt(readBytes(context, uri), labels), wide = false)

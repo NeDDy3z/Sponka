@@ -343,6 +343,10 @@ object BookHtml {
     private val kindleEmbed = Regex("kindle:embed:([0-9A-Va-v]+)")
     private val voidTags = setOf("area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr")
 
+    /** A web page's text in the reader's look: its body, without scripts, styles or handlers. */
+    fun html(source: String, labels: ReaderHtml.Labels = ReaderHtml.Labels()): String =
+        clean(bodyOf(source)).ifBlank { "<p class=\"missing\">${ReaderHtml.esc(labels.empty)}</p>" }
+
     /** What sits between the body tags, or the whole text when it has none. */
     private fun bodyOf(html: String): String {
         val open = Regex("<body\\b[^>]*>", RegexOption.IGNORE_CASE).find(html) ?: return html

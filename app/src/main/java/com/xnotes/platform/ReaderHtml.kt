@@ -56,19 +56,26 @@ object ReaderHtml {
 
     // --- page shell ---
 
-    /** Wraps [body] in a full page styled with [c]; [wide] drops the reading-width cap (tables, slides). */
-    fun page(body: String, c: Colors, wide: Boolean = false): String = shell(body, c, wide, "")
+    /**
+     * Wraps [body] in a full page styled with [c]; [wide] drops the reading-width cap (tables, slides).
+     * [around] colours what is behind the content, which keeps the app's theme; [dark] turns a
+     * document's own white pages dark with the reader.
+     */
+    fun page(body: String, c: Colors, wide: Boolean = false, around: String = c.background, dark: Boolean = false): String =
+        shell(body, c, wide, "", around = around, dark = dark)
 
     /**
      * [body] cut into pages by the reader's own script, the only one the page lets run ([nonce]).
      * [view] is "vertical", "horizontal", "single" or "double"; [paper] is the page size and margins
      * in cm ("w h top right bottom left") or "screen". A document's own page ([docPage]) wins over it.
+     * "slides" keeps a deck as it scrolls and only counts its slides as the pages.
      */
-    fun pagedPage(body: String, c: Colors, view: String, paper: String, nonce: String): String =
-        shell(
-            "<div id=\"src\">$body</div><div id=\"pages\"></div><script nonce=\"$nonce\">$PAGER_JS</script>",
-            c, wide = true, extraCss = pagesCss(c), bodyAttrs = " class=\"$view\" data-paper=\"$paper\"", nonce = nonce, minScale = true,
-        )
+    fun pagedPage(body: String, c: Colors, view: String, paper: String, nonce: String, around: String = c.background, dark: Boolean = false, wide: Boolean = false): String {
+        val attrs = " class=\"$view${if (dark) " dark" else ""}\" data-view=\"$view\" data-paper=\"$paper\""
+        val script = "<script nonce=\"$nonce\">$PAGER_JS</script>"
+        return if (view == "slides") shell(body + script, c, wide, "", attrs, nonce, around = around, dark = dark)
+        else shell("<div id=\"src\">$body</div><div id=\"pages\"></div>$script", c, true, pagesCss(c), attrs, nonce, minScale = true, around = around, dark = dark)
+    }
 
     /**
      * [body] cut into parts of about [max] characters at chapter, slide or paragraph ends, so the
@@ -108,7 +115,7 @@ object ReaderHtml {
     }
 
     private fun pagesCss(c: Colors) = """
-        body{max-width:none;margin:0;padding:0;overflow-wrap:break-word;background:${c.surface}}
+        body{max-width:none;margin:0;padding:0;overflow-wrap:break-word;background:transparent}
         #src{display:none}
         #pages{display:flex;flex-direction:column;align-items:center;gap:16px;width:max-content;min-width:100%}
         .page{box-sizing:border-box;flex:none;overflow:hidden;background:${c.background};box-shadow:0 1px 5px rgba(0,0,0,.4)}
@@ -129,8 +136,8 @@ object ReaderHtml {
     // through the title ("count|page"), and the app turns pages with R.go(n).
     private val PAGER_JS = """
         (function(){
-        var b=document.body,src=document.getElementById('src'),out=document.getElementById('pages'),view=b.className,cm=96/2.54;
-        var doc=src.querySelector('article.doc'),spec=(doc&&doc.getAttribute('data-page'))||b.getAttribute('data-paper')||'screen',W,H,M;
+        var b=document.body,src=document.getElementById('src'),out=document.getElementById('pages'),view=b.getAttribute('data-view'),cm=96/2.54;
+        var doc=src&&src.querySelector('article.doc'),spec=(doc&&doc.getAttribute('data-page'))||b.getAttribute('data-paper')||'screen',W,H,M;
         var de=document.documentElement;
         if(spec==='screen'){W=de.clientWidth;H=de.clientHeight;M=[76,22,84,22];}
         else{var v=spec.split(' ').map(Number);W=v[0]*cm;H=v[1]*cm;M=v.slice(2).map(function(x){return x*cm;});}
@@ -183,18 +190,24 @@ object ReaderHtml {
         }
         function at(){
           if(view==='single'||view==='double')return Math.min(pages.length-1,Math.round(scrollX/vw)*per);
-          var a=pages[0].getBoundingClientRect(),s=pages.length>1?(view==='vertical'?pages[1].getBoundingClientRect().top-a.top:pages[1].getBoundingClientRect().left-a.left):1;
-          var i=view==='vertical'?Math.floor((vh/2-a.top)/s):Math.floor((vw/2-a.left)/s);
-          return Math.max(0,Math.min(pages.length-1,i));
+          // The last page starting before the middle of the screen; slides differ in height.
+          var x=view==='horizontal',mid=x?vw/2:vh/2,lo=0,hi=pages.length-1;
+          while(lo<hi){var m=(lo+hi+1)>>1,r=pages[m].getBoundingClientRect();if((x?r.left:r.top)<=mid)lo=m;else hi=m-1;}
+          return lo;
         }
         function report(){var t=pages.length+'|'+at();if(document.title!==t)document.title=t;}
         function go(i){
           i=Math.max(0,Math.min(pages.length-1,i));
           if(view==='single'||view==='double')scrollTo(Math.floor(i/per)*vw,0);
-          else{var r=pages[i].getBoundingClientRect();if(view==='vertical')scrollTo(scrollX,r.top+scrollY-76);else scrollTo(r.left+scrollX-16,scrollY);}
+          else{var r=pages[i].getBoundingClientRect();if(view==='horizontal')scrollTo(r.left+scrollX-16,scrollY);else scrollTo(scrollX,r.top+scrollY-76);}
           report();
         }
         function run(){
+          if(view==='slides'){
+            pages=Array.prototype.slice.call(document.querySelectorAll('section.slide'));
+            if(!pages.length)return;
+            report();addEventListener('scroll',report,{passive:true});addEventListener('resize',report);return;
+          }
           Array.prototype.slice.call((doc||src).childNodes).forEach(function(n){if(!c)newPage();flow(n);});
           if(!c)newPage();
           src.parentNode.removeChild(src);
@@ -226,7 +239,10 @@ object ReaderHtml {
         section.chapter+section.chapter{break-before:page}
     """.trimIndent())
 
-    private fun shell(body: String, c: Colors, wide: Boolean, extraCss: String, bodyAttrs: String = "", nonce: String? = null, minScale: Boolean = false): String {
+    private fun shell(
+        body: String, c: Colors, wide: Boolean, extraCss: String, bodyAttrs: String = "", nonce: String? = null, minScale: Boolean = false,
+        around: String = c.background, dark: Boolean = false,
+    ): String {
         val css = """
             html{-webkit-text-size-adjust:100%}
             body{background:${c.background};color:${c.text};font-family:sans-serif;font-size:17px;line-height:1.6;margin:0 auto;padding:76px 18px 84px;${if (wide) "" else "max-width:820px;"}overflow-wrap:break-word;word-wrap:break-word}
@@ -281,6 +297,10 @@ object ReaderHtml {
             .x-v{color:${c.muted}}
             .x-c{color:${c.muted};font-style:italic}
             .poem{margin:.8em 0 .8em 1.5em}
+            html{background:$around}
+            body:has(> article.doc),body:has(section.slide){background:transparent}
+            body.dark article.doc:not(.content),body.dark .page:has(> .doc){filter:invert(.88) hue-rotate(180deg)}
+            body.dark .doc img{filter:invert(1) hue-rotate(180deg)}
             .doc{display:block;background:#fff;color:#000;font-size:11pt;line-height:1.15;margin:0 auto;box-sizing:border-box;max-width:100%;box-shadow:0 1px 5px rgba(0,0,0,.4)}
             .doc a{color:#1155cc}
             .doc p,.doc h1,.doc h2,.doc h3,.doc h4,.doc h5,.doc h6{margin:0}
@@ -293,7 +313,7 @@ object ReaderHtml {
         val policy = "default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src " + (nonce?.let { "'nonce-$it'" } ?: "'none'")
         return "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1${if (minScale) ", minimum-scale=1" else ""}\">" +
             "<meta http-equiv=\"Content-Security-Policy\" content=\"$policy\">" +
-            "<style>$css\n$extraCss</style></head><body$bodyAttrs>$body</body></html>"
+            "<style>$css\n$extraCss</style></head><body${bodyAttrs.ifEmpty { if (dark) " class=\"dark\"" else "" }}>$body</body></html>"
     }
 
     // --- Markdown ---

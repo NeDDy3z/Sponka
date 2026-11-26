@@ -106,17 +106,31 @@ internal fun ReaderScreen(
     var chunk by remember(file.uri) { mutableIntStateOf(0) }
     // Where the next load opens, as a fraction of what it shows; null keeps the place as it was.
     var enterAt by remember { mutableStateOf<Float?>(null) }
-    fun showBook(f: Float) {
-        val t = f.coerceIn(0f, 1f) * chunks.size
-        val target = t.toInt().coerceAtMost(chunks.lastIndex)
-        if (target == chunk) webView?.showFraction(t - target) else { enterAt = t - target; chunk = target }
+    // A deck counts its slides across all parts: where each part's first slide falls, and how many in all.
+    val slideStarts = remember(chunks) { chunks.runningFold(0) { n, c -> n + SLIDE_TAG.findAll(c).count() } }
+    val slides = view == "slides"
+    /** Go to [f] of the whole file; [live] (while scrubbing) only moves within the part shown, never loading another. */
+    fun showBook(f: Float, live: Boolean = false) {
+        val (target, within) = if (slides) {
+            val total = slideStarts.last()
+            val slide = (f.coerceIn(0f, 1f) * (total - 1).coerceAtLeast(0)).roundToInt()
+            val k = slideStarts.dropLast(1).indexOfLast { it <= slide }.coerceAtLeast(0)
+            val n = slideStarts[k + 1] - slideStarts[k]
+            k to if (n > 1) (slide - slideStarts[k]) / (n - 1f) else 0f
+        } else {
+            val t = f.coerceIn(0f, 1f) * chunks.size
+            val k = t.toInt().coerceAtMost(chunks.lastIndex)
+            k to (t - k).coerceAtMost(1f)
+        }
+        if (target == chunk) webView?.showFraction(within) else if (!live) { enterAt = within; chunk = target }
     }
     var shownView by remember { mutableStateOf(view) }
     if (shownView != view && content is ReaderContent.Html) {
         shownView = view
         enterAt = (bookAt * chunks.size - chunk).coerceIn(0f, 1f)
     }
-    Column(Modifier.fillMaxSize().background(palette.paper.toComposeColor())) {
+    // Behind the content keeps the app's theme; only the file itself follows the reader's light/dark.
+    Column(Modifier.fillMaxSize().background(appPalette.bg.toComposeColor())) {
         if (finding) FindBar(query, { query = it }, findStatus, { webView?.findNext(false) }, { webView?.findNext(true) }, { finding = false })
         Box(Modifier.weight(1f).fillMaxWidth()) {
             CompositionLocalProvider(LocalPalette provides palette) {
@@ -131,13 +145,14 @@ internal fun ReaderScreen(
                     is ReaderContent.Html -> {
                         val part = chunk.coerceIn(0, chunks.lastIndex)
                         val paper = readerPaper(prefs)
-                        val html = remember(c, palette, view, part, paper) {
-                            if (paged) ReaderHtml.pagedPage(chunks[part], readerColors(palette), view, paper, nonce)
-                            else ReaderHtml.page(chunks[part], readerColors(palette), c.wide)
+                        val around = Rgba.toHex(appPalette.bg)
+                        val html = remember(c, palette, view, part, paper, around) {
+                            if (paged) ReaderHtml.pagedPage(chunks[part], readerColors(palette), view, paper, nonce, around, dark, c.wide)
+                            else ReaderHtml.page(chunks[part], readerColors(palette), c.wide, around, dark)
                         }
                         Box(Modifier.fillMaxSize()) {
                             ReaderWebView(
-                                html, palette.paper, prefs.readerTextZoom, view, enterAt,
+                                html, appPalette.bg, prefs.readerTextZoom, view, enterAt,
                                 modifier = Modifier.fillMaxSize(),
                                 onCreated = { wv ->
                                     webView = wv
@@ -153,7 +168,13 @@ internal fun ReaderScreen(
                                 onPositionChange = { a, n ->
                                     if (!scrubbing) at = a
                                     count = n
-                                    bookAt = (part + a / n.toFloat()) / chunks.size
+                                    bookAt = when {
+                                        slides -> (slideStarts[part] + a) / (slideStarts.last() - 1).coerceAtLeast(1).toFloat()
+                                        !paged -> (part + a / n.toFloat()) / chunks.size
+                                        // The last page of the last part is the whole way through.
+                                        n <= 1 -> (part + if (part == chunks.lastIndex) 1f else 0f) / chunks.size
+                                        else -> (part + a / (n - 1f)) / chunks.size
+                                    }.coerceIn(0f, 1f)
                                 },
                             ) { url -> openLink(context, url, onWikiLink) }
                         }
@@ -176,7 +197,7 @@ internal fun ReaderScreen(
                     // The scrubber spans the whole file, across its parts.
                     PageScrubber(
                         scrubTo ?: (bookAt * PERMILLE).roundToInt(), PERMILLE, emptyList(), scrubbing,
-                        onScrub = { scrubbing = true; scrubTo = it },
+                        onScrub = { scrubbing = true; scrubTo = it; showBook(it / PERMILLE.toFloat(), live = true) },
                         onLetGo = {
                             scrubbing = false
                             scrubTo?.let { showBook(it / PERMILLE.toFloat()) }
@@ -186,9 +207,11 @@ internal fun ReaderScreen(
                     )
                 }
                 if (paged) {
-                    // The arrows and the count go by the part shown.
+                    // A deck counts its slides through the whole file; other pages are counted in the part shown.
                     ToolbarIcon(XnotesIcons.prev, stringResource(R.string.previous_page), enabled = at > 0 || chunk > 0) { webView?.turn(-1) }
-                    Label("${at + 1} " + stringResource(R.string.page_of_count, count), Modifier.widthIn(min = 64.dp))
+                    val label = if (slides) "${slideStarts[chunk.coerceIn(0, chunks.lastIndex)] + at + 1} " + stringResource(R.string.page_of_count, slideStarts.last())
+                        else "${at + 1} " + stringResource(R.string.page_of_count, count)
+                    Label(label, Modifier.widthIn(min = 64.dp))
                     scrubber()
                     ToolbarIcon(XnotesIcons.next, stringResource(R.string.next_page), enabled = at < count - 1 || chunk < chunks.lastIndex) { webView?.turn(1) }
                 } else {
@@ -202,7 +225,9 @@ internal fun ReaderScreen(
 
 private const val PERMILLE = 1000
 
-/** Slide decks: their slides are pages already, so they only scroll. */
+private val SLIDE_TAG = Regex("<section class=\"slide\"")
+
+/** Slide decks: their slides are pages already, so they scroll with each slide counted as a page. */
 internal val READER_SLIDE_KINDS = setOf(ReaderKind.PPTX, ReaderKind.PPT, ReaderKind.ODP)
 
 /** Files that bring their own page size and margins. */
@@ -210,7 +235,7 @@ internal val READER_DOC_KINDS = setOf(ReaderKind.DOCX, ReaderKind.ODT)
 
 /** How [file] is shown: its own choice, else the default for all files. */
 internal fun readerViewOf(p: Preferences, file: ReaderFile): String =
-    if (ReaderKind.ofName(file.name) in READER_SLIDE_KINDS) "scroll" else p.readerFileViews[file.uri] ?: p.readerView
+    if (ReaderKind.ofName(file.name) in READER_SLIDE_KINDS) "slides" else p.readerFileViews[file.uri] ?: p.readerView
 
 /** The paper a flowing file is paged on, in cm as "width height top right bottom left", or "screen". */
 private fun readerPaper(p: Preferences): String {
@@ -271,11 +296,11 @@ internal class ReaderWebView(context: Context) : WebView(context) {
 
     /** How far through the reader is, from 0 to 1. */
     fun fraction(): Float =
-        if (paged) pageAt.toFloat() / pageCount()
+        if (paged) (if (pageCount() > 1) pageAt.toFloat() / (pageCount() - 1) else 0f)
         else (rangeY - height).let { max -> if (max <= 0) 0f else scrollY.toFloat() / max }
 
     fun showFraction(f: Float) {
-        if (paged) showPage((pageCount() * f).toInt()) else showPermille((f * PERMILLE).roundToInt())
+        if (paged) showPage((f * (pageCount() - 1)).roundToInt()) else showPermille((f * PERMILLE).roundToInt())
     }
 
     /** A new page is loading: its pages are not counted yet. */
@@ -411,7 +436,7 @@ private fun ReaderWebView(
         update = { wv ->
             wv.setBackgroundColor(background.toComposeColor().toArgb())
             if (wv.settings.textZoom != textZoom) wv.settings.textZoom = textZoom
-            wv.settings.setSupportZoom(view == "scroll" || view == "vertical")
+            wv.settings.setSupportZoom(view == "scroll" || view == "vertical" || view == "slides")
             // Pages are cut for one text size, so a new size cuts them again.
             val tag = if (view == "scroll") "$view|$html" else "$view|$textZoom|$html"
             if (wv.tag != tag) {
