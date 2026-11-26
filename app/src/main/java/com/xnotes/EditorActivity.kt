@@ -438,11 +438,6 @@ private fun EditorScreen(
     val resolver = context.contentResolver
     val rwFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
 
-    // Read-only files open over everything; following a [[link]] stacks another, Back pops one.
-    val readerStack = remember { androidx.compose.runtime.mutableStateListOf<com.xnotes.ui.ReaderFile>() }
-    // Read-only files in split slots: one beside the primary note, or two side by side over everything.
-    val readerSplit = remember { androidx.compose.runtime.mutableStateListOf<com.xnotes.ui.ReaderFile>() }
-
     // Which pane a "Save as" writes: the focused one at the moment the picker opened.
     var savePane by remember { mutableStateOf(editor) }
     val createLauncher = rememberLauncherForActivityResult(
@@ -917,7 +912,6 @@ private fun EditorScreen(
         val secondShown = editor.secondary?.takeIf { it.noteOpen }?.shownUri?.let { editor.isSameDocument(it, second) } == true
         if (firstShown && secondShown) { editor.focusPane(focus); after(); return }
         guardedAll {
-            readerSplit.clear()
             editor.splitRatio = ratio
             editor.splitSwapped = editor.tabPairSwapped(first)
             scope.launch {
@@ -940,7 +934,6 @@ private fun EditorScreen(
 
     /** Open two picked files together, one per pane, and start the split focused on the first. */
     fun openSplit(firstUri: String, secondUri: String) {
-        readerSplit.clear()
         editor.splitRatio = 0.5f
         editor.splitSwapped = false
         editor.focusPane(com.xnotes.ui.Pane.PRIMARY)
@@ -957,34 +950,11 @@ private fun EditorScreen(
         }
     }
 
-    fun readerFileOf(uriStr: String): com.xnotes.ui.ReaderFile? =
-        displayNameOf(resolver, Uri.parse(uriStr))?.takeIf { com.xnotes.core.util.ReaderKind.isReadable(it) }?.let { com.xnotes.ui.ReaderFile(uriStr, it) }
-
-    /** Show [reader] beside the note at [noteUri] in the primary pane, closing any second note pane. */
-    fun openWithReader(noteUri: String, reader: com.xnotes.ui.ReaderFile) {
-        editor.secondary?.goHome()
-        editor.focusPane(com.xnotes.ui.Pane.PRIMARY)
-        editor.splitRatio = 0.5f
-        readerSplit.clear()
-        scope.launch {
-            if (editor.currentUri?.let { editor.isSameDocument(it, noteUri) } != true) openInto(editor, noteUri)
-            // A note that would not open leaves the reader on its own, full screen.
-            if (editor.noteOpen) readerSplit.add(reader) else readerStack.add(reader)
-        }
-    }
-
     /** Open any two files side by side: two notes as panes, a note with a reader, or two readers. */
     fun openPair(firstUri: String, secondUri: String) {
         listOf(firstUri, secondUri).map { displayNameOf(resolver, Uri.parse(it)).orEmpty() }
             .firstOrNull { com.xnotes.core.util.ReaderKind.isUnsupported(it) }?.let { unsupportedFile = it; return }
-        val first = readerFileOf(firstUri)
-        val second = readerFileOf(secondUri)
-        when {
-            first != null && second != null -> { readerSplit.clear(); readerSplit.addAll(listOf(first, second)) }
-            first != null -> guardedAll { openWithReader(secondUri, first) }
-            second != null -> guardedAll { openWithReader(firstUri, second) }
-            else -> guardedAll { openSplit(firstUri, secondUri) }
-        }
+        guardedAll { openSplit(firstUri, secondUri) }
     }
 
     fun stemOf(uriStr: String): String =
@@ -1289,7 +1259,6 @@ private fun EditorScreen(
                 onOpenFile = { uri ->
                     val name = displayNameOf(resolver, Uri.parse(uri)).orEmpty()
                     when {
-                        com.xnotes.core.util.ReaderKind.isReadable(name) -> readerStack.add(com.xnotes.ui.ReaderFile(uri, name))
                         com.xnotes.core.util.ReaderKind.isUnsupported(name) -> unsupportedFile = name
                         else -> guarded(editor) { openTreeFile(uri) }
                     }
@@ -1349,8 +1318,8 @@ private fun EditorScreen(
                 BackHandler(enabled = focused.editingField == null && !focused.flowEditingActive && !backDisabled) {
                     closePane(focused)
                 }
-                // Read-only is left before the note is.
-                BackHandler(enabled = focused.readOnly) { focused.toggleReadOnly() }
+                // Read-only is left before the note is; a read-only file has only the closing.
+                BackHandler(enabled = focused.readOnly && focused.readerFile == null) { focused.toggleReadOnly() }
             }
 
             val actions = PaneActions(
@@ -1374,10 +1343,7 @@ private fun EditorScreen(
                     runCatching { launchShare(file, file.nameWithoutExtension, "image/png") }
                         .onFailure { editor.message = context.getString(R.string.err_share_image) }
                 },
-                onOpenFile = { pane, uri ->
-                    val reader = readerFileOf(uri)
-                    if (reader != null) readerStack.add(reader) else guarded(pane) { scope.launch { openInto(pane, uri) } }
-                },
+                onOpenFile = { pane, uri -> guarded(pane) { scope.launch { openInto(pane, uri) } } },
                 onAddStickers = { addStickersLauncher.launch(arrayOf("image/*")) },
                 onInsertAudio = { pane ->
                     pendingAudioPane = pane
@@ -1448,22 +1414,6 @@ private fun EditorScreen(
                     imagePageLauncher.launch(arrayOf("image/*"))
                 },
             )
-            fun followWikiLink(target: String) {
-                scope.launch {
-                    val root = editor.browseRoot
-                    val hit = root?.let { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { editor.findLinkedFile(it, target) } }
-                    when {
-                        hit == null -> editor.say(context.getString(R.string.reader_link_missing, target))
-                        com.xnotes.core.util.ReaderKind.isReadable(hit.name) -> readerStack.add(com.xnotes.ui.ReaderFile(hit.documentUri, hit.name))
-                        else -> { readerStack.clear(); readerSplit.clear(); guarded(editor) { openTreeFile(hit.documentUri) } }
-                    }
-                }
-            }
-            // A split reader left with no note beside it goes on alone, full screen.
-            val besideFits = editor.noteOpen && editor.secondary?.noteOpen != true
-            LaunchedEffect(readerSplit.size, besideFits) {
-                if (readerSplit.size == 1 && !besideFits) readerStack.add(readerSplit.removeAt(0))
-            }
             fun shownIn(uri: String) = editor.openPanes.firstOrNull { p -> p.shownUri?.let { p.isSameDocument(it, uri) } == true }
             // A split tab opens as a split; any other tab opens on its own, the split waiting under its tab.
             fun switchTab(uri: String, after: () -> Unit = {}) {
@@ -1491,7 +1441,6 @@ private fun EditorScreen(
             /** Open [uri] in the second pane beside the note, or in place of what the second pane shows. */
             fun splitTab(uri: String) {
                 val second = editor.secondaryPane()
-                readerSplit.clear()
                 if (!second.noteOpen) { editor.splitRatio = 0.5f; editor.splitSwapped = false }
                 guarded(second) {
                     scope.launch {
@@ -1552,24 +1501,7 @@ private fun EditorScreen(
                     )
                 }
             }
-            SplitHost(editor, actions, readerSplit, tabStrip, ::swapSides) { file, modifier ->
-                Box(modifier) {
-                    androidx.compose.runtime.key(file.uri) {
-                        com.xnotes.ui.ReaderScreen(editor = editor, file = file, onClose = { readerSplit.remove(file) }, onWikiLink = ::followWikiLink)
-                    }
-                }
-            }
-
-            readerStack.lastOrNull()?.let { file ->
-                androidx.compose.runtime.key(file.uri) {
-                    com.xnotes.ui.ReaderScreen(
-                        editor = editor,
-                        file = file,
-                        onClose = { readerStack.removeLastOrNull() },
-                        onWikiLink = ::followWikiLink,
-                    )
-                }
-            }
+            SplitHost(editor, actions, tabStrip, ::swapSides)
         }
     }
     // A PDF another app has written to since xnotes last did: which version it opens as is asked first.
@@ -1876,29 +1808,23 @@ private val SwallowTouches = Modifier.pointerInput(Unit) {
 private fun SplitHost(
     editor: Editor,
     actions: PaneActions,
-    readers: List<com.xnotes.ui.ReaderFile>,
     tabStrip: @Composable () -> Unit,
     onSwap: () -> Unit,
-    reader: @Composable (com.xnotes.ui.ReaderFile, Modifier) -> Unit,
 ) {
     val second = editor.secondary
-    // One reader takes the second slot beside the note; two cover both panes, which stay composed underneath.
-    val besideReader = readers.singleOrNull()?.takeIf { editor.noteOpen && second?.noteOpen != true }
-    val readerPair = readers.takeIf { it.size == 2 }
-    var readerPairRatio by remember { mutableStateOf(0.5f) }
-    val split = editor.noteOpen && (second?.noteOpen == true || besideReader != null)
+    val split = editor.noteOpen && second?.noteOpen == true
     // A pane that closed on its own leaves the other one full-screen; once neither is open the
     // second editor is released, freeing its canvas and GL surfaces.
     LaunchedEffect(editor.noteOpen, second?.noteOpen) {
         if (second != null && !second.noteOpen) editor.releaseClosedSecondary()
     }
-    if (!editor.noteOpen && second?.noteOpen != true && readerPair == null) return
+    if (!editor.noteOpen && second?.noteOpen != true) return
 
     val sideBySide = LocalConfiguration.current.orientation ==
         android.content.res.Configuration.ORIENTATION_LANDSCAPE
     val ratio = editor.splitRatio.coerceIn(MIN_PANE_RATIO, 1f - MIN_PANE_RATIO)
     Column(Modifier.fillMaxSize().then(SwallowTouches)) {
-        if (readerPair == null) tabStrip()
+        tabStrip()
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().imePadding()) {
             val fullW = maxWidth
             val fullH = maxHeight
@@ -1941,7 +1867,6 @@ private fun SplitHost(
                     modifier = if (swapped) paneSize(firstExtent) else paneOffset(if (split) firstExtent else 0.dp).then(paneSize(secondExtent)),
                 )
             }
-            if (besideReader != null) reader(besideReader, paneOffset(firstExtent).then(paneSize(secondExtent)))
             // Composed last so it sits over both panes and catches the drag before either of them.
             if (split) {
                 SplitDivider(
@@ -1953,20 +1878,6 @@ private fun SplitHost(
                     modifier = paneOffset((firstExtent - DIVIDER / 2).coerceAtLeast(0.dp))
                         .then(paneSize(DIVIDER)),
                 )
-            }
-            if (readerPair != null) {
-                val pairFirst = full * readerPairRatio.coerceIn(MIN_PANE_RATIO, 1f - MIN_PANE_RATIO)
-                Box(Modifier.fillMaxSize().then(SwallowTouches)) {
-                    reader(readerPair[0], paneSize(pairFirst))
-                    reader(readerPair[1], paneOffset(pairFirst).then(paneSize(full - pairFirst)))
-                    SplitDivider(
-                        sideBySide = sideBySide,
-                        extentPx = with(LocalDensity.current) { full.toPx() },
-                        ratio = readerPairRatio,
-                        onRatio = { readerPairRatio = it },
-                        modifier = paneOffset((pairFirst - DIVIDER / 2).coerceAtLeast(0.dp)).then(paneSize(DIVIDER)),
-                    )
-                }
             }
         }
     }

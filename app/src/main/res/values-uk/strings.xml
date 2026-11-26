@@ -669,7 +669,6 @@
     <string name="image_as_page">Зображення як нова сторінка...</string>
     <string name="import_into_note">Імпортувати в цю нотатку...</string>
     <string name="imported_into_note">Додано до нотатки</string>
-    <string name="find_in_page">Знайти на сторінці</string>
     <string name="find_close">Закрити пошук</string>
     <string name="clear_search">Очистити пошук</string>
     <string name="search">Пошук</string>
@@ -1426,17 +1425,14 @@
     <string name="note_templates_empty">Шаблонів ще немає. Збережіть нотатку як шаблон із її меню.</string>
     <string name="hidden_empty">На цьому пристрої нічого не приховано.</string>
     <string name="pref_show_hidden">Показувати файли й папки, приховані на цьому пристрої</string>
-    <string name="reader_open_failed">Не вдалося відкрити цей файл.</string>
     <string name="reader_link_missing">Не вдалося знайти \"%1$s\" у цій папці.</string>
     <string name="reader_slide">Слайд %1$d з %2$d</string>
     <string name="reader_notes">Нотатки</string>
     <string name="reader_rows_truncated">Показано перші %1$d рядків.</string>
     <string name="reader_image">зображення</string>
     <string name="reader_empty">Цей файл порожній.</string>
-    <string name="reader_close">Закрити читач</string>
     <string name="reader_switch_to_light">Світла тема</string>
     <string name="reader_switch_to_dark">Темна тема</string>
-    <string name="reader_zoom_reset">Скинути масштаб</string>
     <string name="err_convert_to_note">Не вдалося перетворити цей файл.</string>
     <string name="reader_truncated_cells">Показано перші %1$d рядків і %2$d стовпців цього аркуша.</string>
     <string name="material_contrast">"Контраст  %1$s"</string>
@@ -1734,4 +1730,10 @@
     <string name="file_info_location">Розташування</string>
     <string name="open_note">Відкрити нотатку</string>
     <string name="include_expand_in_pdf">Включати під час експорту в PDF</string>
+    <string name="reader_layout">Макет</string>
+    <string name="reader_text_size">Розмір тексту</string>
+    <string name="reader_format_screen">Екран</string>
+    <string name="reading_quick_tool">Кнопка поруч із шестернею</string>
+    <string name="reading_quick_bookmark">Закладка</string>
+    <string name="remove_bookmark_here">Прибрати закладку</string>
 </resources>

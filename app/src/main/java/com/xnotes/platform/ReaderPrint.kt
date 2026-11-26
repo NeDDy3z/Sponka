@@ -11,9 +11,9 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import kotlin.coroutines.resume
 
-/** Prints reader HTML to an A4 PDF through the WebView's own print engine, so it keeps the reader's look with real text. */
+/** Prints reader HTML to a PDF of [PrintAttributes.MediaSize] pages through the WebView's own print engine, so it keeps the reader's look with real text. */
 object ReaderPrint {
-    suspend fun toPdf(context: Context, html: String, landscape: Boolean, out: File): Boolean = withContext(Dispatchers.Main) {
+    suspend fun toPdf(context: Context, html: String, media: PrintAttributes.MediaSize, out: File): Boolean = withContext(Dispatchers.Main) {
         suspendCancellableCoroutine { cont ->
             val web = WebView(context)
             web.settings.javaScriptEnabled = false
@@ -26,7 +26,7 @@ object ReaderPrint {
                     if (started) return
                     started = true
                     val attributes = PrintAttributes.Builder()
-                        .setMediaSize(if (landscape) PrintAttributes.MediaSize.ISO_A4.asLandscape() else PrintAttributes.MediaSize.ISO_A4)
+                        .setMediaSize(media)
                         .setResolution(PrintAttributes.Resolution("pdf", "pdf", 300, 300))
                         // Margins come from the page's @page rule; Chromium scales these attribute margins up about 4x.
                         .setMinMargins(PrintAttributes.Margins.NO_MARGINS)

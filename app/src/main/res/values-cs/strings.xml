@@ -647,7 +647,6 @@
     <string name="image_as_page">Obrázek jako nová stránka...</string>
     <string name="import_into_note">Importovat do této poznámky...</string>
     <string name="imported_into_note">Přidáno do poznámky</string>
-    <string name="find_in_page">Najít na stránce</string>
     <string name="find_close">Zavřít hledání</string>
     <string name="clear_search">Vymazat hledání</string>
     <string name="search">Hledat</string>
@@ -1404,17 +1403,14 @@
     <string name="note_templates_empty">Zatím žádné šablony. Poznámku uložíš jako šablonu z její nabídky.</string>
     <string name="hidden_empty">Na tomto zařízení není nic skryté.</string>
     <string name="pref_show_hidden">Zobrazit soubory a složky skryté na tomto zařízení</string>
-    <string name="reader_open_failed">Tento soubor se nepodařilo otevřít.</string>
     <string name="reader_link_missing">V této složce se nepodařilo najít \"%1$s\".</string>
     <string name="reader_slide">Snímek %1$d z %2$d</string>
     <string name="reader_notes">Poznámky</string>
     <string name="reader_rows_truncated">Počet zobrazených řádků: %1$d.</string>
     <string name="reader_image">obrázek</string>
     <string name="reader_empty">Tento soubor je prázdný.</string>
-    <string name="reader_close">Zavřít čtečku</string>
     <string name="reader_switch_to_light">Přepnout na světlý</string>
     <string name="reader_switch_to_dark">Přepnout na tmavý</string>
-    <string name="reader_zoom_reset">Obnovit přiblížení</string>
     <string name="convert_to_note">Převést na poznámku</string>
     <string name="converting_to_pdf">Převádění do PDF…</string>
     <string name="converting_to_note">Převádění na poznámku...</string>
@@ -1734,4 +1730,10 @@
     <string name="file_info_location">Umístění</string>
     <string name="open_note">Otevřít poznámku</string>
     <string name="include_expand_in_pdf">Zahrnout do exportu PDF</string>
+    <string name="reader_layout">Rozvržení</string>
+    <string name="reader_text_size">Velikost textu</string>
+    <string name="reader_format_screen">Obrazovka</string>
+    <string name="reading_quick_tool">Tlačítko vedle ozubeného kola</string>
+    <string name="reading_quick_bookmark">Záložka</string>
+    <string name="remove_bookmark_here">Odebrat záložku</string>
 </resources>

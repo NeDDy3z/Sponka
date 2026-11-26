@@ -647,7 +647,6 @@
     <string name="image_as_page">Image en nouvelle page...</string>
     <string name="import_into_note">Importer dans cette note...</string>
     <string name="imported_into_note">Ajouté à la note</string>
-    <string name="find_in_page">Rechercher dans la page</string>
     <string name="find_close">Fermer la recherche</string>
     <string name="clear_search">Effacer la recherche</string>
     <string name="search">Rechercher</string>
@@ -1359,17 +1358,14 @@
     <string name="note_templates_empty">Aucun modèle pour l\'instant. Enregistrez une note comme modèle depuis son menu.</string>
     <string name="hidden_empty">Rien n\'est masqué sur cet appareil.</string>
     <string name="pref_show_hidden">Afficher les fichiers et dossiers masqués sur cet appareil</string>
-    <string name="reader_open_failed">Impossible d\'ouvrir ce fichier.</string>
     <string name="reader_link_missing">Impossible de trouver \"%1$s\" dans ce dossier.</string>
     <string name="reader_slide">Diapositive %1$d sur %2$d</string>
     <string name="reader_notes">Notes</string>
     <string name="reader_rows_truncated">Affichage des %1$d premières lignes.</string>
     <string name="reader_image">image</string>
     <string name="reader_empty">Ce fichier est vide.</string>
-    <string name="reader_close">Fermer le lecteur</string>
     <string name="reader_switch_to_light">Passer en mode clair</string>
     <string name="reader_switch_to_dark">Passer en mode sombre</string>
-    <string name="reader_zoom_reset">Réinitialiser le zoom</string>
     <string name="convert_to_note">Convertir en note</string>
     <string name="converting_to_pdf">Conversion en PDF…</string>
     <string name="converting_to_note">Conversion en note...</string>
@@ -1685,4 +1681,10 @@
     <string name="file_info_location">Emplacement</string>
     <string name="open_note">Ouvrir une note</string>
     <string name="include_expand_in_pdf">Inclure dans l\'export PDF</string>
+    <string name="reader_layout">Mise en page</string>
+    <string name="reader_text_size">Taille du texte</string>
+    <string name="reader_format_screen">Écran</string>
+    <string name="reading_quick_tool">Bouton à côté de l\'engrenage</string>
+    <string name="reading_quick_bookmark">Signet</string>
+    <string name="remove_bookmark_here">Retirer le signet</string>
 </resources>

@@ -647,7 +647,6 @@
     <string name="image_as_page">Imagen como página nueva...</string>
     <string name="import_into_note">Importar en esta nota...</string>
     <string name="imported_into_note">Añadido a la nota</string>
-    <string name="find_in_page">Buscar en la página</string>
     <string name="find_close">Cerrar búsqueda</string>
     <string name="clear_search">Borrar búsqueda</string>
     <string name="search">Buscar</string>
@@ -1381,17 +1380,14 @@
     <string name="note_templates_empty">Aún no hay plantillas. Guarda una nota como plantilla desde su menú.</string>
     <string name="hidden_empty">No hay nada oculto en este dispositivo.</string>
     <string name="pref_show_hidden">Mostrar archivos y carpetas ocultos en este dispositivo</string>
-    <string name="reader_open_failed">No se pudo abrir este archivo.</string>
     <string name="reader_link_missing">No se encontró \"%1$s\" en esta carpeta.</string>
     <string name="reader_slide">Diapositiva %1$d de %2$d</string>
     <string name="reader_notes">Notas</string>
     <string name="reader_rows_truncated">Se muestran las primeras %1$d filas.</string>
     <string name="reader_image">imagen</string>
     <string name="reader_empty">Este archivo está vacío.</string>
-    <string name="reader_close">Cerrar lector</string>
     <string name="reader_switch_to_light">Cambiar a claro</string>
     <string name="reader_switch_to_dark">Cambiar a oscuro</string>
-    <string name="reader_zoom_reset">Restablecer zoom</string>
     <string name="convert_to_note">Convertir en nota</string>
     <string name="converting_to_pdf">Convirtiendo a PDF…</string>
     <string name="converting_to_note">Convirtiendo en nota...</string>
@@ -1709,4 +1705,10 @@
     <string name="file_info_location">Ubicación</string>
     <string name="open_note">Abrir nota</string>
     <string name="include_expand_in_pdf">Incluir al exportar a PDF</string>
+    <string name="reader_layout">Diseño</string>
+    <string name="reader_text_size">Tamaño del texto</string>
+    <string name="reader_format_screen">Pantalla</string>
+    <string name="reading_quick_tool">Botón junto al engranaje</string>
+    <string name="reading_quick_bookmark">Marcador</string>
+    <string name="remove_bookmark_here">Quitar marcador</string>
 </resources>

@@ -187,8 +187,16 @@ data class Preferences(
     val hiddenItems: Set<String> = emptySet(),
     /** Lists the [hiddenItems] anyway, dimmed, so they can be unhidden. */
     val showHidden: Boolean = false,
-    /** The reader's light/dark choice; null follows the app theme. Never written to the file. */
+    /** The button left of the reading islands' gear: "auto" (a bookmark when pages turn one at a time, else search), "bookmark", "search" or "none". */
+    val readingQuickTool: String = "auto",
+    /** The light/dark choice for read-only files; null follows the app theme. Never written to the file. */
     val readerDark: Boolean? = null,
+    /** The page a book is laid out on to be read: "screen" (this device's screen), "a6", "a5", "a4" or "letter". */
+    val readerPageFormat: String = "screen",
+    /** Whether a book's pages are turned sideways. */
+    val readerLandscape: Boolean = false,
+    /** A book's text size, in percent. */
+    val readerTextZoom: Int = 100,
     /** Whether an exported PDF gets a bookmark for each heading of the note's text. */
     val pdfHeadingBookmarks: Boolean = true,
     /** Whether a PDF export keeps the room pages are expanded by; off, every page exports at its paper size. */
@@ -327,7 +335,11 @@ data class Preferences(
         .put("show_unsupported", showUnsupported)
         .put("hidden_items", org.json.JSONArray(hiddenItems.sorted()))
         .put("show_hidden", showHidden)
+        .put("reading_quick_tool", readingQuickTool)
         .apply { readerDark?.let { put("reader_dark", it) } }
+        .put("reader_page_format", readerPageFormat)
+        .put("reader_landscape", readerLandscape)
+        .put("reader_text_zoom", readerTextZoom)
         .put("pdf_heading_bookmarks", pdfHeadingBookmarks)
         .put("pdf_include_expand", pdfIncludeExpand)
         .apply { if (hiddenShapes.isNotEmpty()) put("hidden_shapes", org.json.JSONArray(hiddenShapes.sorted())) }
@@ -335,6 +347,9 @@ data class Preferences(
         .put("autoscroll_speed", autoScrollSpeed)
 
     companion object {
+        /** The page formats a book can be laid out on, in the order they are offered. */
+        val READER_PAGE_FORMATS = listOf("screen", "a6", "a5", "a4", "letter")
+
         /** The accent a two-tone setting saved without a seed of its own has always loaded as. */
         val LEGACY_ACCENT = Rgba(0, 230, 118, 255)
         val DEFAULT_MATERIAL_SINGLE = Rgba(244, 67, 54, 255)
@@ -504,7 +519,11 @@ data class Preferences(
                 showUnsupported = o.optBoolean("show_unsupported", false),
                 hiddenItems = o.optJSONArray("hidden_items")?.let { a -> (0 until a.length()).mapNotNull { a.optString(it).ifEmpty { null } }.toSet() }.orEmpty(),
                 showHidden = o.optBoolean("show_hidden", false),
+                readingQuickTool = o.optString("reading_quick_tool", "auto").let { if (it in listOf("bookmark", "search", "none")) it else "auto" },
                 readerDark = if (o.has("reader_dark")) o.optBoolean("reader_dark") else null,
+                readerPageFormat = o.optString("reader_page_format", "screen").let { if (it in READER_PAGE_FORMATS) it else "screen" },
+                readerLandscape = o.optBoolean("reader_landscape", false),
+                readerTextZoom = o.optInt("reader_text_zoom", 100).coerceIn(25, 300),
                 pdfHeadingBookmarks = o.optBoolean("pdf_heading_bookmarks", true),
                 pdfIncludeExpand = o.optBoolean("pdf_include_expand", true),
                 hiddenShapes = o.optJSONArray("hidden_shapes")?.let { a -> (0 until a.length()).mapNotNull { a.optString(it).ifEmpty { null } }.toSet() }.orEmpty(),

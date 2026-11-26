@@ -91,6 +91,11 @@ import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.xnotes.R
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.DarkMode
+import androidx.compose.material.icons.outlined.LightMode
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import com.xnotes.platform.PdfOutlineEntry
 import com.xnotes.ui.icons.XnotesIcons
 import com.xnotes.ui.theme.LocalPalette
@@ -318,35 +323,6 @@ private fun noteName(editor: Editor): String {
     return if (doc.displayName == null && doc.path == null) stringResource(R.string.untitled) else editor.title
 }
 
-/** The note reader's islands over a read-only file: close and the name along the top beside [actions], and [bottom] below. */
-@Composable
-internal fun BoxScope.FileReaderIslands(
-    name: String,
-    awake: Boolean,
-    onClose: () -> Unit,
-    actions: @Composable RowScope.() -> Unit,
-    bottom: @Composable RowScope.() -> Unit,
-) {
-    val alpha = animateFloatAsState(if (awake) 1f else 0f, fade(true, awake, SHOW_MS, EaseOut), label = "fileIslandsAlpha")
-    val drift = animateFloatAsState(if (awake) 0f else 1f, fade(true, awake, SHOW_DRIFT_MS, Settle), label = "fileIslandsDrift")
-    val gone by remember { derivedStateOf { alpha.value == 0f } }
-    if (!awake && gone) return
-    CompositionLocalProvider(LocalBar provides barMetrics(LocalToolbarLook.current.size)) {
-        CompositionLocalProvider(LocalTipSide provides TipSide.BELOW) {
-            TopIslands {
-                Island(Modifier.layoutId(HOME).drifting(alpha, drift, -TOP_DRIFT)) {
-                    ToolbarIcon(XnotesIcons.prev, stringResource(R.string.reader_close), onClick = onClose)
-                }
-                TitleIsland(name, Modifier.layoutId(TITLE).drifting(alpha, drift, -TOP_DRIFT))
-                Island(Modifier.layoutId(GEAR).drifting(alpha, drift, -TOP_DRIFT), actions)
-            }
-        }
-        CompositionLocalProvider(LocalTipSide provides TipSide.ABOVE) {
-            Island(Modifier.align(Alignment.BottomCenter).padding(ISLAND_MARGIN).widthIn(max = BOTTOM_MAX).fillMaxWidth().drifting(alpha, drift, BOTTOM_DRIFT), bottom)
-        }
-    }
-}
-
 /** A name beside an open book, which says it is being read. */
 @Composable
 private fun TitleIsland(name: String, modifier: Modifier) {
@@ -376,7 +352,28 @@ private fun GearIsland(
     CompositionLocalProvider(LocalTipSide provides TipSide.BELOW) {
         Island(modifier) {
             // The panel hangs just under the island, its end lined up with the island's.
-            ToolbarIcon(XnotesIcons.bookOpen, stringResource(R.string.reader_exit), active = true) { editor.toggleReadOnly() }
+            // A read-only file is only ever read, so it has no editing to go back to.
+            if (editor.readerFile == null) ToolbarIcon(XnotesIcons.bookOpen, stringResource(R.string.reader_exit), active = true) { editor.toggleReadOnly() }
+            if (editor.readerFile != null) {
+                val scope = rememberCoroutineScope()
+                val dark = editor.readerDark
+                ToolbarIcon(
+                    if (dark) Icons.Outlined.LightMode else Icons.Outlined.DarkMode,
+                    stringResource(if (dark) R.string.reader_switch_to_light else R.string.reader_switch_to_dark),
+                ) { scope.launch { editor.toggleReaderDark() } }
+            }
+            when (editor.readingQuickTool) {
+                "bookmark" -> {
+                    val marked = editor.bookmarkHere != null
+                    val label = stringResource(R.string.page_n, editor.pageIndex + 1)
+                    ToolbarIcon(
+                        if (marked) XnotesIcons.bookmarkFilled else XnotesIcons.bookmark,
+                        stringResource(if (marked) R.string.remove_bookmark_here else R.string.add_bookmark),
+                        active = marked,
+                    ) { editor.toggleBookmarkHere(label) }
+                }
+                "search" -> ToolbarIcon(XnotesIcons.search, stringResource(R.string.search)) { editor.openSearch() }
+            }
             CompositionLocalProvider(LocalMenuOffset provides DpOffset(ISLAND_PAD, (bar.thickness - bar.button) / 2 + PANEL_GAP)) {
                 NoteSettingsButton(editor, fullscreen, onToggleFullscreen, onImportTemplate) { chrome.panelOpen = it }
             }

@@ -668,7 +668,6 @@
     <string name="image_as_page">Image as new page...</string>
     <string name="import_into_note">Import into this note...</string>
     <string name="imported_into_note">Added to the note</string>
-    <string name="find_in_page">Find in page</string>
     <string name="find_close">Close search</string>
     <string name="clear_search">Clear search</string>
     <string name="search">Search</string>
@@ -1381,17 +1380,14 @@
     <string name="note_templates_empty">No templates yet. Save a note as a template from its menu.</string>
     <string name="hidden_empty">Nothing is hidden on this device.</string>
     <string name="pref_show_hidden">Show files and folders hidden on this device</string>
-    <string name="reader_open_failed">Couldn\'t open this file.</string>
     <string name="reader_link_missing">Couldn\'t find \"%1$s\" in this folder.</string>
     <string name="reader_slide">Slide %1$d of %2$d</string>
     <string name="reader_notes">Notes</string>
     <string name="reader_rows_truncated">Showing the first %1$d rows.</string>
     <string name="reader_image">image</string>
     <string name="reader_empty">This file is empty.</string>
-    <string name="reader_close">Close reader</string>
     <string name="reader_switch_to_light">Switch to light</string>
     <string name="reader_switch_to_dark">Switch to dark</string>
-    <string name="reader_zoom_reset">Reset zoom</string>
     <string name="err_convert_to_note">Couldn\'t convert that file.</string>
     <string name="reader_truncated_cells">Showing the first %1$d rows and %2$d columns of this sheet.</string>
     <string name="material_contrast">"Contrast  %1$s"</string>
@@ -1687,4 +1683,10 @@
     <string name="file_info_location">Location</string>
     <string name="open_note">Open note</string>
     <string name="include_expand_in_pdf">Include in PDF export</string>
+    <string name="reader_layout">Layout</string>
+    <string name="reader_text_size">Text size</string>
+    <string name="reader_format_screen">Screen</string>
+    <string name="reading_quick_tool">Button beside the gear</string>
+    <string name="reading_quick_bookmark">Bookmark</string>
+    <string name="remove_bookmark_here">Remove bookmark</string>
 </resources>

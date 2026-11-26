@@ -70,6 +70,7 @@ object ReaderHtml {
         thead{display:table-header-group}
         tr,img,pre,blockquote,.slide,.callout,.props{break-inside:avoid}
         h1,h2,h3,h4,h5,h6{break-after:avoid}
+        section.chapter+section.chapter{break-before:page}
     """.trimIndent())
 
     private fun shell(body: String, c: Colors, wide: Boolean, extraCss: String): String {
