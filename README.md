@@ -28,6 +28,11 @@ App icon by [@failure-404](https://github.com/failure-404).
 
 </div>
 
+> [!IMPORTANT]
+> **Looking for App Screenshots!**
+> We’d love to feature your setup! If you’d like to share a screenshot of your notes, please submit it in [Issue #181](https://github.com/NeDDy3z/Sponka/issues/181). With your permission, we will showcase it in this repository and on our app store listings - with full credit to you.
+
+
 ## Why **sponka**?
 
 [xnotes](https://github.com/shardulvs/xnotes-android) is a thoughtfully built app and we're grateful to Shardul Vikram Singh for creating and sharing it openly. **sponka** (formerly `n-notes`) started as a personal fork to add day-to-day essentials like cloud sync and file change management, and has since grown into its own project.
