@@ -156,8 +156,8 @@ class EditorActivity : ComponentActivity() {
     // cutout); this activity just applies it to the window. Fullscreen draws edge to edge and lets
     // the swipe-in transient bars overlay (no resize), non-fullscreen insets under the bars.
     private var editor: Editor? = null
-    // A PDF or markdown file handed to us by another app ("Open with" / Share); consumed once the editor is ready.
-    private var pendingImport by mutableStateOf<Uri?>(null)
+    // Files handed to us by another app ("Open with" / Share); consumed once the editor is ready.
+    private var pendingImport by mutableStateOf<List<Uri>>(emptyList())
     // Whether the editor has composed; the first frame, and with it the system splash, waits for it.
     private var launched = false
 
@@ -173,7 +173,7 @@ class EditorActivity : ComponentActivity() {
         // The intent that started the task comes back whenever Android rebuilds it, from a saved state
         // or from Recents after the process died or the app was updated; it was handled the first time.
         val rebuilt = savedInstanceState != null || (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0
-        if (!rebuilt) pendingImport = importUri(intent)
+        if (!rebuilt) pendingImport = importUris(intent)
         // An editor that a destroyed activity left behind may still be saving. This activity's is
         // built once that is done; on a cold start nothing is pending and the content is set at once.
         lifecycleScope.launch {
@@ -218,8 +218,8 @@ class EditorActivity : ComponentActivity() {
                                 ed,
                                 fullscreen = ed.fullscreen,
                                 onToggleFullscreen = ed::toggleFullscreen,
-                                importUri = pendingImport,
-                                onImportConsumed = { pendingImport = null },
+                                importUris = pendingImport,
+                                onImportConsumed = { pendingImport = emptyList() },
                             )
                             SideEffect { launched = true }
                             if (ed.onboardingOpen) com.xnotes.ui.Onboarding(ed)
@@ -306,18 +306,21 @@ class EditorActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        importUri(intent)?.let { pendingImport = it }
+        importUris(intent).takeIf { it.isNotEmpty() }?.let { pendingImport = it }
     }
 
-    // The PDF or markdown uri carried by an inbound VIEW ("Open with") or SEND ("Share") intent, else null.
-    private fun importUri(intent: Intent?): Uri? = when (intent?.action) {
-        // Only the import filters take VIEW, but a task started by another build's filters keeps its intent.
-        Intent.ACTION_VIEW -> intent.data?.takeIf { (intent.type ?: runCatching { contentResolver.getType(it) }.getOrNull()) in IMPORT_TYPES }
-        Intent.ACTION_SEND ->
-            if (intent.type in IMPORT_TYPES)
-                IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
-            else null
-        else -> null
+    // The files carried by an inbound VIEW ("Open with"), SEND or SEND_MULTIPLE ("Share") intent: PDFs, markdown,
+    // and the notes and canvases xnotes shares as octet-stream, which only their names tell apart.
+    private fun importUris(intent: Intent?): List<Uri> {
+        fun wanted(u: Uri) = intent?.type in IMPORT_TYPES ||
+            com.xnotes.core.util.DocumentKind.isDocument(displayNameOf(contentResolver, u).orEmpty())
+        return when (intent?.action) {
+            // Only the import filters take VIEW, but a task started by another build's filters keeps its intent.
+            Intent.ACTION_VIEW -> listOfNotNull(intent.data?.takeIf { (intent.type ?: runCatching { contentResolver.getType(it) }.getOrNull()) in IMPORT_TYPES })
+            Intent.ACTION_SEND -> listOfNotNull(IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)?.takeIf(::wanted))
+            Intent.ACTION_SEND_MULTIPLE -> IntentCompat.getParcelableArrayListExtra(intent, Intent.EXTRA_STREAM, Uri::class.java).orEmpty().filter(::wanted)
+            else -> emptyList()
+        }
     }
 
     // uiMode is in configChanges, so a system dark/light flip lands here instead of recreating us.
@@ -386,7 +389,7 @@ private fun EditorScreen(
     editor: Editor,
     fullscreen: Boolean,
     onToggleFullscreen: () -> Unit,
-    importUri: Uri? = null,
+    importUris: List<Uri> = emptyList(),
     onImportConsumed: () -> Unit = {},
 ) {
     val context = LocalContext.current
@@ -470,13 +473,13 @@ private fun EditorScreen(
     // the (possibly large) copy + conversion happening at Save under the "Importing…" loader. Many skips
     // naming (each note takes its source file's name) and the explorer imports them one at a time. The
     // format (pdf / image / text) is classified from each picked file here.
+    fun pendingOf(u: android.net.Uri): com.xnotes.ui.PendingImport {
+        val name = displayNameOf(resolver, u) ?: "Document"
+        val mime = runCatching { resolver.getType(u) }.getOrNull() ?: ""
+        val kind = com.xnotes.ui.ImportKind.classify(name, mime)
+        return com.xnotes.ui.PendingImport(kind, com.xnotes.core.util.Paths.stem(name), u.toString(), name, mime)
+    }
     val importPdfLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
-        fun pendingOf(u: android.net.Uri): com.xnotes.ui.PendingImport {
-            val name = displayNameOf(resolver, u) ?: "Document"
-            val mime = runCatching { resolver.getType(u) }.getOrNull() ?: ""
-            val kind = com.xnotes.ui.ImportKind.classify(name, mime)
-            return com.xnotes.ui.PendingImport(kind, com.xnotes.core.util.Paths.stem(name), u.toString(), name, mime)
-        }
         when {
             uris.isEmpty() -> Unit
             uris.size == 1 -> pendingOf(uris[0]).let { editor.requestImport(it.kind, it.defaultName, it.uri, it.sourceName, it.mime) }
@@ -1215,16 +1218,20 @@ private fun EditorScreen(
     // and land on the backstage so its name dialog appears, exactly like the in-app "Import PDF"
     // button. With no folder chosen yet, fall back to App storage so the explorer renders and the
     // note autosaves. A markdown file becomes a new note whose text it is.
-    LaunchedEffect(importUri) {
-        val src = importUri ?: return@LaunchedEffect
+    LaunchedEffect(importUris) {
+        if (importUris.isEmpty()) return@LaunchedEffect
         onImportConsumed() // consume once; the body has no suspend point so it runs to completion
+        val src = importUris[0]
         val name = displayNameOf(resolver, src)
         val markdown = runCatching { resolver.getType(src) }.getOrNull() in MARKDOWN_TYPES ||
             name?.substringAfterLast('.', "")?.lowercase() in MARKDOWN_EXTENSIONS
-        val stem = com.xnotes.core.util.Paths.stem(name ?: "Document")
         guardedAll {
             if (editor.browseRoot == null) editor.useInternalStorage()
-            editor.requestImport(com.xnotes.ui.ImportKind.PDF, stem, src.toString(), markdown = markdown)
+            when {
+                importUris.size > 1 -> editor.requestImports(importUris.map(::pendingOf))
+                markdown -> editor.requestImport(com.xnotes.ui.ImportKind.PDF, com.xnotes.core.util.Paths.stem(name ?: "Document"), src.toString(), markdown = true)
+                else -> pendingOf(src).let { editor.requestImport(it.kind, it.defaultName, it.uri, it.sourceName, it.mime) }
+            }
             backstageView = com.xnotes.ui.BackstageView.HOME
             editor.goHomeAll()
         }
