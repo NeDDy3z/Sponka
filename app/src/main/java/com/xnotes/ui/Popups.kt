@@ -538,7 +538,16 @@ fun EraserConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
         })
         PanelCard(padding = PaddingValues(start = 12.dp, top = 10.dp, end = 12.dp, bottom = 12.dp)) {
             PanelCaption(stringResource(R.string.caption_erasable_kinds))
-            KindChips(kinds) { kinds = it; emit() }
+            KindChips(
+                kinds,
+                extra = if (editor.hostHasPdf) {
+                    {
+                        KindChip(XnotesIcons.markup, stringResource(R.string.caption_erase_markups), markups) {
+                            markups = !markups; emit()
+                        }
+                    }
+                } else null,
+            ) { kinds = it; emit() }
         }
         MenuCard(buildList<MenuGroup> {
             // SCALE off: the eraser holds a constant on-screen size whatever zoom you are at.
@@ -546,7 +555,6 @@ fun EraserConfigPopup(editor: ToolPopupHost, onDismiss: () -> Unit) {
             // Re-arm the previous pen/highlighter once an erase lifts, so a quick fix doesn't strand
             // you in the eraser.
             add { MenuSwitch(stringResource(R.string.caption_switch_back), switchBack) { switchBack = it; emit() } }
-            if (editor.hostHasPdf) add { MenuSwitch(stringResource(R.string.caption_erase_markups), markups) { markups = it; emit() } }
             // A pen scribbled over ink erases it without picking up the eraser.
             add { MenuSwitch(stringResource(R.string.caption_scribble_erase), scribble) { scribble = it; emit() } }
         })
@@ -564,10 +572,11 @@ internal fun penIcon(pen: Tool): ImageVector = ImageVector.vectorResource(
     },
 )
 
-/** One chip per item kind; the last chip that is on stays on, since a filter of nothing looks broken. */
+/** One chip per item kind; the last chip that is on stays on, since a filter of nothing looks broken.
+ *  [extra] appends a trailing chip of the host's own (the eraser's PDF-text-markup toggle). */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun KindChips(kinds: Set<SelectKind>, modifier: Modifier = Modifier, onChange: (Set<SelectKind>) -> Unit) {
+private fun KindChips(kinds: Set<SelectKind>, modifier: Modifier = Modifier, extra: (@Composable () -> Unit)? = null, onChange: (Set<SelectKind>) -> Unit) {
     val context = LocalContext.current
     FlowRow(modifier, horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         for (k in SelectKind.entries) {
@@ -577,6 +586,7 @@ private fun KindChips(kinds: Set<SelectKind>, modifier: Modifier = Modifier, onC
                 else onChange(if (on) kinds - k else kinds + k)
             }
         }
+        extra?.invoke()
     }
 }
 
