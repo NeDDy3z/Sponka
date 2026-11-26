@@ -228,4 +228,17 @@ class ReaderHtmlTest {
         assertTrue(html, html.contains("<span class=\"missing\">[gone]</span>"))
         assertTrue(html, html.contains("<span class=\"missing\">[web]</span>"))
     }
+
+    @Test
+    fun pageChunksSplitChaptersThenLongOnesAfterAParagraph() {
+        val long = "<section class=\"chapter\" id=\"ch1\">" + "<p>abcdefgh</p>".repeat(10) + "</section>"
+        val body = "<h1>T</h1><section class=\"chapter\" id=\"ch0\"><p>a</p></section>$long"
+        val chunks = ReaderHtml.pageChunks(body, max = 40)
+        assertEquals(body, chunks.joinToString(""))
+        assertEquals("<h1>T</h1>", chunks[0])
+        assertTrue(chunks[1].startsWith("<section class=\"chapter\" id=\"ch0\""))
+        assertTrue(chunks.size > 3)
+        assertTrue(chunks.drop(2).dropLast(1).all { it.endsWith("</p>") })
+        assertEquals(listOf("<p>x</p>"), ReaderHtml.pageChunks("<p>x</p>"))
+    }
 }

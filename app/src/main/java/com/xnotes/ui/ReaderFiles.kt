@@ -25,12 +25,12 @@ import kotlin.math.abs
 /** A file open in the read-only reader. */
 data class ReaderFile(val uri: String, val name: String)
 
-private sealed interface ReaderContent {
+internal sealed interface ReaderContent {
     class Html(val body: String, val wide: Boolean) : ReaderContent
     object Failed : ReaderContent
 }
 
-private fun readerLabels(context: Context) = ReaderHtml.Labels(
+internal fun readerLabels(context: Context) = ReaderHtml.Labels(
     slide = { n, total -> context.getString(R.string.reader_slide, n, total) },
     notes = context.getString(R.string.reader_notes),
     truncatedRows = { context.getString(R.string.reader_rows_truncated, it) },
@@ -39,24 +39,20 @@ private fun readerLabels(context: Context) = ReaderHtml.Labels(
     empty = context.getString(R.string.reader_empty),
 )
 
-private fun readerColors(p: Palette, background: String = Rgba.toHex(p.paper)) = ReaderHtml.Colors(
+internal fun readerColors(p: Palette, background: String = Rgba.toHex(p.paper)) = ReaderHtml.Colors(
     background, Rgba.toHex(p.text), Rgba.toHex(p.textDim), Rgba.toHex(p.accent), Rgba.toHex(raisedOnPaper(p)), Rgba.toHex(p.border),
 )
 
-/** How a book is laid out into pages: their [media] size, the paper kept round the text and the text's size in percent. */
-data class ReaderLayout(val media: android.print.PrintAttributes.MediaSize, val marginMm: Int, val textZoom: Int)
-
 /**
- * Prints a reader file as the reader shows it, on white paper or [dark], into an A4 PDF in the
+ * Prints a reader file as the light reader shows it, on white paper, into an A4 PDF in the
  * cache (turned sideways for wide content), for reading or turning into a note; null when it will
  * not open. Without [to], each call replaces the previous one's file.
  */
-internal suspend fun readerFileToPdf(context: Context, editor: Editor, file: ReaderFile, to: File? = null, preview: Boolean = false, dark: Boolean = false): File? {
+internal suspend fun readerFileToPdf(context: Context, editor: Editor, file: ReaderFile, to: File? = null, preview: Boolean = false): File? {
     val content = withContext(Dispatchers.IO) { runCatching { readerHtmlBody(context, editor, file, readerLabels(context)) }.getOrNull() } ?: return null
     // A preview needs the first page only, so a long book prints just its start.
     val body = if (preview && content.body.length > PREVIEW_CHARS) content.body.substring(0, content.body.indexOf('<', PREVIEW_CHARS).takeIf { it > 0 } ?: PREVIEW_CHARS) else content.body
-    val colors = if (dark) readerColors(editor.readerPalette(dark = true)) else readerColors(editor.readerPalette(dark = false), "#ffffff")
-    val html = ReaderHtml.printPage(body, colors, content.wide)
+    val html = ReaderHtml.printPage(body, readerColors(editor.readerPalette(dark = false), "#ffffff"), content.wide)
     val a4 = android.print.PrintAttributes.MediaSize.ISO_A4
     val media = if (content.wide) a4.asLandscape() else a4
     val out = to ?: withContext(Dispatchers.IO) {
@@ -64,10 +60,6 @@ internal suspend fun readerFileToPdf(context: Context, editor: Editor, file: Rea
     }
     return out.takeIf { ReaderPrint.toPdf(context, html, media, out) }
 }
-
-/** A book's reader HTML, its images inlined; null when it will not read. IO. */
-internal fun readerBookHtml(context: Context, editor: Editor, file: ReaderFile): String? =
-    runCatching { readerHtmlBody(context, editor, file, readerLabels(context))?.body }.getOrNull()
 
 /** How much of a file's HTML a preview prints: a few pages' worth. */
 private const val PREVIEW_CHARS = 12_000
@@ -80,7 +72,7 @@ private fun raisedOnPaper(p: Palette): Rgba {
 }
 
 /** The HTML body of a reader file; null for an unknown kind. */
-private fun readerHtmlBody(context: Context, editor: Editor, file: ReaderFile, labels: ReaderHtml.Labels): ReaderContent.Html? {
+internal fun readerHtmlBody(context: Context, editor: Editor, file: ReaderFile, labels: ReaderHtml.Labels): ReaderContent.Html? {
     val uri = Uri.parse(file.uri)
     return when (ReaderKind.ofName(file.name)) {
         ReaderKind.MARKDOWN -> ReaderContent.Html(

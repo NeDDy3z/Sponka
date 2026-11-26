@@ -193,6 +193,8 @@ data class Preferences(
     val readerDark: Boolean? = null,
     /** The page a book is laid out on to be read: "screen" (this device's screen), "a6", "a5", "a4" or "letter". */
     val readerPageFormat: String = "screen",
+    /** Whether read-only files show one page at a time instead of one long scroll. */
+    val readerPaged: Boolean = false,
     /** Whether a book's pages are turned sideways. */
     val readerLandscape: Boolean = false,
     /** A book's text size, in percent. */
@@ -338,6 +340,7 @@ data class Preferences(
         .put("reading_quick_tool", readingQuickTool)
         .apply { readerDark?.let { put("reader_dark", it) } }
         .put("reader_page_format", readerPageFormat)
+        .put("reader_paged", readerPaged)
         .put("reader_landscape", readerLandscape)
         .put("reader_text_zoom", readerTextZoom)
         .put("pdf_heading_bookmarks", pdfHeadingBookmarks)
@@ -522,6 +525,7 @@ data class Preferences(
                 readingQuickTool = o.optString("reading_quick_tool", "auto").let { if (it in listOf("bookmark", "search", "none")) it else "auto" },
                 readerDark = if (o.has("reader_dark")) o.optBoolean("reader_dark") else null,
                 readerPageFormat = o.optString("reader_page_format", "screen").let { if (it in READER_PAGE_FORMATS) it else "screen" },
+                readerPaged = o.optBoolean("reader_paged", false),
                 readerLandscape = o.optBoolean("reader_landscape", false),
                 readerTextZoom = o.optInt("reader_text_zoom", 100).coerceIn(25, 300),
                 pdfHeadingBookmarks = o.optBoolean("pdf_heading_bookmarks", true),

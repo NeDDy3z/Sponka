@@ -1364,8 +1364,6 @@
     <string name="reader_rows_truncated">Affichage des %1$d premières lignes.</string>
     <string name="reader_image">image</string>
     <string name="reader_empty">Ce fichier est vide.</string>
-    <string name="reader_switch_to_light">Passer en mode clair</string>
-    <string name="reader_switch_to_dark">Passer en mode sombre</string>
     <string name="convert_to_note">Convertir en note</string>
     <string name="converting_to_pdf">Conversion en PDF…</string>
     <string name="converting_to_note">Conversion en note...</string>
@@ -1681,10 +1679,13 @@
     <string name="file_info_location">Emplacement</string>
     <string name="open_note">Ouvrir une note</string>
     <string name="include_expand_in_pdf">Inclure dans l\'export PDF</string>
-    <string name="reader_layout">Mise en page</string>
     <string name="reader_text_size">Taille du texte</string>
     <string name="reader_format_screen">Écran</string>
     <string name="reading_quick_tool">Bouton à côté de l\'engrenage</string>
     <string name="reading_quick_bookmark">Signet</string>
     <string name="remove_bookmark_here">Retirer le signet</string>
+    <string name="find_in_page">Rechercher dans la page</string>
+    <string name="reader_open_failed">Impossible d\'ouvrir ce fichier.</string>
+    <string name="reader_close">Fermer le lecteur</string>
+    <string name="reader_paged">Une page à la fois</string>
 </resources>

@@ -1386,8 +1386,6 @@
     <string name="reader_rows_truncated">Showing the first %1$d rows.</string>
     <string name="reader_image">image</string>
     <string name="reader_empty">This file is empty.</string>
-    <string name="reader_switch_to_light">Switch to light</string>
-    <string name="reader_switch_to_dark">Switch to dark</string>
     <string name="err_convert_to_note">Couldn\'t convert that file.</string>
     <string name="reader_truncated_cells">Showing the first %1$d rows and %2$d columns of this sheet.</string>
     <string name="material_contrast">"Contrast  %1$s"</string>
@@ -1683,10 +1681,13 @@
     <string name="file_info_location">Location</string>
     <string name="open_note">Open note</string>
     <string name="include_expand_in_pdf">Include in PDF export</string>
-    <string name="reader_layout">Layout</string>
     <string name="reader_text_size">Text size</string>
     <string name="reader_format_screen">Screen</string>
     <string name="reading_quick_tool">Button beside the gear</string>
     <string name="reading_quick_bookmark">Bookmark</string>
     <string name="remove_bookmark_here">Remove bookmark</string>
+    <string name="find_in_page">Find in page</string>
+    <string name="reader_open_failed">Couldn\'t open this file.</string>
+    <string name="reader_close">Close reader</string>
+    <string name="reader_paged">One page at a time</string>
 </resources>

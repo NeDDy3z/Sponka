@@ -57,7 +57,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.xnotes.R
-import kotlinx.coroutines.launch
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.DarkMode
 import com.xnotes.canvas.PdfColorFilter
 import com.xnotes.canvas.ReaderPageMode
 import com.xnotes.canvas.ReaderSettings
@@ -91,7 +92,7 @@ import kotlin.math.roundToInt
  * control their popups had.
  */
 
-private enum class NotePage(val depth: Int) { HOME(0), STYLES(1), MARGINS(1), VIEW(1), LIMITS(1), LAYOUT(1), CUSTOMIZE(2), FILTERS(2) }
+private enum class NotePage(val depth: Int) { HOME(0), STYLES(1), MARGINS(1), VIEW(1), LIMITS(1), CUSTOMIZE(2), FILTERS(2) }
 
 /** The gear and its panel; [onOpenChange] hears it open and shut, as the reading islands must to stay up meanwhile. */
 @Composable
@@ -148,7 +149,6 @@ private fun NotePanel(editor: Editor, fullscreen: Boolean, onToggleFullscreen: (
             NotePage.VIEW -> ViewPage(editor, view, onBack = { home() }, onFilters = { page = NotePage.FILTERS })
             NotePage.FILTERS -> FiltersPage(editor, view) { page = NotePage.VIEW }
             NotePage.LIMITS -> LimitsPage(editor) { page = NotePage.HOME }
-            NotePage.LAYOUT -> ReaderLayoutPage(editor) { home() }
         }
     }
 }
@@ -158,7 +158,8 @@ private fun NotePanel(editor: Editor, fullscreen: Boolean, onToggleFullscreen: (
 @Composable
 private fun ColumnScope.HomePage(editor: Editor, fullscreen: Boolean, onToggleFullscreen: () -> Unit, go: (NotePage) -> Unit, close: () -> Unit) {
     val vs = editor.viewSettings
-    PageCard(editor, close)
+    PanelCloseRow(close)
+    PageCard(editor)
     Spacer(Modifier.height(10.dp))
     PanelCard {
         val prefs = editor.preferences
@@ -181,9 +182,8 @@ private fun ColumnScope.HomePage(editor: Editor, fullscreen: Boolean, onToggleFu
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         QuickTile(XnotesIcons.fullscreen, stringResource(R.string.toolbar_fullscreen), fullscreenState(fullscreen), fullscreen, Modifier.weight(1f)) { onToggleFullscreen() }
         // Turning it either way shuts the panel, so the page is in view as the bar or the islands come.
-        // A read-only file has no editing to turn back to.
         val reading = editor.readOnly
-        if (editor.readerFile == null) QuickTile(
+        QuickTile(
             XnotesIcons.bookOpen,
             stringResource(R.string.read_only),
             stringResource(if (reading) R.string.on else R.string.off),
@@ -232,24 +232,7 @@ private fun ColumnScope.HomePage(editor: Editor, fullscreen: Boolean, onToggleFu
             CardDivider(60.dp)
         }
         NavRow(stringResource(R.string.title_view), viewSubtitle(editor), onClick = { go(NotePage.VIEW) }) { ViewPreview(vs.mode) }
-        // A book is laid out into pages by the reader, which these settings shape.
-        if (editor.readerBook) {
-            CardDivider(60.dp)
-            NavRow(stringResource(R.string.reader_layout), readerLayoutSubtitle(editor), onClick = { go(NotePage.LAYOUT) }) {
-                Icon(XnotesIcons.bookOpen, null, tint = LocalPalette.current.textDim.toComposeColor(), modifier = Modifier.size(22.dp))
-            }
-        }
     }
-}
-
-/** "A5 · Landscape · 110%": a book's page format, its turn and its text size. */
-@Composable
-private fun readerLayoutSubtitle(editor: Editor): String {
-    val p = editor.preferences
-    val parts = mutableListOf(readerFormatLabel(p.readerPageFormat))
-    if (p.readerLandscape) parts += stringResource(R.string.orientation_landscape)
-    parts += "${p.readerTextZoom}%"
-    return parts.joinToString(" · ")
 }
 
 @Composable
@@ -259,41 +242,78 @@ private fun readerFormatLabel(format: String): String = when (format) {
     else -> format.uppercase()
 }
 
-/**
- * How a book is laid out into pages: their format, their turn and the text's size. Each change
- * lays the book out again, at the same point in it.
- */
+/** The gear of a read-only file and its panel; [onOpenChange] hears it open and shut, so the islands stay up meanwhile. */
+@Composable
+internal fun FileReaderSettingsButton(editor: Editor, fullscreen: Boolean, onToggleFullscreen: () -> Unit, onOpenChange: (Boolean) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    DisposableEffect(open) {
+        onOpenChange(open)
+        onDispose { if (open) onOpenChange(false) }
+    }
+    SettingsButton(open, { open = it }) { FileReaderPanel(editor, fullscreen, onToggleFullscreen) { open = false } }
+}
+
+/** Light or dark, the bars docked or floating, one page at a time on a paper format, and the text's size. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ReaderLayoutPage(editor: Editor, onBack: () -> Unit) {
-    val scope = androidx.compose.runtime.rememberCoroutineScope()
-    var p by remember { mutableStateOf(editor.preferences) }
-    var zoom by remember { mutableStateOf(p.readerTextZoom.toFloat()) }
-    fun apply(next: com.xnotes.settings.Preferences) {
-        if (next == p) return
-        p = next
-        editor.applyHomePreferences(editor.preferences.copy(readerPageFormat = next.readerPageFormat, readerLandscape = next.readerLandscape, readerTextZoom = next.readerTextZoom))
-        scope.launch { editor.relayoutReaderFile() }
-    }
-
-    PanelHeader(stringResource(R.string.reader_layout), onBack)
-    PanelCard {
-        PanelCaption(stringResource(R.string.page_size))
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            for (f in com.xnotes.settings.Preferences.READER_PAGE_FORMATS) {
-                PanelChip(readerFormatLabel(f), selected = f == p.readerPageFormat) { apply(p.copy(readerPageFormat = f)) }
-            }
-        }
-        Spacer(Modifier.height(4.dp))
-        PanelToggle(stringResource(R.string.orientation_landscape), p.readerLandscape) { apply(p.copy(readerLandscape = it)) }
+private fun ColumnScope.FileReaderPanel(editor: Editor, fullscreen: Boolean, onToggleFullscreen: () -> Unit, close: () -> Unit) {
+    val p = remember(editor.prefsVersion) { editor.preferences }
+    val dark = p.readerDark ?: LocalPalette.current.isDark
+    fun set(next: com.xnotes.settings.Preferences) = editor.applyHomePreferences(next)
+    PanelCloseRow(close)
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        QuickTile(XnotesIcons.fullscreen, stringResource(R.string.toolbar_fullscreen), fullscreenState(fullscreen), fullscreen, Modifier.weight(1f)) { onToggleFullscreen() }
+        QuickTile(
+            Icons.Outlined.DarkMode,
+            stringResource(R.string.theme_dark),
+            stringResource(if (dark) R.string.on else R.string.off),
+            dark,
+            Modifier.weight(1f),
+        ) { set(p.copy(readerDark = !dark)) }
     }
     Spacer(Modifier.height(10.dp))
     PanelCard {
-        // Laid out once the finger lifts, since each layout prints the book again.
-        PanelSlider(
-            stringResource(R.string.reader_text_size), "${zoom.roundToInt()}%", zoom, 50f..200f,
-            onChangeFinished = { apply(p.copy(readerTextZoom = zoom.roundToInt())) },
-        ) { zoom = (it / 10f).roundToInt() * 10f }
+        // One setting with the toolbar's, so notes and files always match.
+        PanelCaption(stringResource(R.string.pref_toolbar_style))
+        val floating = p.toolbarLook.floating
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            PanelChip(stringResource(R.string.toolbar_docked), selected = !floating) { editor.placeToolbar(p.toolbarLook.position, false) }
+            PanelChip(stringResource(R.string.toolbar_floating), selected = floating) { editor.placeToolbar(p.toolbarLook.position, true) }
+        }
+    }
+    Spacer(Modifier.height(10.dp))
+    PanelCard {
+        PanelToggle(stringResource(R.string.reader_paged), p.readerPaged) { set(p.copy(readerPaged = it)) }
+        if (p.readerPaged) {
+            PanelCaption(stringResource(R.string.page_size))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                for (f in com.xnotes.settings.Preferences.READER_PAGE_FORMATS) {
+                    PanelChip(readerFormatLabel(f), selected = f == p.readerPageFormat) { set(p.copy(readerPageFormat = f)) }
+                }
+            }
+            if (p.readerPageFormat != "screen") {
+                Spacer(Modifier.height(4.dp))
+                PanelToggle(stringResource(R.string.orientation_landscape), p.readerLandscape) { set(p.copy(readerLandscape = it)) }
+            }
+        }
+    }
+    Spacer(Modifier.height(10.dp))
+    PanelCard {
+        PanelSlider(stringResource(R.string.reader_text_size), "${p.readerTextZoom}%", p.readerTextZoom.toFloat(), 50f..200f) {
+            val zoom = (it / 10f).roundToInt() * 10
+            if (zoom != p.readerTextZoom) set(p.copy(readerTextZoom = zoom))
+        }
+    }
+}
+
+/** The panel's close, on a row of its own above the cards. */
+@Composable
+private fun PanelCloseRow(close: () -> Unit) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+        Icon(
+            XnotesIcons.close, stringResource(R.string.close), tint = LocalPalette.current.textDim.toComposeColor(),
+            modifier = Modifier.clip(CircleShape).clickable(role = Role.Button, onClick = close).padding(4.dp).size(18.dp),
+        )
     }
 }
 
@@ -317,7 +337,7 @@ internal fun LimitsLink(on: Boolean, onClick: () -> Unit) {
 
 /** Prev and next round a "3 of 12" that turns into a field when tapped, over where the page sits in the note. */
 @Composable
-private fun PageCard(editor: Editor, close: () -> Unit) {
+private fun PageCard(editor: Editor) {
     val palette = LocalPalette.current
     var editing by remember { mutableStateOf(false) }
     var text by remember { mutableStateOf("") }
@@ -329,10 +349,6 @@ private fun PageCard(editor: Editor, close: () -> Unit) {
         val keys = keyboardAttached()
         PanelCaption(stringResource(if (editing) R.string.title_go_to_page else R.string.caption_page)) {
             if (keys) CaptionHint("${Keys.PREV_PAGE} · ${Keys.NEXT_PAGE}")
-            Icon(
-                XnotesIcons.close, stringResource(R.string.close), tint = palette.textDim.toComposeColor(),
-                modifier = Modifier.padding(start = 8.dp).clip(CircleShape).clickable(role = Role.Button, onClick = close).padding(2.dp).size(16.dp),
-            )
         }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             RoundButton(XnotesIcons.prev, stringResource(R.string.previous_page)) { editor.prevPage() }

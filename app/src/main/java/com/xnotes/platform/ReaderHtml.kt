@@ -56,8 +56,41 @@ object ReaderHtml {
 
     // --- page shell ---
 
-    /** Wraps [body] in a full page styled with [c]; [wide] drops the reading-width cap (tables, slides). */
-    fun page(body: String, c: Colors, wide: Boolean = false): String = shell(body, c, wide, "")
+    /** Wraps [body] in a full page styled with [c]; [wide] drops the reading-width cap (tables, slides); [paged] lays it out one screen-wide column per page. */
+    fun page(body: String, c: Colors, wide: Boolean = false, paged: Boolean = false): String = shell(body, c, wide, if (paged) PAGED_CSS else "")
+
+    /**
+     * [body] cut into parts small enough to page through quickly: one per book chapter, a long
+     * part cut again after the first paragraph past [max] characters. Laying a whole book out in
+     * columns takes the WebView minutes.
+     */
+    fun pageChunks(body: String, max: Int = 100_000): List<String> =
+        body.split(Regex("(?=<section class=\"chapter\")")).filter { it.isNotBlank() }.flatMap { cutLong(it, max) }.ifEmpty { listOf(body) }
+
+    private fun cutLong(html: String, max: Int): List<String> {
+        val out = ArrayList<String>()
+        var start = 0
+        while (html.length - start > max) {
+            val cut = html.indexOf("</p>", start + max).takeIf { it >= 0 }?.plus(4) ?: break
+            if (cut >= html.length) break
+            out += html.substring(start, cut)
+            start = cut
+        }
+        out += html.substring(start)
+        return out
+    }
+
+    // Each column plus its gap is exactly one view wide, so page n starts at n view widths.
+    private val PAGED_CSS = """
+        html{height:100%}
+        body{height:100vh;box-sizing:border-box;max-width:none;margin:0;padding:76px 22px 84px;column-width:calc(100vw - 44px);column-gap:44px;column-fill:auto}
+        img{max-height:calc(100vh - 160px);object-fit:contain}
+        pre{white-space:pre-wrap;overflow:visible}
+        table{display:table;overflow:visible}
+        tr,img,pre,blockquote,.slide,.callout,.props{break-inside:avoid}
+        h1,h2,h3,h4,h5,h6{break-after:avoid}
+        section.chapter+section.chapter{break-before:column}
+    """.trimIndent()
 
     /** [page] laid out for print: backgrounds kept, nothing clipped by scroll boxes, blocks not split across pages. */
     fun printPage(body: String, c: Colors, wide: Boolean = false): String = shell(body, c, wide, """

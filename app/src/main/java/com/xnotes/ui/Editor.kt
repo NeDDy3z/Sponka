@@ -814,10 +814,10 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     /** Read-only waits while this note records, since a recording stamps what is written. */
     val canReadOnly: Boolean get() = AudioRecording.session?.owner !== this
 
-    /** Turn read-only on or off; on, whatever was being edited is let go of first. A read-only file stays read. */
+    /** Turn read-only on or off; on, whatever was being edited is let go of first. */
     fun toggleReadOnly() {
         val on = !readOnly
-        if (canvasOpen || (on && !canReadOnly) || (!on && readerFile != null)) return
+        if (canvasOpen || (on && !canReadOnly)) return
         if (on) {
             commitText()
             flowText.endSession()
@@ -2829,11 +2829,10 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         val oldFlow = publishedFlow
         val oldPages = publishedPageList
         val (addedW, addedH) = doc.blankPageSize(preferences.defaultPageChoice)
-        val frame = prelaidFlow?.takeIf { it.first === doc }?.second ?: flowLayout.layout(
+        val frame = flowLayout.layout(
             doc.flow, doc.pages.map { PageBox(it.sourceWidth, it.sourceHeight, it.textMargins) }, doc.dpi,
             firstPage = flowStart(doc), addedPage = PageBox(addedW, addedH),
         )
-        prelaidFlow = null
         // What this frame actually shows, not what the caller meant it to: an edit
         // republishes before it moves the caret, so a frame can be laid out against
         // a caret the edit has already invalidated. Recording the intent instead
@@ -2908,9 +2907,6 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     private fun openUrl(url: String) {
         val u = url.trim()
         if (u.startsWith(DOCUMENT_LINK)) return openDocumentLink(u.removePrefix(DOCUMENT_LINK))
-        // A [[link]] in a Markdown file, as its printed pages carry it.
-        val wiki = "${com.xnotes.platform.ReaderHtml.WIKI_SCHEME}:"
-        if (u.startsWith(wiki, ignoreCase = true)) return openDocumentLink(android.net.Uri.decode(u.substring(wiki.length)))
         val ok = u.startsWith("http://", ignoreCase = true) ||
             u.startsWith("https://", ignoreCase = true) ||
             u.startsWith("mailto:", ignoreCase = true)
@@ -3647,8 +3643,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      *  reopens this note where the user left off, unsaved edits included. */
     private fun saveSession() {
         if (!sessionLoaded) return // don't overwrite the saved note before restore has applied
-        // Nothing paged on top, or a read-only file, which must never come back bound to its own file: wipe any stale session.
-        if (!noteOpen || canvasOpen || readerFile != null) { session.clear(); return }
+        if (!noteOpen || canvasOpen) { session.clear(); return } // nothing paged on top: wipe any stale session
         val contentChanged = contentVersion != lastSessionContentVersion
         lastSessionContentVersion = contentVersion
         // Snapshot on the main thread, then write the session off-thread, so saving a big note's
@@ -4367,7 +4362,6 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         state.document.dirty = true
         bookmarkVersion++
         dirty = true
-        saveReaderMarks()
     }
 
     fun renameBookmark(mark: Bookmark, label: String) {
@@ -4377,7 +4371,6 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         state.document.dirty = true
         bookmarkVersion++
         dirty = true
-        saveReaderMarks()
     }
 
     fun removeBookmark(mark: Bookmark) {
@@ -4387,7 +4380,6 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         state.document.dirty = true
         bookmarkVersion++
         dirty = true
-        saveReaderMarks()
     }
 
     /** The button the reading islands show left of the gear, "auto" resolved: a bookmark when pages turn one at a time, else search. */
@@ -4409,33 +4401,6 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         addBookmark(label)
     }
 
-    /** Bookmarks of read-only files, kept on this device since the files are never written. */
-    private val readerMarks by lazy { appContext.getSharedPreferences("reader_bookmarks", android.content.Context.MODE_PRIVATE) }
-
-    /** Where page [page] of the open read-only file is however it is laid out: a book's first paragraph on it, else the page. */
-    private fun readerAnchorOf(page: Int): Int {
-        if (!readerBook) return page
-        val pf = publishedFlow ?: return page
-        val i = state.document.pages.getOrNull(page)?.let { pf.indexOf[it] } ?: return page
-        return pf.frame.pages.getOrNull(i)?.lines?.firstOrNull()?.paraIndex ?: page
-    }
-
-    private fun saveReaderMarks() {
-        val file = readerFile ?: return
-        val list = org.json.JSONArray()
-        state.document.bookmarks.forEach { list.put(org.json.JSONObject().put("a", readerAnchorOf(it.page)).put("l", it.label)) }
-        readerMarks.edit().putString(file.uri, list.toString()).apply()
-    }
-
-    /** [file]'s kept bookmarks, each on the page [pageOf] finds for its anchor. */
-    private fun readerMarksOf(file: ReaderFile, pageOf: (Int) -> Int?): List<Bookmark> {
-        val a = runCatching { org.json.JSONArray(readerMarks.getString(file.uri, null) ?: return emptyList()) }.getOrNull() ?: return emptyList()
-        return (0 until a.length()).mapNotNull { i ->
-            val o = a.optJSONObject(i) ?: return@mapNotNull null
-            pageOf(o.optInt("a"))?.let { Bookmark(it, o.optString("l")) }
-        }
-    }
-
     // --- file operations (SAF streams provided by the activity) ---
 
     /**
@@ -4447,203 +4412,8 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
      * the loaded note and leaves the explorer as it was. A second tap while one open is in flight is
      * ignored, so two reads never race to swap in a document.
      */
-    suspend fun openAsync(uri: String, name: String? = null) {
-        if (name != null && com.xnotes.core.util.ReaderKind.isReadable(name)) openReaderFile(ReaderFile(uri, name))
-        else openFrom(uri, name) { timing -> readStoredNote(uri, name, timing, ask = true) }
-    }
-
-    /** The read-only file the open document shows as pages, or null for a note. It is never saved. */
-    var readerFile by mutableStateOf<ReaderFile?>(null)
-        private set
-
-    /** Whether the open document is a book, which takes the reader's page format and text size. */
-    val readerBook: Boolean get() = readerFile?.let { com.xnotes.core.util.ReaderKind.isBook(it.name) } == true
-
-    /**
-     * Open read-only [file] in the note reader: laid out into pages once per layout (behind the
-     * opening spinner, then cached), and read like a note that cannot leave reading.
-     */
-    suspend fun openReaderFile(file: ReaderFile) {
-        val dark = readerDark
-        // A book is laid out as the note's own text, quickly and again on any change; the others are printed.
-        if (com.xnotes.core.util.ReaderKind.isBook(file.name)) {
-            openFrom(file.uri, file.name, reader = file) { bookDocument(file, readerLayout(), dark) }
-            return
-        }
-        openFrom(file.uri, file.name, reader = file) {
-            val pdf = readerPagesPdf(file, dark) ?: return@openFrom null
-            val staged = java.io.File.createTempFile("src", ".pdf", pdfDir)
-            pdf.copyTo(staged, overwrite = true)
-            val source = com.xnotes.platform.PdfSource.open(staged)
-            try {
-                if (source.pageCount == 0) { staged.delete(); null }
-                else com.xnotes.platform.PdfImporter.import(source).also { doc -> doc.bookmarks.addAll(readerMarksOf(file) { it.takeIf { p -> p in doc.pages.indices } }) }
-            } finally {
-                source.close()
-            }
-        }
-    }
-
-    /** Whether read-only files show dark: the reader's own choice, else the app theme's. */
-    val readerDark: Boolean get() { prefsVersion; return preferences.readerDark ?: palette.isDark }
-
-    /** Show read-only files light or dark, and lay the open one out again in it. */
-    suspend fun toggleReaderDark() {
-        applyHomePreferences(preferences.copy(readerDark = !readerDark))
-        relayoutReaderFile()
-    }
-
-    /** The open book's pictures, by the paragraph that holds each one's page; kept for laying it out again. */
-    private var bookImages: Map<Int, ImageData> = emptyMap()
-
-    /** A book's layout made off the main thread, published as is when its document goes on screen. */
-    @Volatile private var prelaidFlow: Pair<Document, FlowFrame>? = null
-
-    /** Bumped by each book relayout, so only the latest one lands. */
-    private var bookRelayouts = 0
-
-    /**
-     * [file], a book, as a note of its text laid out on [layout]'s pages, with each of its images on
-     * a page of its own; null when it will not read. IO.
-     */
-    private fun bookDocument(file: ReaderFile, layout: ReaderLayout, dark: Boolean): Document? {
-        val html = readerBookHtml(appContext, this, file) ?: return null
-        val book = com.xnotes.platform.BookFlow.parse(html)
-        if (book.paragraphs.isEmpty()) return null
-        val images = HashMap<Int, ImageData>()
-        for ((para, bytes) in book.images) {
-            val f = runCatching { java.io.File.createTempFile("img", null, imageDir).apply { writeBytes(bytes) } }.getOrNull() ?: continue
-            val size = imageCodec.probeFile(f.path)
-            if (size == null || size.width <= 0 || size.height <= 0) { f.delete(); continue }
-            images[para] = ImageData(f, size.width, size.height)
-        }
-        bookImages = images
-        val (doc, frame) = layBook(book.paragraphs, images, layout, dark) ?: return null
-        doc.bookmarks.addAll(readerMarksOf(file) { para -> frame.caretRect(com.xnotes.core.text.FlowPos(para.coerceIn(0, doc.flow.paragraphs.lastIndex), 0))?.first })
-        prelaidFlow = doc to frame
-        return doc
-    }
-
-    /** [paragraphs] laid out on [layout]'s pages, light or [dark], with [images] each on its page; off the main thread. */
-    private fun layBook(paragraphs: List<Paragraph>, images: Map<Int, ImageData>, layout: ReaderLayout, dark: Boolean): Pair<Document, FlowFrame>? {
-        val dpi = PageSize.DEFAULT_DPI
-        fun px(mils: Int) = PageSize.mmToPx(mils / 1000.0 * 25.4, dpi)
-        val doc = Document.blankPixels(1, px(layout.media.widthMils), px(layout.media.heightMils), dpi)
-        doc.style = PageStyle(pageColor = readerPalette(dark).paper, template = PageTemplates.NONE)
-        bookDefaults(layout).applyTo(doc.flow)
-        doc.flow.paragraphs.addAll(paragraphs)
-        val flowLayout = themedFlowLayout(doc)
-        fun frame() = flowLayout.layout(doc.flow, doc.pages.map { PageBox(it.sourceWidth, it.sourceHeight, it.textMargins) }, dpi)
-        // The first pass counts the pages, the second lays the text on them.
-        val first = frame()
-        val page = doc.pages.first()
-        repeat(first.extraPagesNeeded) { doc.pages.add(Page(page.width, page.height)) }
-        val frame = if (first.extraPagesNeeded > 0) frame() else first
-        val edge = PageSize.mmToPx(layout.marginMm.toDouble(), dpi)
-        for ((para, image) in images) {
-            val on = doc.pages.getOrNull(frame.caretRect(com.xnotes.core.text.FlowPos(para, 0))?.first ?: continue) ?: continue
-            // Fitted inside the page's margins, centred.
-            val s = minOf((on.width - 2 * edge) / image.width, (on.height - 2 * edge) / image.height)
-            val w = image.width * s
-            val h = image.height * s
-            on.items.add(ImageItem(image, Rect((on.width - w) / 2, (on.height - h) / 2, w, h)))
-        }
-        return doc to frame
-    }
-
-    private fun bookDefaults(layout: ReaderLayout): FlowDefaults {
-        val m = layout.marginMm.toDouble()
-        return FlowDefaults(
-            face = com.xnotes.core.pal.FontFace.SERIF,
-            sizePt = (if (layout.media.id == "screen") SCREEN_BOOK_PT else factoryFlow.sizePt) * layout.textZoom / 100.0,
-            margins = FlowMargins(m, m, m, m),
-        )
-    }
-
-    // A "screen" page shows at its real size, so its text takes a book's size, not the screen-scaled note default.
-    private val SCREEN_BOOK_PT = 10.0
-
-    /** Lay the open read-only file out again after its layout or light/dark changed, at the same point in it. */
-    suspend fun relayoutReaderFile() {
-        val file = readerFile ?: return
-        if (readerBook) { relayoutBook(file); return }
-        val at = if (pageCount > 1) pageIndex / (pageCount - 1).toFloat() else 0f
-        openReaderFile(file)
-        if (readerFile == file) goToPage((at * (pageCount - 1)).roundToInt())
-    }
-
-    /** A book laid out again in place, from the text already read: the page on screen stays until the new pages are ready. */
-    private suspend fun relayoutBook(file: ReaderFile) {
-        val doc = state.document
-        val tick = ++bookRelayouts
-        val anchor = readerAnchorOf(pageIndex)
-        val marks = doc.bookmarks.map { readerAnchorOf(it.page) to it.label }
-        val layout = readerLayout()
-        val dark = readerDark
-        val paragraphs = doc.flow.paragraphs.toList()
-        val images = bookImages
-        val (laid, frame) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
-            layBook(paragraphs, images, layout, dark)
-        } ?: return
-        if (tick != bookRelayouts || readerFile != file || state.document !== doc) return
-        fun pageOf(para: Int) = frame.caretRect(com.xnotes.core.text.FlowPos(para.coerceIn(0, paragraphs.lastIndex), 0))?.first
-        controller.clearSelection()
-        doc.pages.clear()
-        doc.pages.addAll(laid.pages)
-        doc.style = laid.style
-        bookDefaults(layout).applyTo(doc.flow)
-        doc.bookmarks.clear()
-        doc.bookmarks.addAll(marks.mapNotNull { (a, label) -> pageOf(a)?.let { Bookmark(it, label) } })
-        prelaidFlow = doc to frame
-        state.invalidateAllCaches()
-        state.relayout()
-        refreshContent()
-        goToPage(pageOf(anchor) ?: 0)
-        view.requestRender()
-    }
-
-    /** A book's page format and text size, from the preferences; "screen" is this device's screen at its real size. */
-    private fun readerLayout(): ReaderLayout {
-        val p = settings.prefs
-        val m = appContext.resources.displayMetrics
-        val media = when (p.readerPageFormat) {
-            "a6" -> android.print.PrintAttributes.MediaSize.ISO_A6
-            "a5" -> android.print.PrintAttributes.MediaSize.ISO_A5
-            "a4" -> android.print.PrintAttributes.MediaSize.ISO_A4
-            "letter" -> android.print.PrintAttributes.MediaSize.NA_LETTER
-            else -> {
-                val w = (minOf(m.widthPixels / m.xdpi, m.heightPixels / m.ydpi) * 1000).roundToInt()
-                val h = (maxOf(m.widthPixels / m.xdpi, m.heightPixels / m.ydpi) * 1000).roundToInt()
-                android.print.PrintAttributes.MediaSize("screen", "Screen", w, h)
-            }
-        }
-        val margin = when (p.readerPageFormat) {
-            "screen" -> 5
-            "a6" -> 8
-            "a5" -> 11
-            else -> 14
-        }
-        return ReaderLayout(if (p.readerLandscape) media.asLandscape() else media.asPortrait(), margin, p.readerTextZoom)
-    }
-
-    /** [file] printed to pages, light or [dark], from the cache when this file as it is now was printed so before. Blocks on the print; IO. */
-    private fun readerPagesPdf(file: ReaderFile, dark: Boolean): java.io.File? {
-        val dir = java.io.File(appContext.cacheDir, "reader-pages").apply { mkdirs() }
-        val stamp = "${file.uri}|${fileSizeOf(file.uri)}|${modifiedOf(file.uri)}|$dark"
-        val key = java.security.MessageDigest.getInstance("SHA-1").digest(stamp.toByteArray()).joinToString("") { "%02x".format(it) }
-        val out = java.io.File(dir, "$key.pdf")
-        if (out.length() > 0) return out.also { it.setLastModified(System.currentTimeMillis()) }
-        val made = kotlinx.coroutines.runBlocking { readerFileToPdf(appContext, this@Editor, file, out, dark = dark) } ?: return null
-        // Only the latest few layouts are kept.
-        dir.listFiles()?.sortedByDescending { it.lastModified() }?.drop(READER_PAGES_KEPT)?.forEach { it.delete() }
-        return made
-    }
-
-    private fun modifiedOf(uri: String): Long = runCatching {
-        appContext.contentResolver.query(
-            android.net.Uri.parse(uri), arrayOf(android.provider.DocumentsContract.Document.COLUMN_LAST_MODIFIED), null, null, null,
-        )?.use { c -> if (c.moveToFirst() && !c.isNull(0)) c.getLong(0) else -1L } ?: -1L
-    }.getOrDefault(-1L)
+    suspend fun openAsync(uri: String, name: String? = null) =
+        openFrom(uri, name) { timing -> readStoredNote(uri, name, timing, ask = true) }
 
     /**
      * [openAsync]'s work, with the note read by [read]. [unsaved] opens it as holding changes its
@@ -4653,7 +4423,6 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         uri: String,
         name: String?,
         unsaved: Boolean = false,
-        reader: ReaderFile? = null,
         read: (com.xnotes.format.DocumentCodec.ReadTiming) -> Document?,
     ) {
         if (opening) return
@@ -4698,15 +4467,13 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
             if (linkBack?.to != uri) linkBack = null
             if (noteOpen && canvasOpen) leaveCanvasInPlace()
             replaceDocument(doc)
-            readerFile = reader
             state.openFileBytes = fileBytes
             state.lastSaveBytes = fileBytes // the on-disk size, until the first autosave rewrites it
-            // A read-only file is never written back, so it never autosaves.
-            if (reader == null) maybeBindAutosave(uri) // resume autosaving if this note lives in the granted folder
+            maybeBindAutosave(uri) // resume autosaving if this note lives in the granted folder
             noteOpen = true // push the editor on top of backstage (only on a successful open)
             opened = true
             rememberOpened(uri, name)
-            if ((reader != null || openTabs.getOrNull(tabIndex(uri))?.reading == true) && !readOnly) toggleReadOnly()
+            if (openTabs.getOrNull(tabIndex(uri))?.reading == true && !readOnly) toggleReadOnly()
             if (unsaved) {
                 state.document.dirty = true
                 refreshContent() // which starts the save, for a note that autosaves
@@ -6308,19 +6075,17 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         return doc
     }
 
-    /** Append pages (sized like the last) until [doc]'s flow text stops overflowing past the real pages; the layout that fits, or null with no flow. */
-    private fun paginateFlow(doc: Document): com.xnotes.core.text.FlowFrame? {
-        if (doc.flow.isEmpty) return null
+    /** Append pages (sized like the last) until [doc]'s flow text stops overflowing past the real pages. */
+    private fun paginateFlow(doc: Document) {
+        if (doc.flow.isEmpty) return
         var guard = 0
-        var frame: com.xnotes.core.text.FlowFrame? = null
         while (guard++ < 4000) {
-            frame = flowLayout.layout(doc.flow, doc.pages.map { com.xnotes.core.text.PageBox(it.width, it.height, it.textMargins) }, doc.dpi)
+            val frame = flowLayout.layout(doc.flow, doc.pages.map { com.xnotes.core.text.PageBox(it.width, it.height, it.textMargins) }, doc.dpi)
             val need = frame.extraPagesNeeded
             if (need <= 0) break
             val last = doc.pages.last()
             repeat(need) { doc.pages.add(Page(last.width, last.height)) }
         }
-        return frame
     }
 
     // --- putting one note or file into another ---
@@ -7453,8 +7218,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     }
 
     private fun maybeBindAutosave(uri: String?) {
-        // A read-only file's pages are printed from it and never written back over it.
-        autosaveUri = if (uri != null && readerFile == null && browseRoot?.let { isUnderTree(uri, it) } == true) uri else null
+        autosaveUri = if (uri != null && browseRoot?.let { isUnderTree(uri, it) } == true) uri else null
         autosaveUri?.let { rememberStamp(it) }
     }
 
@@ -9106,7 +8870,6 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     }
 
     private fun replaceDocument(doc: Document) {
-        readerFile = null
         AudioRecording.stopFor(this) // closing the note places its recording
         AudioPlayback.closeFor(this)
         endReadOnly()
@@ -12735,6 +12498,3 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         }
     }
 }
-
-/** How many laid-out read-only files the cache keeps. */
-private const val READER_PAGES_KEPT = 12
