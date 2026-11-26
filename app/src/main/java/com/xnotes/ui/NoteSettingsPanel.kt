@@ -158,7 +158,7 @@ private fun NotePanel(editor: Editor, fullscreen: Boolean, onToggleFullscreen: (
 @Composable
 private fun ColumnScope.HomePage(editor: Editor, fullscreen: Boolean, onToggleFullscreen: () -> Unit, go: (NotePage) -> Unit, close: () -> Unit) {
     val vs = editor.viewSettings
-    PageCard(editor)
+    PageCard(editor, close)
     Spacer(Modifier.height(10.dp))
     PanelCard {
         val prefs = editor.preferences
@@ -317,7 +317,7 @@ internal fun LimitsLink(on: Boolean, onClick: () -> Unit) {
 
 /** Prev and next round a "3 of 12" that turns into a field when tapped, over where the page sits in the note. */
 @Composable
-private fun PageCard(editor: Editor) {
+private fun PageCard(editor: Editor, close: () -> Unit) {
     val palette = LocalPalette.current
     var editing by remember { mutableStateOf(false) }
     var text by remember { mutableStateOf("") }
@@ -329,6 +329,10 @@ private fun PageCard(editor: Editor) {
         val keys = keyboardAttached()
         PanelCaption(stringResource(if (editing) R.string.title_go_to_page else R.string.caption_page)) {
             if (keys) CaptionHint("${Keys.PREV_PAGE} · ${Keys.NEXT_PAGE}")
+            Icon(
+                XnotesIcons.close, stringResource(R.string.close), tint = palette.textDim.toComposeColor(),
+                modifier = Modifier.padding(start = 8.dp).clip(CircleShape).clickable(role = Role.Button, onClick = close).padding(2.dp).size(16.dp),
+            )
         }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             RoundButton(XnotesIcons.prev, stringResource(R.string.previous_page)) { editor.prevPage() }

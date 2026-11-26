@@ -106,7 +106,7 @@ import kotlinx.coroutines.delay
 /*
  * What a read-only note shows in place of its toolbar: islands on the floating bar's pill, over
  * the page. Home and the side panel, the title and the gear along the top; the page arrows, the
- * page number and a scrubber along the bottom. A tap on the page shows or hides all but the gear,
+ * page number and a scrubber along the bottom. A tap on the page shows or hides them all,
  * and moving the page hides them.
  */
 
@@ -242,7 +242,14 @@ internal fun BoxScope.ReadingIslands(
                     HomeIsland(editor, chrome, onHome, Modifier.layoutId(HOME).drifting(alpha, drift, -TOP_DRIFT))
                     TitleIsland(noteName(editor), Modifier.layoutId(TITLE).drifting(alpha, drift, -TOP_DRIFT))
                 }
-                GearIsland(editor, chrome, fullscreen, onToggleFullscreen, onImportTemplate, onClose, Modifier.layoutId(GEAR).graphicsLayer { this.alpha = gear.value })
+                // It fades with the others, but stays while its panel is open.
+                if (up || chrome.panelOpen) {
+                    GearIsland(
+                        editor, chrome, fullscreen, onToggleFullscreen, onImportTemplate, onClose,
+                        Modifier.layoutId(GEAR).graphicsLayer { this.alpha = gear.value }
+                            .then(if (chrome.panelOpen) Modifier else Modifier.drifting(alpha, drift, -TOP_DRIFT)),
+                    )
+                }
             }
             if (up) {
                 BottomIsland(editor, chrome, chapters, Modifier.drifting(alpha, drift, BOTTOM_DRIFT), refocus) { c ->
@@ -281,11 +288,15 @@ private fun TopIslands(islands: @Composable () -> Unit) {
         val side = maxOf(home?.width ?: 0, end?.width ?: 0) + TITLE_GAP.roundToPx()
         val room = constraints.maxWidth - 2 * side
         val title = if (room >= TITLE_MIN.roundToPx()) measurables.firstOrNull { it.layoutId == TITLE }?.measure(loose.copy(maxWidth = room)) else null
-        val height = maxOf(home?.height ?: 0, end?.height ?: 0, title?.height ?: 0)
+        // Too narrow for both, as beside an open sidebar on a phone: the gear drops to a row of its own.
+        val gap = TITLE_GAP.roundToPx()
+        val stacked = home != null && end != null && home.width + gap + end.width > constraints.maxWidth
+        val endY = if (stacked) home.height + gap else 0
+        val height = maxOf(home?.height ?: 0, endY + (end?.height ?: 0), title?.height ?: 0)
         layout(constraints.maxWidth, height) {
             home?.place(0, 0)
             title?.place((constraints.maxWidth - title.width) / 2, 0)
-            end?.place(constraints.maxWidth - end.width, 0)
+            end?.place(constraints.maxWidth - end.width, endY)
         }
     }
 }
@@ -337,7 +348,7 @@ private fun TitleIsland(name: String, modifier: Modifier) {
     }
 }
 
-/** The reader exit and the gear, which never fade, and beside them in a split the pane's close. */
+/** The reader exit and the gear, and beside them in a split the pane's close. */
 @Composable
 private fun GearIsland(
     editor: Editor,
