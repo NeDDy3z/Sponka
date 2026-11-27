@@ -103,4 +103,8 @@ Translations are currently fully LLM-generated (due to lack of translators) and 
 
 Released under the MIT License, the same as upstream. See [LICENSE](LICENSE).
 
+## Privacy
+
+Sponka collects no data. See the [privacy policy](PRIVACY.md).
+
 sponka (formerly n-notes) is built on [xnotes](https://github.com/shardulvs/xnotes-android) by Shardul Vikram Singh.
