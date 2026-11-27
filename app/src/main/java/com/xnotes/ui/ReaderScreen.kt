@@ -13,8 +13,8 @@ import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.zIndex
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
@@ -98,6 +98,13 @@ internal fun ReaderScreen(
         if (!editor.sidebarVisible) sideTab = FileSideTab.CONTENTS
         editor.sidebarVisible = !editor.sidebarVisible
     }
+    val floating = LocalToolbarLook.current.floating
+    // What the side panel covers of the left, its margins too while it floats.
+    val sideRoom = when {
+        side == null -> 0.dp
+        floating -> READER_SIDE_PANEL_WIDTH.dp + ISLAND_MARGIN * 2
+        else -> READER_SIDE_PANEL_WIDTH.dp
+    }
     var autoscroll by remember(file.uri) { mutableStateOf(false) }
     var scrubbing by remember { mutableStateOf(false) }
     var scrubTo by remember { mutableStateOf<Int?>(null) }
@@ -113,7 +120,7 @@ internal fun ReaderScreen(
     var enterAt by remember { mutableStateOf<Float?>(null) }
     // A deck counts its slides across all parts: where each part's first slide falls, and how many in all.
     val slideStarts = remember(chunks) { chunks.runningFold(0) { n, c -> n + SLIDE_TAG.findAll(c).count() } }
-    /** Go to [f] of the whole file; [live] (while scrubbing) only moves within the part shown, never loading another. */
+    /** Go to [f] of the whole file; [live] (while scrubbing) loads another part only once the one shown is ready, so a drag never queues loads. */
     fun showBook(f: Float, live: Boolean = false) {
         val (target, within) = if (slides) {
             val total = slideStarts.last()
@@ -127,7 +134,13 @@ internal fun ReaderScreen(
             k to (t - k).coerceAtMost(1f)
         }
         val wv = webView
-        if (target == chunk && wv != null && wv.ready) wv.showFraction(within) else if (!live) { enterAt = within; chunk = target }
+        when {
+            wv == null -> { enterAt = within; chunk = target }
+            target == chunk && wv.ready -> wv.showFraction(within)
+            // The part is still loading: it lands where the finger is now.
+            target == chunk -> { wv.restoreAt = within; if (enterAt != null) enterAt = within }
+            !live || wv.ready -> { enterAt = within; chunk = target }
+        }
     }
     /** Run [script] in part [part]: at once when it is shown, else once it has loaded. */
     fun inPart(part: Int, script: String) {
@@ -162,39 +175,54 @@ internal fun ReaderScreen(
         editor.applyHomePreferences(now.copy(readerMarks = if (next.isEmpty()) now.readerMarks - file.name else now.readerMarks + (file.name to next)))
     }
 
-    // Autoscroll moves the page on at the chosen speed, on into the next part at the end of one.
+    // Autoscroll moves the page on at the chosen speed, on into the next part at the end of one. Whole
+    // pages turn instead, each held as long as scrolling a screen's height would take; a slide is held 10 s at the default speed.
     val speed = prefs.autoScrollSpeed
-    val canAutoscroll = view == "scroll" || view == "vertical" || view == "horizontal" || view == "slides"
-    LaunchedEffect(autoscroll && canAutoscroll, speed, view) {
-        if (!(autoscroll && canAutoscroll)) return@LaunchedEffect
+    LaunchedEffect(autoscroll, speed, view) {
+        if (!autoscroll) return@LaunchedEffect
         val pxPerMm = context.resources.displayMetrics.ydpi / 25.4f
+        val turning = view == "slides" || view == "single" || view == "double" || view == "cover"
         var last = 0L
         var carry = 0f
+        var held = 0f
         while (true) {
             withFrameNanos { t ->
                 val wv = webView
+                if (last != 0L && wv != null && wv.ready && wv.touching) held = 0f
                 if (last != 0L && wv != null && wv.ready && !wv.touching) {
-                    carry += speed / 10f * pxPerMm * (t - last) / 1e9f
-                    val step = carry.toInt()
-                    carry -= step
-                    val across = view == "horizontal"
-                    if (if (across) wv.canScrollHorizontally(1) else wv.canScrollVertically(1)) {
-                        if (across) wv.scrollBy(step, 0) else wv.scrollBy(0, step)
-                    } else if (chunk < chunks.lastIndex) {
-                        enterAt = 0f; chunk++
-                    } else autoscroll = false
+                    val px = speed / 10f * pxPerMm * (t - last) / 1e9f
+                    if (turning) {
+                        held += if (slides) speed * (t - last) / 1e9f else px
+                        if (held >= if (slides) SLIDE_HOLD else wv.height.toFloat()) {
+                            held = 0f
+                            if (at < count - 1 || chunk < chunks.lastIndex) wv.turn(1) else autoscroll = false
+                        }
+                    } else {
+                        carry += px
+                        val step = carry.toInt()
+                        carry -= step
+                        val across = view == "horizontal"
+                        if (if (across) wv.canScrollHorizontally(1) else wv.canScrollVertically(1)) {
+                            if (across) wv.scrollBy(step, 0) else wv.scrollBy(0, step)
+                        } else if (chunk < chunks.lastIndex) {
+                            enterAt = 0f; chunk++
+                        } else autoscroll = false
+                    }
                 }
                 last = t
             }
         }
     }
 
-    // As on a note, the side panel pushes the page aside and the islands lie over both.
+    // The side panel lies over the page, which makes room for it itself (R.inset): reflowing and finding its place
+    // again happen in one go inside the page, where resizing the WebView shows the old layout shifted for a few frames.
     Box(Modifier.fillMaxSize().background(appPalette.bg.toComposeColor())) {
-        Row(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize()) {
             side?.let { tab ->
                 ReaderSidePanel(
-                    modifier = Modifier.padding(top = topIslandsRoom()),
+                    // Above the page, and touches on it never reach the page.
+                    // Below a docked bar; floating, it floats like the bar along the whole left side and the islands move beside it.
+                    modifier = Modifier.zIndex(1f).then(if (floating) Modifier.padding(ISLAND_MARGIN).barPill() else Modifier.padding(top = topIslandsRoom())).pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent() } },
                     tab = tab,
                     onTab = { sideTab = it },
                     parts = chunks,
@@ -209,7 +237,7 @@ internal fun ReaderScreen(
                     onHit = { h, q -> inPart(h.part, "window.R&&R.find(${JSONObject.quote(q)},${h.nth})") },
                 )
             }
-            Box(Modifier.weight(1f).fillMaxHeight()) {
+            Box(Modifier.fillMaxSize()) {
                 when (val c = content) {
                     null -> {
                         // Like a note opening: only a read slow enough to notice shows the spinner.
@@ -226,7 +254,7 @@ internal fun ReaderScreen(
                             ReaderHtml.readerPage(chunks[part], colors, view, paper, nonce, look, c.wide, smooth)
                         }
                         ReaderWebView(
-                            html, appPalette.bg, prefs.readerTextZoom, view, prefs.readerTapToTurn, smooth, enterAt,
+                            html, appPalette.bg, prefs.readerTextZoom, view, prefs.readerTapToTurn, smooth, enterAt, sideRoom.value.roundToInt(),
                             modifier = Modifier.fillMaxSize(),
                             onCreated = { webView = it },
                             onEntered = { enterAt = null },
@@ -237,7 +265,7 @@ internal fun ReaderScreen(
                             onTap = { awake = !awake },
                             onMove = { awake = false },
                             onPositionChange = { a, n ->
-                                if (!scrubbing) at = a
+                                at = a
                                 count = n
                                 bookAt = when {
                                     slides -> (slideStarts[part] + a) / (slideStarts.last() - 1).coerceAtLeast(1).toFloat()
@@ -257,6 +285,7 @@ internal fun ReaderScreen(
             file.name,
             awake,
             held = panelOpen || scrubbing,
+            start = sideRoom,
             onClose = onClose,
             home = {
                 ToolbarIcon(XnotesIcons.sidebar, stringResource(R.string.side_panel), active = side != null, shortcut = Keys.SIDEBAR) { toggleSide() }
@@ -265,10 +294,17 @@ internal fun ReaderScreen(
                 ToolbarIcon(XnotesIcons.search, stringResource(R.string.find_in_page), active = side == FileSideTab.SEARCH) {
                     if (side == FileSideTab.SEARCH) editor.sidebarVisible = false else { sideTab = FileSideTab.SEARCH; editor.sidebarVisible = true }
                 }
-                FileReaderSettingsButton(editor, file, fullscreen, onToggleFullscreen, autoscroll.takeIf { canAutoscroll }, { autoscroll = it }) { panelOpen = it }
+                FileReaderSettingsButton(editor, file, fullscreen, onToggleFullscreen, autoscroll, { autoscroll = it }) { panelOpen = it }
             },
         ) {
             val scrub = Modifier.weight(1f).padding(horizontal = SCRUBBER_ROOM)
+            // The thumb slides freely and, let go, snaps to the nearest slide, or page when the file is one part.
+            // shortcut: pages of a file in several parts are only counted once each part is laid out, so those never snap.
+            val steps = when {
+                slides -> slideStarts.last() - 1
+                paged && chunks.size == 1 -> count - 1
+                else -> PERMILLE
+            }.coerceAtLeast(1)
             val scrubber = @Composable {
                 // The scrubber spans the whole file, across its parts, and moves the page as it slides.
                 PageScrubber(
@@ -276,7 +312,8 @@ internal fun ReaderScreen(
                     onScrub = { scrubbing = true; scrubTo = it; showBook(it / PERMILLE.toFloat(), live = true) },
                     onLetGo = {
                         scrubbing = false
-                        scrubTo?.let { showBook(it / PERMILLE.toFloat()) }
+                        // The thumb snaps where it was let go rather than flicking back until the page reports.
+                        scrubTo?.let { bookAt = (it / PERMILLE.toFloat() * steps).roundToInt() / steps.toFloat(); showBook(bookAt) }
                         scrubTo = null
                     },
                     modifier = scrub,
@@ -285,8 +322,14 @@ internal fun ReaderScreen(
             if (paged) {
                 // A deck counts its slides through the whole file; other pages are counted in the part shown.
                 ToolbarIcon(XnotesIcons.prev, stringResource(R.string.previous_page), enabled = at > 0 || chunk > 0) { webView?.turn(-1) }
-                val label = if (slides) "${slideStarts[chunk.coerceIn(0, chunks.lastIndex)] + at + 1} " + stringResource(R.string.page_of_count, slideStarts.last())
-                    else "${at + 1} " + stringResource(R.string.page_of_count, count)
+                // A deck's slide under the thumb is known before its part loads.
+                val slideNow = (scrubTo?.let { (it / PERMILLE.toFloat() * steps).roundToInt() } ?: (slideStarts[chunk.coerceIn(0, chunks.lastIndex)] + at)).coerceIn(0, (slideStarts.last() - 1).coerceAtLeast(0))
+                // Pages are only counted in the part laid out, so a file in several parts shows how far through it is instead.
+                val label = when {
+                    slides -> "${slideNow + 1} " + stringResource(R.string.page_of_count, slideStarts.last())
+                    chunks.size > 1 -> "${(scrubTo ?: (bookAt * PERMILLE).roundToInt()) / 10}%"
+                    else -> "${at + 1} " + stringResource(R.string.page_of_count, count)
+                }
                 Label(label, Modifier.widthIn(min = 64.dp))
                 scrubber()
                 ToolbarIcon(XnotesIcons.next, stringResource(R.string.next_page), enabled = at < count - 1 || chunk < chunks.lastIndex) { webView?.turn(1) }
@@ -300,6 +343,10 @@ internal fun ReaderScreen(
 
 private const val PERMILLE = 1000
 
+
+/** A slide's hold in autoscroll, in speed x seconds: 200 is 10 s at the default speed, 2 s at the fastest. */
+private const val SLIDE_HOLD = 200f
+
 private val SLIDE_TAG = Regex("<section class=\"slide\"")
 
 /** The newest few hundred entries, so per-file maps in the synced settings stay small. */
@@ -311,9 +358,13 @@ internal val READER_SLIDE_KINDS = setOf(ReaderKind.PPTX, ReaderKind.PPT, ReaderK
 /** Files that bring their own page size and margins. */
 internal val READER_DOC_KINDS = setOf(ReaderKind.DOCX, ReaderKind.ODT)
 
-/** How [file] is shown: its own choice, else the default for all files. */
-internal fun readerViewOf(p: Preferences, file: ReaderFile): String =
-    if (ReaderKind.ofName(file.name) in READER_SLIDE_KINDS) "slides" else p.readerFileViews[file.name] ?: p.readerView
+/** How [file] is shown: a deck as slides and a book a page at a time; else its own choice, else documents their pages, else the default for all files. */
+internal fun readerViewOf(p: Preferences, file: ReaderFile): String {
+    val kind = ReaderKind.ofName(file.name)
+    if (kind in READER_SLIDE_KINDS) return "slides"
+    if (ReaderKind.isBook(file.name)) return "single"
+    return p.readerFileViews[file.name] ?: if (kind in READER_DOC_KINDS) "vertical" else p.readerView
+}
 
 /** The paper a flowing file is paged on, in cm as "width height top right bottom left", or "screen". */
 private fun readerPaper(p: Preferences): String {
@@ -356,17 +407,14 @@ private fun readerTheme(editor: Editor, p: Preferences, app: Palette): Pair<Read
         else -> readerColors(app)
     }
     val dark = luma(colors.background.removePrefix("#").toInt(16)) < 128
-    val pageFilter = when {
-        p.readerTheme == "sepia" -> "sepia(.35)"
-        p.readerTheme == "black" -> "invert(1) hue-rotate(180deg)"
-        dark -> "invert(.88) hue-rotate(180deg)"
-        else -> ""
-    }
+    // The reading themes give a document's pages their own paper and text, as any other file; light and dark only tint the white page.
+    val docPaper = p.readerTheme in setOf("sepia", "gray", "black", "custom")
     return colors to ReaderHtml.Look(
         around = Rgba.toHex(app.bg),
-        docFilter = pageFilter,
-        imageFilter = if (dark) "invert(1) hue-rotate(180deg)" else "",
+        docFilter = if (dark && !docPaper) "invert(.88) hue-rotate(180deg)" else "",
+        imageFilter = if (dark && !docPaper) "invert(1) hue-rotate(180deg)" else "",
         paperLook = ReaderHtml.paperLookCss(p.readerPaperLook),
+        docPaper = docPaper,
     )
 }
 
@@ -398,6 +446,9 @@ internal class ReaderWebView(context: Context) : WebView(context) {
     /** Whether the page has loaded (and been cut into pages) since the last load began. */
     var ready = false
         private set
+
+    /** How much of the page's left the side panel covers, in dp, which the page leaves free. */
+    var inset = 0
 
     /** Whether a finger is on the page, which holds autoscroll. */
     var touching = false
@@ -476,6 +527,7 @@ private fun ReaderWebView(
     tapToTurn: Boolean,
     smooth: Boolean,
     enterAt: Float?,
+    inset: Int,
     modifier: Modifier,
     onCreated: (ReaderWebView) -> Unit,
     onEntered: () -> Unit,
@@ -535,11 +587,13 @@ private fun ReaderWebView(
                 var atBottom = false
                 val taps = GestureDetector(ctx, object : GestureDetector.SimpleOnGestureListener() {
                     override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
-                        // Turning whole pages, a tap near either side turns the page; anywhere else shows or hides the islands.
-                        val edge = width / 4f
+                        // Turning whole pages or slides, a tap near either side turns; anywhere else shows or hides the islands.
+                        val left = inset * resources.displayMetrics.density
+                        val edge = (width - left) / 4f
+                        val turns = (turnsWhole || view == "slides") && tapToTurnNow.value
                         when {
-                            turnsWhole && tapToTurnNow.value && e.x < edge -> turn(-1)
-                            turnsWhole && tapToTurnNow.value && e.x > width - edge -> turn(1)
+                            turns && e.x < left + edge -> turn(-1)
+                            turns && e.x > width - edge -> turn(1)
                             else -> onTapNow.value()
                         }
                         return false
@@ -604,7 +658,11 @@ private fun ReaderWebView(
                 wv.tag = tag
                 wv.view = view
                 wv.reset()
-                wv.loadDataWithBaseURL(null, html, "text/html", "utf-8", null)
+                wv.inset = inset
+                wv.loadDataWithBaseURL(null, html.replaceFirst("<body", "<body data-inset=\"$inset\""), "text/html", "utf-8", null)
+            } else if (wv.inset != inset) {
+                wv.inset = inset
+                wv.evaluateJavascript("window.R&&R.inset($inset)", null)
             }
         },
         onRelease = { it.destroy() },

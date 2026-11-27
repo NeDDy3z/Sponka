@@ -355,17 +355,23 @@ private fun ColumnScope.FileReaderPanel(
     }
     Spacer(Modifier.height(10.dp))
     // A deck's slides are its pages already, so it only scrolls.
+    if (deck) PanelCard {
+        PanelToggle(stringResource(R.string.caption_tap_to_turn), p.readerTapToTurn) { set(p.copy(readerTapToTurn = it)) }
+    }
     if (!deck) PanelCard {
         // This file keeps its own view, by name so it follows the file to other devices.
         fun withFileView(v: String) = (p.readerFileViews - file.name + (file.name to v)).entries.toList().takeLast(300).associate { it.key to it.value }
-        PanelCaption(stringResource(R.string.title_view))
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            for (v in com.xnotes.settings.Preferences.READER_VIEWS) {
-                PanelChip(readerViewLabel(v), selected = v == view) { set(p.copy(readerFileViews = withFileView(v))) }
+        // A book is only read a page at a time.
+        if (!com.xnotes.core.util.ReaderKind.isBook(file.name)) {
+            PanelCaption(stringResource(R.string.title_view))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                for (v in com.xnotes.settings.Preferences.READER_VIEWS) {
+                    PanelChip(readerViewLabel(v), selected = v == view) { set(p.copy(readerFileViews = withFileView(v))) }
+                }
             }
-        }
-        PanelCheck(stringResource(R.string.default_for_all_files), view == p.readerView) { on ->
-            set(p.copy(readerView = if (on) view else openedDefault.takeIf { it != view } ?: "scroll", readerFileViews = withFileView(view)))
+            PanelCheck(stringResource(R.string.default_for_all_files), view == p.readerView) { on ->
+                set(p.copy(readerView = if (on) view else openedDefault.takeIf { it != view } ?: "scroll", readerFileViews = withFileView(view)))
+            }
         }
         if (view == "single" || view == "double" || view == "cover") {
             PanelToggle(stringResource(R.string.caption_turn_animation), p.readerTurnAnimation) { set(p.copy(readerTurnAnimation = it)) }

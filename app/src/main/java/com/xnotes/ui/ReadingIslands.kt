@@ -276,12 +276,14 @@ private fun Modifier.drifting(alpha: State<Float>, drift: State<Float>, toward: 
 /**
  * The islands over a read-only file: back with [home] beside it (the side panel, as on a note) and its
  * name, [actions] by the gear along the top, [bottom] below. A tap shows or hides them, and they stay while [held].
+ * Floating, they keep [start] free on the left, where a full-height side panel lies.
  */
 @Composable
 internal fun BoxScope.FileReadingIslands(
     name: String,
     awake: Boolean,
     held: Boolean,
+    start: Dp,
     onClose: () -> Unit,
     home: @Composable RowScope.() -> Unit,
     actions: @Composable RowScope.() -> Unit,
@@ -296,7 +298,7 @@ internal fun BoxScope.FileReadingIslands(
     fun Modifier.fading() = if (docked) this else drifting(alpha, drift, -TOP_DRIFT)
     CompositionLocalProvider(LocalBar provides barMetrics(LocalToolbarLook.current.size)) {
         CompositionLocalProvider(LocalTipSide provides TipSide.BELOW) {
-            TopIslands(if (docked) Modifier.drifting(alpha, drift, -TOP_DRIFT) else Modifier) {
+            TopIslands(if (docked) Modifier.drifting(alpha, drift, -TOP_DRIFT) else Modifier.padding(start = start)) {
                 Island(Modifier.layoutId(HOME).fading()) {
                     ToolbarIcon(XnotesIcons.prev, stringResource(R.string.reader_close), onClick = onClose)
                     home()
@@ -306,7 +308,7 @@ internal fun BoxScope.FileReadingIslands(
             }
         }
         CompositionLocalProvider(LocalTipSide provides TipSide.ABOVE) {
-            BottomBar(Modifier.drifting(alpha, drift, BOTTOM_DRIFT), bottom)
+            BottomBar(Modifier.drifting(alpha, drift, BOTTOM_DRIFT), if (docked) 0.dp else start, bottom)
         }
     }
 }
@@ -378,11 +380,11 @@ private fun Modifier.dockedStrip(top: Boolean): Modifier {
         .keepsTouches()
 }
 
-/** The bar along the bottom: a pill floating up to [BOTTOM_MAX] wide, or a strip across the whole edge while docked. */
+/** The bar along the bottom: a pill floating up to [BOTTOM_MAX] wide right of [start], or a strip across the whole edge while docked. */
 @Composable
-private fun BoxScope.BottomBar(modifier: Modifier, content: @Composable RowScope.() -> Unit) {
+private fun BoxScope.BottomBar(modifier: Modifier, start: Dp = 0.dp, content: @Composable RowScope.() -> Unit) {
     if (LocalToolbarLook.current.floating) {
-        Island(Modifier.align(Alignment.BottomCenter).padding(ISLAND_MARGIN).widthIn(max = BOTTOM_MAX).fillMaxWidth().then(modifier), content)
+        Island(Modifier.align(Alignment.BottomCenter).padding(start = start).padding(ISLAND_MARGIN).widthIn(max = BOTTOM_MAX).fillMaxWidth().then(modifier), content)
     } else {
         Island(Modifier.align(Alignment.BottomCenter).fillMaxWidth().then(modifier).dockedStrip(top = false), content)
     }

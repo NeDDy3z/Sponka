@@ -280,6 +280,9 @@ class ReaderHtmlTest {
         assertEquals(listOf(big), ReaderHtml.pageChunks(big, max = 20))
         val slides = "<section class=\"slide\">1</section><section class=\"slide\">2</section><section class=\"slide\">3</section>"
         assertEquals(listOf("<section class=\"slide\">1</section><section class=\"slide\">2</section>", "<section class=\"slide\">3</section>"), ReaderHtml.pageChunks(slides, max = 70))
+        // A picture's data does not count, so it never leaves a part with only the picture and a paragraph.
+        val pictured = "<section class=\"chapter\"><img src=\"data:image/png;base64,${"A".repeat(500)}\"><p>one</p><p>two</p><p>three</p></section>"
+        assertEquals(listOf(pictured), ReaderHtml.pageChunks(pictured, max = 100))
     }
 
     @Test

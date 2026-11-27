@@ -60,9 +60,9 @@ object ReaderHtml {
      * How the reader dresses a file beyond its colours: [around] fills what is behind the content and
      * keeps the app's theme; [docFilter] tints a document's own white pages to the reader's theme
      * ("" leaves them), [imageFilter] undoes it on pictures; [paperLook] is the CSS backgrounds a book's
-     * pages are printed on ("" for plain).
+     * pages are printed on ("" for plain). [docPaper] instead gives a document's pages the reader's own paper and text.
      */
-    class Look(val around: String, val docFilter: String = "", val imageFilter: String = "", val paperLook: String = "")
+    class Look(val around: String, val docFilter: String = "", val imageFilter: String = "", val paperLook: String = "", val docPaper: Boolean = false)
 
     /**
      * [body] as the reader shows it, with the reader's own script, the only one the page lets run ([nonce]).
@@ -141,7 +141,8 @@ object ReaderHtml {
 
     /**
      * [body] cut into parts of about [max] characters at chapter, slide or paragraph ends, so the
-     * WebView lays out one part at a time. A whole book at once takes it minutes.
+     * WebView lays out one part at a time. A whole book at once takes it minutes. Pictures' data is not
+     * counted: it costs the layout nothing, and counted, a chapter's opening picture alone filled a part.
      */
     fun pageChunks(body: String, max: Int = 100_000): List<String> {
         // A document's parts each keep its page and look.
@@ -150,13 +151,16 @@ object ReaderHtml {
         }
         val parts = ArrayList<String>()
         val pending = StringBuilder()
+        var pendingWeight = 0
         // Short chapters and slides share a part; a long one is cut after a paragraph.
         for (section in body.split(Regex("(?=<section class=\"(?:chapter|slide)\")"))) {
             if (section.isBlank()) continue
             // A slide is drawn whole, so only flowing text is cut.
             for (piece in if (section.startsWith("<section class=\"slide\"")) listOf(section) else cutLong(section, max)) {
-                if (pending.isNotEmpty() && pending.length + piece.length > max) { parts += pending.toString(); pending.clear() }
+                val weight = textWeight(piece)
+                if (pending.isNotEmpty() && pendingWeight + weight > max) { parts += pending.toString(); pending.clear(); pendingWeight = 0 }
                 pending.append(piece)
+                pendingWeight += weight
             }
         }
         if (pending.isNotEmpty()) parts += pending.toString()
@@ -165,16 +169,29 @@ object ReaderHtml {
 
     private fun cutLong(html: String, max: Int): List<String> {
         val out = ArrayList<String>()
+        // Only what is more than [max] from where the piece starts is cut, so no small tail is left alone.
+        var left = textWeight(html)
         var start = 0
-        while (html.length - start > max) {
-            val cut = html.indexOf("</p>", start + max).takeIf { it >= 0 }?.plus(4) ?: break
+        var weighed = 0
+        var weight = 0
+        var end = html.indexOf("</p>")
+        while (end >= 0 && left > max) {
+            val cut = end + 4
             if (cut >= html.length) break
-            out += html.substring(start, cut)
-            start = cut
+            // A paragraph ending at or past [max] ends the piece.
+            weight += textWeight(html.subSequence(weighed, end))
+            weighed = end
+            if (weight >= max) { out += html.substring(start, cut); start = cut; left -= weight; weight = 0 }
+            end = html.indexOf("</p>", cut)
         }
         out += html.substring(start)
         return out
     }
+
+    private val dataUri = Regex("data:[^\"')\\s]+")
+
+    /** [html]'s length without its pictures' data. */
+    private fun textWeight(html: CharSequence): Int = html.length - dataUri.findAll(html).sumOf { it.value.length }
 
     private fun pagesCss(c: Colors) = """
         body{max-width:none;margin:0;padding:0;overflow-wrap:break-word;background:transparent}
@@ -196,16 +213,18 @@ object ReaderHtml {
     // Moves the content into fixed-size pages, splitting lists, tables and long paragraphs between
     // them, then fits the pages to the screen; a scroll or a deck is left as it flows. It tells the
     // app through the title: "count|page", and "count|page|edge|n" when a turn runs past either end.
-    // The app drives it with R.go(page), R.turn(by), R.heading(n) and R.find(text, nth).
+    // The app drives it with R.go(page), R.turn(by), R.heading(n), R.find(text, nth) and R.inset(px).
     private val PAGER_JS = """
         (function(){
         var b=document.body,de=document.documentElement,src=document.getElementById('src'),out=document.getElementById('pages');
         var view=b.getAttribute('data-view'),smooth=b.hasAttribute('data-smooth'),cm=96/2.54;
         var flowing=view==='scroll'||view==='slides',paired=view==='double'||view==='cover',whole=view==='single'||paired;
+        // The app's side panel lies over the left [inset] px, which the page leaves free (R.inset).
+        var inset=+(b.getAttribute('data-inset')||0),ran=false;de.style.paddingLeft=inset+'px';
         var doc=src&&src.querySelector('article.doc'),spec=(doc&&doc.getAttribute('data-page'))||b.getAttribute('data-paper')||'screen',W,H,M;
-        if(spec==='screen'){W=de.clientWidth;H=de.clientHeight;M=[76,22,84,22];}
+        if(spec==='screen'){W=de.clientWidth-inset;H=de.clientHeight;M=[76,22,84,22];}
         else{var v=spec.split(' ').map(Number);W=v[0]*cm;H=v[1]*cm;M=v.slice(2).map(function(x){return x*cm;});}
-        var c,stack=[],placed=0,pages=[],spreads=0,edges=0;
+        var c,stack=[],placed=0,pages=[],spreads=0,edges=0,cur=0,frac=0;
         function newPage(){
           var p=document.createElement('div');p.className='page';
           p.style.cssText='width:'+W+'px;height:'+H+'px;padding:'+M.join('px ')+'px';
@@ -215,17 +234,24 @@ object ReaderHtml {
         }
         function target(){return stack.length?stack[stack.length-1].k:c;}
         function over(){return c.scrollHeight>c.clientHeight+1;}
-        var BOX=/^(SECTION|ARTICLE|DIV|UL|OL|TABLE|TBODY|THEAD|BLOCKQUOTE)$/,TEXT=/^(P|LI|H[1-6]|PRE|BLOCKQUOTE|DD|DT|TD)$/;
+        // Text blocks are cut by words, things like pictures and table rows never; any other box (a book's
+        // wrapping divs, spans) is opened and its children flowed, so nothing is left clipped on one page.
+        var TEXT=/^(P|LI|H[1-6]|PRE|BLOCKQUOTE|DD|DT|TD)$/,WHOLE=/^(IMG|SVG|TR|HR|BR|IFRAME|PICTURE|VIDEO|MATH)$/i;
         function flow(n){
           var t=target();t.appendChild(n);
+          // Blank space between blocks never starts a page of its own.
+          if(n.nodeType===3&&!n.data.trim())return;
           if(!over()){if(n.nodeType===1||n.textContent.trim())placed++;return;}
           t.removeChild(n);
-          if(n.nodeType===1&&BOX.test(n.tagName)&&n.children.length>1){
+          var el=n.nodeType===1;
+          if(el&&!TEXT.test(n.tagName)&&!WHOLE.test(n.tagName)&&(n.childNodes.length>1||n.children.length===1)){
             var k=n.cloneNode(false);t.appendChild(k);stack.push({o:n,k:k});
             Array.prototype.slice.call(n.childNodes).forEach(flow);stack.pop();return;
           }
           if(placed>0){newPage();flow(n);return;}
-          if(n.nodeType===1&&TEXT.test(n.tagName)&&cut(n))return;
+          // Bare text too long for a page is cut like a paragraph.
+          if(!el){var s=document.createElement('span');s.appendChild(n);n=s;}
+          if(!WHOLE.test(n.tagName)&&cut(n))return;
           target().appendChild(n);placed++;
         }
         // Splits a block too tall for an empty page after the last word that still fits; the rest is marked as a continuation.
@@ -243,9 +269,9 @@ object ReaderHtml {
         // Which spread a page is on and the first page of a spread: single, pairs, or the cover alone then pairs.
         function spreadOf(i){return view==='single'?i:view==='double'?Math.floor(i/2):(i===0?0:Math.floor((i+1)/2));}
         function firstOf(s){return view==='single'?s:view==='double'?2*s:(s===0?0:2*s-1);}
-        var z=1,vw=de.clientWidth,vh=de.clientHeight;
+        var z=1,vw=de.clientWidth-inset,vh=de.clientHeight;
         function fit(){
-          vw=de.clientWidth;vh=de.clientHeight;
+          vw=de.clientWidth-inset;vh=de.clientHeight;
           var per=paired?2:1;
           if(view==='vertical')z=Math.min(1,(vw-24)/W);
           else if(view==='horizontal')z=Math.min(1,(vh-160)/H);
@@ -259,16 +285,16 @@ object ReaderHtml {
           if(!pages.length)return 0;
           if(whole)return firstOf(Math.max(0,Math.min(spreads-1,Math.round(scrollX/vw))));
           // The last page starting before the middle of the screen; slides differ in height.
-          var x=view==='horizontal',mid=x?vw/2:vh/2,lo=0,hi=pages.length-1;
+          var x=view==='horizontal',mid=x?inset+vw/2:vh/2,lo=0,hi=pages.length-1;
           while(lo<hi){var m=(lo+hi+1)>>1,r=pages[m].getBoundingClientRect();if((x?r.left:r.top)<=mid)lo=m;else hi=m-1;}
           return lo;
         }
-        function report(){if(!pages.length)return;var t=pages.length+'|'+at();if(document.title.split('|').slice(0,2).join('|')!==t)document.title=t;}
+        function report(){if(!pages.length)return;cur=at();var t=pages.length+'|'+cur;if(document.title.split('|').slice(0,2).join('|')!==t)document.title=t;}
         function go(i,anim){
           if(!pages.length)return;
           i=Math.max(0,Math.min(pages.length-1,i));
           if(whole)scrollTo({left:spreadOf(i)*vw,top:0,behavior:anim&&smooth?'smooth':'instant'});
-          else{var r=pages[i].getBoundingClientRect();if(view==='horizontal')scrollTo(r.left+scrollX-16,scrollY);else scrollTo(scrollX,r.top+scrollY-76);}
+          else{var r=pages[i].getBoundingClientRect();if(view==='horizontal')scrollTo(r.left+scrollX-16-inset,scrollY);else scrollTo(scrollX,r.top+scrollY-76);}
           report();
         }
         // Turns [d] spreads on from page [p] (the page in view when left out), or reports running past an end.
@@ -301,8 +327,12 @@ object ReaderHtml {
         function run(){
           if(flowing){
             if(view==='slides')pages=Array.prototype.slice.call(document.querySelectorAll('section.slide'));
-            report();addEventListener('scroll',report,{passive:true});addEventListener('resize',report);return;
+            var track=function(){report();var m=de.scrollHeight-innerHeight;frac=m>0?scrollY/m:0;};
+            track();addEventListener('scroll',track,{passive:true});
+            ran=true;addEventListener('resize',relayout);return;
           }
+          // Pictures are capped to a page before cutting, so one never overflows the page it is put on; the room left is the line's descent.
+          Array.prototype.forEach.call(src.querySelectorAll('img'),function(im){im.style.maxHeight=(H-M[0]-M[2]-12)+'px';});
           Array.prototype.slice.call((doc||src).childNodes).forEach(function(n){if(!c)newPage();flow(n);});
           if(!c)newPage();
           src.parentNode.removeChild(src);
@@ -311,13 +341,19 @@ object ReaderHtml {
             for(var i=0;i<all.length;i=firstOf(spreadOf(i)+1)){var sp=document.createElement('div');sp.className='spread';for(var j=i;j<Math.min(firstOf(spreadOf(i)+1),all.length);j++)sp.appendChild(all[j]);out.appendChild(sp);}
             spreads=out.children.length;
           }
-          Array.prototype.forEach.call(document.querySelectorAll('.page img'),function(im){im.style.maxHeight=(H-M[0]-M[2])+'px';});
           fit();report();
           addEventListener('scroll',report,{passive:true});
-          // A new size (the side panel opening, a turn of the device) keeps the page in view.
-          addEventListener('resize',function(){var p=at();fit();go(p);});
+          ran=true;addEventListener('resize',relayout);
         }
-        window.R={go:go,turn:turn,heading:heading,find:find};
+        // A new width (the side panel, a turn of the device) keeps the place last read; measuring now would read the old layout.
+        function relayout(){
+          if(!ran)return;
+          if(!flowing){fit();go(cur);}
+          else if(view==='slides')go(cur);
+          else scrollTo(scrollX,frac*Math.max(0,de.scrollHeight-innerHeight));
+        }
+        function setInset(p){inset=p;de.style.paddingLeft=p+'px';relayout();}
+        window.R={go:go,turn:turn,heading:heading,find:find,inset:setInset};
         if(document.readyState==='complete')run();else addEventListener('load',run);
         })();
     """.trimIndent()
@@ -399,6 +435,7 @@ object ReaderHtml {
             body:has(> article.doc),body:has(section.slide){background:transparent}
             ${if (look.docFilter.isEmpty()) "" else "article.doc:not(.content),.page:has(> .doc){filter:${look.docFilter}}"}
             ${if (look.imageFilter.isEmpty()) "" else ".doc img{filter:${look.imageFilter}}"}
+            ${if (!look.docPaper) "" else ".doc,.page:has(> .doc){background:${c.background}!important}.doc{color:${c.text}!important}.doc [style*=\"color:#000000\"]{color:inherit!important}.doc a{color:${c.accent}!important}.doc th,.doc td{border-color:${c.border}!important}"}
             ${if (look.paperLook.isEmpty()) "" else "body.scroll:not(:has(> article.doc)),.page:not(:has(> .doc)){background-image:${look.paperLook}}"}
             ::highlight(hit){background:rgba(255,200,0,.55);color:inherit}
             .doc{display:block;background:#fff;color:#000;font-size:11pt;line-height:1.15;margin:0 auto;box-sizing:border-box;max-width:100%;box-shadow:0 1px 5px rgba(0,0,0,.4)}

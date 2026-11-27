@@ -59,6 +59,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
+/** The side panel's width in dp, which the page under it leaves free. */
+internal const val READER_SIDE_PANEL_WIDTH = 224
+
 /** The tabs of a read-only file's side panel. */
 internal enum class FileSideTab { CONTENTS, BOOKMARKS, SEARCH }
 
@@ -83,7 +86,7 @@ internal fun ReaderSidePanel(
     onHit: (ReaderHtml.PartHit, String) -> Unit,
 ) {
     val palette = LocalPalette.current
-    Column(Modifier.width(224.dp).fillMaxHeight().background(palette.panel.toComposeColor()).then(modifier)) {
+    Column(modifier.width(READER_SIDE_PANEL_WIDTH.dp).fillMaxHeight().background(palette.panel.toComposeColor())) {
         SideTabStrip(FileSideTab.entries.size, tab.ordinal) {
             SideTab(tab == FileSideTab.CONTENTS, XnotesIcons.contents, stringResource(R.string.contents)) { onTab(FileSideTab.CONTENTS) }
             SideTab(tab == FileSideTab.BOOKMARKS, XnotesIcons.bookmark, stringResource(R.string.bookmarks)) { onTab(FileSideTab.BOOKMARKS) }
