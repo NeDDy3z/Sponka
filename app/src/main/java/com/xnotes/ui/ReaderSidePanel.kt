@@ -57,7 +57,6 @@ import com.xnotes.ui.theme.toComposeColor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
-import kotlin.math.roundToInt
 
 /** The side panel's width in dp, which the page under it leaves free. */
 internal const val READER_SIDE_PANEL_WIDTH = 224
@@ -80,7 +79,7 @@ internal fun ReaderSidePanel(
     onAddMark: (String) -> Unit,
     onRenameMark: (ReaderMark, String) -> Unit,
     onRemoveMark: (ReaderMark) -> Unit,
-    defaultMarkLabel: String,
+    placeOf: (Float) -> String,
     onHeading: (ReaderHtml.PartHeading) -> Unit,
     onMark: (ReaderMark) -> Unit,
     onHit: (ReaderHtml.PartHit, String) -> Unit,
@@ -95,7 +94,7 @@ internal fun ReaderSidePanel(
         Box(Modifier.fillMaxWidth().weight(1f)) {
             when (tab) {
                 FileSideTab.CONTENTS -> ContentsList(parts, onHeading)
-                FileSideTab.BOOKMARKS -> MarksList(marks, at, defaultMarkLabel, onAddMark, onRenameMark, onRemoveMark, onMark)
+                FileSideTab.BOOKMARKS -> MarksList(marks, at, placeOf, onAddMark, onRenameMark, onRemoveMark, onMark)
                 FileSideTab.SEARCH -> SearchList(parts, onHit)
             }
         }
@@ -142,7 +141,7 @@ private fun produceHeadings(parts: List<String>) = androidx.compose.runtime.prod
 private fun MarksList(
     marks: List<ReaderMark>,
     at: Float,
-    defaultLabel: String,
+    placeOf: (Float) -> String,
     onAdd: (String) -> Unit,
     onRename: (ReaderMark, String) -> Unit,
     onRemove: (ReaderMark) -> Unit,
@@ -171,13 +170,15 @@ private fun MarksList(
         else LazyColumn(Modifier.fillMaxWidth()) {
             itemsIndexed(marks.sortedBy { it.at }) { i, m ->
                 if (i > 0) Box(Modifier.padding(start = 44.dp, end = 8.dp).fillMaxWidth().height(1.dp).background(palette.border.toComposeColor()))
-                MarkRow(m, here = kotlin.math.abs(m.at - at) < 0.002f, onClick = { onMark(m) }, onRename = { renaming = m }, onRemove = { onRemove(m) })
+                MarkRow(m, placeOf(m.at), here = kotlin.math.abs(m.at - at) < 0.002f, onClick = { onMark(m) }, onRename = { renaming = m }, onRemove = { onRemove(m) })
             }
         }
     }
     if (adding) {
-        var label by remember { mutableStateOf(defaultLabel) }
-        val add = { onAdd(label.ifBlank { defaultLabel }); adding = false }
+        val place = remember { placeOf(at) }
+        var label by remember { mutableStateOf(place) }
+        // A mark left with its place for a name shows its place in whatever layout the file is read in.
+        val add = { onAdd(if (label.isBlank() || label == place) "" else label); adding = false }
         SheetDialog(
             title = stringResource(R.string.add_bookmark),
             onDismiss = { adding = false },
@@ -185,8 +186,9 @@ private fun MarksList(
         ) { DialogField(label, { label = it }, onDone = add) }
     }
     renaming?.let { m ->
-        var label by remember(m) { mutableStateOf(m.label) }
-        val rename = { if (label.isNotBlank()) { onRename(m, label); renaming = null } }
+        val place = placeOf(m.at)
+        var label by remember(m) { mutableStateOf(if (autoNamed(m)) place else m.label) }
+        val rename = { if (label.isNotBlank()) { onRename(m, if (label == place) "" else label); renaming = null } }
         SheetDialog(
             title = stringResource(R.string.rename_bookmark),
             onDismiss = { renaming = null },
@@ -195,9 +197,14 @@ private fun MarksList(
     }
 }
 
-/** One bookmark: its ribbon, filled when the reader is there, its name and how far in, rename and remove. */
+private fun autoNamed(m: ReaderMark) = m.label.isBlank() || OLD_AUTO_NAME.matches(m.label)
+
+/** What marks were named before they followed the layout: how far in, as "37%". */
+private val OLD_AUTO_NAME = Regex("\\d+%")
+
+/** One bookmark: its ribbon, filled when the reader is there, its name and where it is, rename and remove. */
 @Composable
-private fun MarkRow(mark: ReaderMark, here: Boolean, onClick: () -> Unit, onRename: () -> Unit, onRemove: () -> Unit) {
+private fun MarkRow(mark: ReaderMark, place: String, here: Boolean, onClick: () -> Unit, onRename: () -> Unit, onRemove: () -> Unit) {
     val palette = LocalPalette.current
     val accent = palette.accent.toComposeColor()
     Row(
@@ -207,10 +214,10 @@ private fun MarkRow(mark: ReaderMark, here: Boolean, onClick: () -> Unit, onRena
         Icon(if (here) XnotesIcons.bookmarkFilled else XnotesIcons.bookmark, null, tint = accent, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(12.dp))
         Text(
-            mark.label, color = if (here) accent else palette.text.toComposeColor(), fontSize = 13.sp,
+            if (autoNamed(mark)) place else mark.label, color = if (here) accent else palette.text.toComposeColor(), fontSize = 13.sp,
             maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
         )
-        Text("${(mark.at * 100).roundToInt()}%", color = palette.textDim.toComposeColor(), fontSize = 12.sp, style = tabular(), modifier = Modifier.padding(horizontal = 6.dp))
+        if (!autoNamed(mark)) Text(place, color = palette.textDim.toComposeColor(), fontSize = 12.sp, style = tabular(), modifier = Modifier.padding(horizontal = 6.dp))
         Icon(
             XnotesIcons.edit, stringResource(R.string.rename), tint = palette.textDim.toComposeColor(),
             modifier = Modifier.size(36.dp).clip(CircleShape).clickable(role = Role.Button, onClick = onRename).padding(9.dp),

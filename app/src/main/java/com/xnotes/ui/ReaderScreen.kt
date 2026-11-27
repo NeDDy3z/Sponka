@@ -15,6 +15,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.zIndex
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
@@ -120,14 +123,24 @@ internal fun ReaderScreen(
     var enterAt by remember { mutableStateOf<Float?>(null) }
     // A deck counts its slides across all parts: where each part's first slide falls, and how many in all.
     val slideStarts = remember(chunks) { chunks.runningFold(0) { n, c -> n + SLIDE_TAG.findAll(c).count() } }
+    val paper = readerPaper(prefs)
+    var pageBox by remember { mutableStateOf(IntSize.Zero) }
+    // Other pages are counted part by part on a hidden page, then the whole file counts them like a deck its slides.
+    var partPages by remember(chunks, view, paper, prefs.readerTextZoom, sideRoom, pageBox) { mutableStateOf(emptyList<Int>()) }
+    // Counting waits for the page in view, so the first page is not slowed by the count beside it.
+    var shown by remember(file.uri) { mutableStateOf(false) }
+    val counted = slides || (paged && partPages.size == chunks.size)
+    val starts = remember(slides, slideStarts, partPages) { if (slides) slideStarts else partPages.runningFold(0, Int::plus) }
+    // Pages in the whole file as the reader lays it out now; 0 while not known.
+    val pages = when { counted -> starts.last(); paged && chunks.size == 1 -> count; else -> 0 }
     /** Go to [f] of the whole file; [live] (while scrubbing) loads another part only once the one shown is ready, so a drag never queues loads. */
     fun showBook(f: Float, live: Boolean = false) {
-        val (target, within) = if (slides) {
-            val total = slideStarts.last()
+        val (target, within) = if (counted) {
+            val total = starts.last()
             val slide = (f.coerceIn(0f, 1f) * (total - 1).coerceAtLeast(0)).roundToInt()
-            val k = slideStarts.dropLast(1).indexOfLast { it <= slide }.coerceAtLeast(0)
-            val n = slideStarts[k + 1] - slideStarts[k]
-            k to if (n > 1) (slide - slideStarts[k]) / (n - 1f) else 0f
+            val k = starts.dropLast(1).indexOfLast { it <= slide }.coerceAtLeast(0)
+            val n = starts[k + 1] - starts[k]
+            k to if (n > 1) (slide - starts[k]) / (n - 1f) else 0f
         } else {
             val t = f.coerceIn(0f, 1f) * chunks.size
             val k = t.toInt().coerceAtMost(chunks.lastIndex)
@@ -231,13 +244,13 @@ internal fun ReaderScreen(
                     onAddMark = { label -> setMarks(marks + ReaderMark(bookAt, label)) },
                     onRenameMark = { m, label -> setMarks(marks.map { if (it == m) it.copy(label = label) else it }) },
                     onRemoveMark = { m -> setMarks(marks - m) },
-                    defaultMarkLabel = "${(bookAt * 100).roundToInt()}%",
+                    placeOf = { f -> if (pages > 0) context.getString(R.string.page_n, (f * (pages - 1)).roundToInt() + 1) else "${(f * 100).roundToInt()}%" },
                     onHeading = { h -> inPart(h.part, "window.R&&R.heading(${h.index})") },
                     onMark = { m -> showBook(m.at) },
                     onHit = { h, q -> inPart(h.part, "window.R&&R.find(${JSONObject.quote(q)},${h.nth})") },
                 )
             }
-            Box(Modifier.fillMaxSize()) {
+            Box(Modifier.fillMaxSize().onSizeChanged { pageBox = it }) {
                 when (val c = content) {
                     null -> {
                         // Like a note opening: only a read slow enough to notice shows the spinner.
@@ -248,7 +261,11 @@ internal fun ReaderScreen(
                     ReaderContent.Failed -> ReaderMessage(stringResource(R.string.reader_open_failed), appPalette)
                     is ReaderContent.Html -> {
                         val part = chunk.coerceIn(0, chunks.lastIndex)
-                        val paper = readerPaper(prefs)
+                        if (shown && paged && !slides && chunks.size > 1 && partPages.size < chunks.size) {
+                            val next = partPages.size
+                            val countPage = remember(c, colors, look, view, next, paper) { ReaderHtml.readerPage(chunks[next], colors, view, paper, nonce, look, c.wide, false) }
+                            PageCounter(countPage, prefs.readerTextZoom, view, sideRoom.value.roundToInt()) { n -> if (partPages.size == next) partPages = partPages + n }
+                        }
                         val smooth = prefs.readerTurnAnimation
                         val html = remember(c, colors, look, view, part, paper, smooth) {
                             ReaderHtml.readerPage(chunks[part], colors, view, paper, nonce, look, c.wide, smooth)
@@ -265,10 +282,11 @@ internal fun ReaderScreen(
                             onTap = { awake = !awake },
                             onMove = { awake = false },
                             onPositionChange = { a, n ->
+                                shown = true
                                 at = a
                                 count = n
                                 bookAt = when {
-                                    slides -> (slideStarts[part] + a) / (slideStarts.last() - 1).coerceAtLeast(1).toFloat()
+                                    counted -> (starts[part] + a) / (starts.last() - 1).coerceAtLeast(1).toFloat()
                                     !paged -> (part + a / n.toFloat()) / chunks.size
                                     // The last page of the last part is the whole way through.
                                     n <= 1 -> (part + if (part == chunks.lastIndex) 1f else 0f) / chunks.size
@@ -299,9 +317,9 @@ internal fun ReaderScreen(
         ) {
             val scrub = Modifier.weight(1f).padding(horizontal = SCRUBBER_ROOM)
             // The thumb slides freely and, let go, snaps to the nearest slide, or page when the file is one part.
-            // shortcut: pages of a file in several parts are only counted once each part is laid out, so those never snap.
+            // A file in several parts snaps once the hidden page has counted all its parts.
             val steps = when {
-                slides -> slideStarts.last() - 1
+                counted -> starts.last() - 1
                 paged && chunks.size == 1 -> count - 1
                 else -> PERMILLE
             }.coerceAtLeast(1)
@@ -320,13 +338,13 @@ internal fun ReaderScreen(
                 )
             }
             if (paged) {
-                // A deck counts its slides through the whole file; other pages are counted in the part shown.
+                // Slides, and pages once counted, are numbered through the whole file.
                 ToolbarIcon(XnotesIcons.prev, stringResource(R.string.previous_page), enabled = at > 0 || chunk > 0) { webView?.turn(-1) }
-                // A deck's slide under the thumb is known before its part loads.
-                val slideNow = (scrubTo?.let { (it / PERMILLE.toFloat() * steps).roundToInt() } ?: (slideStarts[chunk.coerceIn(0, chunks.lastIndex)] + at)).coerceIn(0, (slideStarts.last() - 1).coerceAtLeast(0))
-                // Pages are only counted in the part laid out, so a file in several parts shows how far through it is instead.
+                // The slide or page under the thumb is known before its part loads.
+                val slideNow = (scrubTo?.let { (it / PERMILLE.toFloat() * steps).roundToInt() } ?: (starts.getOrElse(chunk) { 0 } + at)).coerceIn(0, (starts.last() - 1).coerceAtLeast(0))
+                // Until its parts are counted, a file in several parts shows how far through it is instead.
                 val label = when {
-                    slides -> "${slideNow + 1} " + stringResource(R.string.page_of_count, slideStarts.last())
+                    counted -> "${slideNow + 1} " + stringResource(R.string.page_of_count, starts.last())
                     chunks.size > 1 -> "${(scrubTo ?: (bookAt * PERMILLE).roundToInt()) / 10}%"
                     else -> "${at + 1} " + stringResource(R.string.page_of_count, count)
                 }
@@ -663,6 +681,41 @@ private fun ReaderWebView(
             } else if (wv.inset != inset) {
                 wv.inset = inset
                 wv.evaluateJavascript("window.R&&R.inset($inset)", null)
+            }
+        },
+        onRelease = { it.destroy() },
+    )
+}
+
+/** A hidden page that lays out [html] as the reader would, only to count its pages. */
+@SuppressLint("SetJavaScriptEnabled")
+@Composable
+private fun PageCounter(html: String, textZoom: Int, view: String, inset: Int, onCount: (Int) -> Unit) {
+    val onCountNow = rememberUpdatedState(onCount)
+    AndroidView(
+        modifier = Modifier.fillMaxSize().alpha(0f),
+        factory = { ctx ->
+            ReaderWebView(ctx).apply {
+                layoutParams = android.view.ViewGroup.LayoutParams(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.MATCH_PARENT)
+                settings.javaScriptEnabled = true
+                settings.allowFileAccess = false
+                settings.allowContentAccess = false
+                settings.blockNetworkLoads = true
+                webChromeClient = object : android.webkit.WebChromeClient() {
+                    override fun onReceivedTitle(view: WebView, title: String?) = pagesReported(title)
+                }
+            }
+        },
+        update = { wv ->
+            if (wv.settings.textZoom != textZoom) wv.settings.textZoom = textZoom
+            val tag = "$view|$textZoom|$inset|$html"
+            if (wv.tag != tag) {
+                wv.tag = tag
+                wv.view = view
+                wv.reset()
+                var reported = false
+                wv.onPosition = { _, n -> if (!reported) { reported = true; onCountNow.value(n) } }
+                wv.loadDataWithBaseURL(null, html.replaceFirst("<body", "<body data-inset=\"$inset\""), "text/html", "utf-8", null)
             }
         },
         onRelease = { it.destroy() },

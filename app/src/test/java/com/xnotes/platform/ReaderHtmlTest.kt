@@ -14,6 +14,17 @@ class ReaderHtmlTest {
     }
 
     @Test
+    fun strayEndTagsNeverCloseThePagesSource() {
+        assertEquals("<p>a</p><p>b</p>", ReaderHtml.balanced("<p>a</p></div><p>b</p>"))
+        assertEquals("<div><p>a</p></div>", ReaderHtml.balanced("<div><p>a</p>"))
+        assertEquals("<p>a<br><img src=\"x\" alt=\"\"><a id=\"x\"></a><br/></p>", ReaderHtml.balanced("<p>a<br><img src=\"x\" alt=\"\"><a id=\"x\"></a><br/></p>"))
+        val c = ReaderHtml.Colors("#fff", "#000", "#777", "#36c", "#eee", "#ccc")
+        val page = ReaderHtml.readerPage("<section class=\"chapter\"><p>one</p></div></section><p>two</p>", c, "single", "screen", "n", ReaderHtml.Look("#fff"))
+        val src = page.substringAfter("<div id=\"src\">").substringBefore("<div id=\"pages\">")
+        assertTrue(src.contains("two") && !src.substringBefore("two").contains("</div>"))
+    }
+
+    @Test
     fun wikilinksBecomeReaderLinksWithAliasAndHeading() {
         val md = ReaderHtml.obsidianSyntax("See [[My Note|this one]] and [[Other#Part]].")
         assertEquals("See [this one](<nnotes-wiki:My%20Note>) and [Other > Part](<nnotes-wiki:Other>).", md)

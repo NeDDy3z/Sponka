@@ -75,7 +75,32 @@ object ReaderHtml {
         val attrs = " class=\"$view\" data-view=\"$view\" data-paper=\"$paper\"${if (smooth) " data-smooth" else ""}"
         val script = "<script nonce=\"$nonce\">$PAGER_JS</script>"
         return if (view == "scroll" || view == "slides") shell(body + script, c, wide, "", attrs, nonce, look = look)
-        else shell("<div id=\"src\">$body</div><div id=\"pages\"></div>$script", c, true, pagesCss(c), attrs, nonce, minScale = true, look = look)
+        else shell("<div id=\"src\">${balanced(body)}</div><div id=\"pages\"></div>$script", c, true, pagesCss(c), attrs, nonce, minScale = true, look = look)
+    }
+
+    private val tagToken = Regex("<!--.*?-->|<(/?)([a-zA-Z][\\w:-]*)[^>]*>", RegexOption.DOT_MATCHES_ALL)
+    private val voidTags = setOf("area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr")
+
+    /**
+     * [html] with every end tag matched: one with nothing open to close is dropped and what is left open
+     * is closed, so a broken book or a part cut inside a box never closes the page's own #src early.
+     */
+    internal fun balanced(html: String): String {
+        val open = ArrayList<String>()
+        val out = StringBuilder(html.length + 64)
+        var last = 0
+        for (m in tagToken.findAll(html)) {
+            val name = m.groupValues[2].lowercase()
+            if (name.isEmpty() || name in voidTags || m.value.endsWith("/>")) continue
+            if (m.groupValues[1].isEmpty()) { open += name; continue }
+            val at = open.lastIndexOf(name)
+            out.append(html, last, m.range.first)
+            if (at >= 0) { out.append(m.value); while (open.size > at) open.removeAt(open.lastIndex) }
+            last = m.range.last + 1
+        }
+        out.append(html, last, html.length)
+        for (i in open.indices.reversed()) out.append("</").append(open[i]).append('>')
+        return out.toString()
     }
 
     /** A heading the reader's contents lists: the [part] it is in, its [index] among that part's h1 to h3, its [level] and [title]. */
@@ -237,25 +262,27 @@ object ReaderHtml {
         // Text blocks are cut by words, things like pictures and table rows never; any other box (a book's
         // wrapping divs, spans) is opened and its children flowed, so nothing is left clipped on one page.
         var TEXT=/^(P|LI|H[1-6]|PRE|BLOCKQUOTE|DD|DT|TD)$/,WHOLE=/^(IMG|SVG|TR|HR|BR|IFRAME|PICTURE|VIDEO|MATH)$/i;
-        function flow(n){
+        // A generator, so the cutting gives way to drawing between slices (see run).
+        function* flow(n){
           var t=target();t.appendChild(n);
           // Blank space between blocks never starts a page of its own.
           if(n.nodeType===3&&!n.data.trim())return;
-          if(!over()){if(n.nodeType===1||n.textContent.trim())placed++;return;}
+          if(!over()){if(n.nodeType===1||n.textContent.trim())placed++;yield;return;}
           t.removeChild(n);
           var el=n.nodeType===1;
           if(el&&!TEXT.test(n.tagName)&&!WHOLE.test(n.tagName)&&(n.childNodes.length>1||n.children.length===1)){
             var k=n.cloneNode(false);t.appendChild(k);stack.push({o:n,k:k});
-            Array.prototype.slice.call(n.childNodes).forEach(flow);stack.pop();return;
+            var kids=Array.prototype.slice.call(n.childNodes);for(var i=0;i<kids.length;i++)yield* flow(kids[i]);
+            stack.pop();return;
           }
-          if(placed>0){newPage();flow(n);return;}
+          if(placed>0){newPage();yield* flow(n);return;}
           // Bare text too long for a page is cut like a paragraph.
           if(!el){var s=document.createElement('span');s.appendChild(n);n=s;}
-          if(!WHOLE.test(n.tagName)&&cut(n))return;
-          target().appendChild(n);placed++;
+          if(!WHOLE.test(n.tagName)&&(yield* cut(n)))return;
+          target().appendChild(n);placed++;yield;
         }
         // Splits a block too tall for an empty page after the last word that still fits; the rest is marked as a continuation.
-        function cut(el){
+        function* cut(el){
           target().appendChild(el);
           var limit=c.getBoundingClientRect().top+c.clientHeight,w=document.createTreeWalker(el,NodeFilter.SHOW_TEXT),pts=[],n;
           while((n=w.nextNode()))for(var i=0;i<n.data.length;i++)if(n.data.charCodeAt(i)===32)pts.push([n,i+1]);
@@ -264,7 +291,7 @@ object ReaderHtml {
           if(best<0){el.parentNode.removeChild(el);return false;}
           r.setStart(pts[best][0],pts[best][1]);r.setEndAfter(el.lastChild);
           var k=el.cloneNode(false);k.removeAttribute('id');k.classList.add('r-cont');k.appendChild(r.extractContents());k.style.textIndent='0';
-          placed++;newPage();flow(k);return true;
+          placed++;newPage();yield* flow(k);return true;
         }
         // Which spread a page is on and the first page of a spread: single, pairs, or the cover alone then pairs.
         function spreadOf(i){return view==='single'?i:view==='double'?Math.floor(i/2):(i===0?0:Math.floor((i+1)/2));}
@@ -333,7 +360,17 @@ object ReaderHtml {
           }
           // Pictures are capped to a page before cutting, so one never overflows the page it is put on; the room left is the line's descent.
           Array.prototype.forEach.call(src.querySelectorAll('img'),function(im){im.style.maxHeight=(H-M[0]-M[2]-12)+'px';});
-          Array.prototype.slice.call((doc||src).childNodes).forEach(function(n){if(!c)newPage();flow(n);});
+          // Cut in slices of a few ms: one long run holds the renderer, and the app's frames wait on it.
+          var all=Array.prototype.slice.call((doc||src).childNodes);
+          var g=(function*(){for(var i=0;i<all.length;i++){if(!c)newPage();yield* flow(all[i]);}})();
+          out.style.visibility='hidden';
+          (function step(){
+            var end=performance.now()+12;
+            while(performance.now()<end)if(g.next().done){out.style.visibility='';finish();return;}
+            setTimeout(step,0);
+          })();
+        }
+        function finish(){
           if(!c)newPage();
           src.parentNode.removeChild(src);
           if(whole){
