@@ -8,6 +8,8 @@ build/
 **/build/
 # PDFium's build/ headers are vendored sources, not build output.
 !app/src/main/cpp/pdfium/build/
+# Signed release bundles and APKs from Android Studio.
+/app/release/
 
 # --- Android Studio / IntelliJ ---
 .idea/
