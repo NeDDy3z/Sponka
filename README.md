@@ -65,6 +65,10 @@ Beyond these milestones, I do my best to implement community requests, though I 
 | ----- | ----- | ----- | 
 | [GitHub Releases](https://github.com/NeDDy3z/Sponka/releases/latest) | Signed APK | Direct download | 
 | [Obtainium](https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/NeDDy3z/Sponka) | Signed APK | Auto-updates from GitHub Releases | 
+| [Google Play](https://play.google.com/store/apps/details?id=com.neddy.nnotes) | Play Store | Closed testing, see below | 
+
+> [!NOTE]
+> The Google Play version is currently in closed testing. Google Play requires at least 15 testers before the app can go public. If you'd like to help, send me the email of your Google account and then join the test here: [play.google.com/apps/testing/com.neddy.nnotes](https://play.google.com/apps/testing/com.neddy.nnotes)
 
 More channels are coming.
 
