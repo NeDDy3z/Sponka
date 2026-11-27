@@ -2907,6 +2907,9 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
     private fun openUrl(url: String) {
         val u = url.trim()
         if (u.startsWith(DOCUMENT_LINK)) return openDocumentLink(u.removePrefix(DOCUMENT_LINK))
+        // A [[link]] in a Markdown file, as its printed pages carry it.
+        val wiki = "${com.xnotes.platform.ReaderHtml.WIKI_SCHEME}:"
+        if (u.startsWith(wiki, ignoreCase = true)) return openDocumentLink(android.net.Uri.decode(u.substring(wiki.length)))
         val ok = u.startsWith("http://", ignoreCase = true) ||
             u.startsWith("https://", ignoreCase = true) ||
             u.startsWith("mailto:", ignoreCase = true)

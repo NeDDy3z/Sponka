@@ -54,6 +54,7 @@ import com.xnotes.ui.theme.LocalPalette
 import com.xnotes.ui.theme.Palette
 import com.xnotes.ui.theme.toComposeColor
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -89,13 +90,18 @@ internal fun ReaderScreen(
 
     // The file and its parts are read off the main thread; a book in smaller parts, so each lays out quickly.
     val loaded by produceState<Pair<ReaderContent, List<String>>?>(null, file.uri) {
-        value = withContext(Dispatchers.IO) {
-            val c = runCatching { readerHtmlBody(context, editor, file, readerLabels(context), serveImages = true) }.getOrNull() ?: ReaderContent.Failed
-            c to ((c as? ReaderContent.Html)?.let { if (ReaderKind.isBook(file.name)) ReaderHtml.pageChunks(it.body, BOOK_PART, longest = 100_000) else ReaderHtml.pageChunks(it.body) } ?: listOf(""))
-        }
+        var read: ReaderContent? = null
+        // The book's zip is closed however this ends, even when the reader is left while it still loads.
+        try {
+            value = withContext(Dispatchers.IO) {
+                val c = runCatching { readerHtmlBody(context, editor, file, readerLabels(context), serveImages = true) }.getOrNull() ?: ReaderContent.Failed
+                read = c
+                c to ((c as? ReaderContent.Html)?.let { if (ReaderKind.isBook(file.name)) ReaderHtml.pageChunks(it.body, BOOK_PART, longest = 100_000) else ReaderHtml.pageChunks(it.body) } ?: listOf(""))
+            }
+            awaitCancellation()
+        } finally { (read as? ReaderContent.Html)?.zip?.close() }
     }
     val content = loaded?.first
-    DisposableEffect(content) { onDispose { (content as? ReaderContent.Html)?.zip?.close() } }
 
     var webView by remember { mutableStateOf<ReaderWebView?>(null) }
     // The islands: a tap shows or hides them, moving the page hides them.
@@ -215,7 +221,7 @@ internal fun ReaderScreen(
                         held += if (slides) speed * (t - last) / 1e9f else px
                         if (held >= if (slides) SLIDE_HOLD else wv.height.toFloat()) {
                             held = 0f
-                            if (at < count - 1 || chunk < chunks.lastIndex) wv.turn(1) else autoscroll = false
+                            if (spreadOf(view, at) < spreadOf(view, count - 1) || chunk < chunks.lastIndex) wv.turn(1) else autoscroll = false
                         }
                     } else {
                         carry += px
@@ -300,7 +306,15 @@ internal fun ReaderScreen(
                                     else -> (part + a / (n - 1f)) / chunks.size
                                 }.coerceIn(0f, 1f)
                             },
-                        ) { url -> openLink(context, url, onWikiLink) }
+                        ) { url ->
+                            // A link inside the book may lead to a part not loaded yet.
+                            val id = Uri.decode(url.substringAfter("about:blank#", ""))
+                            if (!url.startsWith("about:blank#")) openLink(context, url, onWikiLink)
+                            else if (id.isNotEmpty()) {
+                                val idAttr = Regex("\\sid\\s*=\\s*[\"']${Regex.escape(id)}[\"']")
+                                chunks.indexOfFirst { idAttr.containsMatchIn(it) }.takeIf { it >= 0 }?.let { inPart(it, "window.R&&R.anchor(${JSONObject.quote(id)})") }
+                            }
+                        }
                     }
                 }
             }
@@ -357,7 +371,7 @@ internal fun ReaderScreen(
                 }
                 Label(label, Modifier.widthIn(min = 64.dp))
                 scrubber()
-                ToolbarIcon(XnotesIcons.next, stringResource(R.string.next_page), enabled = at < count - 1 || chunk < chunks.lastIndex) { webView?.turn(1) }
+                ToolbarIcon(XnotesIcons.next, stringResource(R.string.next_page), enabled = spreadOf(view, at) < spreadOf(view, count - 1) || chunk < chunks.lastIndex) { webView?.turn(1) }
             } else {
                 Label("${(scrubTo ?: (bookAt * PERMILLE).roundToInt()) / 10}%", Modifier.padding(start = 12.dp).widthIn(min = 44.dp))
                 scrubber()
@@ -367,6 +381,9 @@ internal fun ReaderScreen(
 }
 
 private const val PERMILLE = 1000
+
+/** The spread [page] is on, as the page script counts them (spreadOf). */
+private fun spreadOf(view: String, page: Int) = when (view) { "double" -> page / 2; "cover" -> (page + 1) / 2; else -> page }
 
 /** The characters a book's part gathers short chapters up to, so each loads quickly; a chapter is only cut past the usual size. */
 private const val BOOK_PART = 30_000
@@ -611,7 +628,6 @@ private fun ReaderWebView(
 
                     override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                         val url = request.url.toString()
-                        if (url.startsWith("about:blank#")) return false
                         onLinkNow.value(url)
                         return true
                     }
