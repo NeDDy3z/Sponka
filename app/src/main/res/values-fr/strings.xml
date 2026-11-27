@@ -1687,6 +1687,17 @@
     <string name="find_in_page">Rechercher dans la page</string>
     <string name="reader_open_failed">Impossible d\'ouvrir ce fichier.</string>
     <string name="reader_close">Fermer le lecteur</string>
+    <string name="reader_theme">Thème</string>
+    <string name="theme_sepia">Sépia</string>
+    <string name="theme_gray">Gris</string>
+    <string name="theme_black">Noir</string>
+    <string name="theme_custom">Personnalisé</string>
+    <string name="reader_page_colour">Page</string>
+    <string name="reader_text_colour">Texte</string>
+    <string name="reader_paper_look">Papier</string>
+    <string name="paper_plain">Uni</string>
+    <string name="paper_grain">Grain</string>
+    <string name="paper_old">Ancien</string>
     <string name="reader_scroll">Défilement</string>
     <string name="reader_two_pages">Deux pages</string>
     <string name="default_for_all_files">Par défaut pour tous les fichiers</string>

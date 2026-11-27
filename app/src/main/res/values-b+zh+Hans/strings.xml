@@ -1658,6 +1658,17 @@
     <string name="find_in_page">页内查找</string>
     <string name="reader_open_failed">无法打开此文件。</string>
     <string name="reader_close">关闭阅读器</string>
+    <string name="reader_theme">主题</string>
+    <string name="theme_sepia">棕褐</string>
+    <string name="theme_gray">灰色</string>
+    <string name="theme_black">黑色</string>
+    <string name="theme_custom">自定义</string>
+    <string name="reader_page_colour">页面</string>
+    <string name="reader_text_colour">文字</string>
+    <string name="reader_paper_look">纸张</string>
+    <string name="paper_plain">普通</string>
+    <string name="paper_grain">纹理</string>
+    <string name="paper_old">旧纸</string>
     <string name="reader_scroll">滚动</string>
     <string name="reader_two_pages">双页</string>
     <string name="default_for_all_files">所有文件的默认设置</string>

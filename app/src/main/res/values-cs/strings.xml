@@ -1736,6 +1736,17 @@
     <string name="find_in_page">Najít na stránce</string>
     <string name="reader_open_failed">Tento soubor se nepodařilo otevřít.</string>
     <string name="reader_close">Zavřít čtečku</string>
+    <string name="reader_theme">Motiv</string>
+    <string name="theme_sepia">Sépie</string>
+    <string name="theme_gray">Šedá</string>
+    <string name="theme_black">Černá</string>
+    <string name="theme_custom">Vlastní</string>
+    <string name="reader_page_colour">Stránka</string>
+    <string name="reader_text_colour">Text</string>
+    <string name="reader_paper_look">Papír</string>
+    <string name="paper_plain">Hladký</string>
+    <string name="paper_grain">Zrnitý</string>
+    <string name="paper_old">Starý</string>
     <string name="reader_scroll">Posouvání</string>
     <string name="reader_two_pages">Dvě stránky</string>
     <string name="default_for_all_files">Výchozí pro všechny soubory</string>

@@ -274,8 +274,8 @@ private fun Modifier.drifting(alpha: State<Float>, drift: State<Float>, toward: 
 }
 
 /**
- * The islands over a read-only file: back and its name, [actions] by the gear along the top, [bottom]
- * below. A tap shows or hides them, and they stay while [held].
+ * The islands over a read-only file: back with [home] beside it (the side panel, as on a note) and its
+ * name, [actions] by the gear along the top, [bottom] below. A tap shows or hides them, and they stay while [held].
  */
 @Composable
 internal fun BoxScope.FileReadingIslands(
@@ -283,6 +283,7 @@ internal fun BoxScope.FileReadingIslands(
     awake: Boolean,
     held: Boolean,
     onClose: () -> Unit,
+    home: @Composable RowScope.() -> Unit,
     actions: @Composable RowScope.() -> Unit,
     bottom: @Composable RowScope.() -> Unit,
 ) {
@@ -298,6 +299,7 @@ internal fun BoxScope.FileReadingIslands(
             TopIslands(if (docked) Modifier.drifting(alpha, drift, -TOP_DRIFT) else Modifier) {
                 Island(Modifier.layoutId(HOME).fading()) {
                     ToolbarIcon(XnotesIcons.prev, stringResource(R.string.reader_close), onClick = onClose)
+                    home()
                 }
                 TitleIsland(name, Modifier.layoutId(TITLE).fading())
                 Island(Modifier.layoutId(GEAR).fading(), actions)
@@ -307,6 +309,13 @@ internal fun BoxScope.FileReadingIslands(
             BottomBar(Modifier.drifting(alpha, drift, BOTTOM_DRIFT), bottom)
         }
     }
+}
+
+/** How far down the top islands reach, which a panel beside the page keeps clear of. */
+@Composable
+internal fun topIslandsRoom(): Dp {
+    val look = LocalToolbarLook.current
+    return barMetrics(look.size).thickness + if (look.floating) ISLAND_MARGIN * 2 else 1.dp
 }
 
 /** The gap a scrubber keeps from its neighbours on the bottom bar, its touch reaching past its line's ends. */

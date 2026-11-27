@@ -296,4 +296,19 @@ class ReaderHtmlTest {
         assertTrue(html, html.contains("font-size:11.0pt;line-height:1.15;"))
         assertTrue(html, html.contains("<p style=\"margin-bottom:8.0pt;text-align:center;color:#404040;\"><span style=\"font-size:14.0pt;\">Big</span></p>"))
     }
+
+    @Test
+    fun headingsAndSearchCountAsThePageScriptDoes() {
+        val parts = listOf("<h1>One &amp; two</h1><p>Some <b>bo</b>ld text, bold.</p>", "<h2 id=\"x\">Next</h2><p>no match</p><h4>skip</h4>")
+        val heads = ReaderHtml.headings(parts)
+        assertEquals(listOf("One & two", "Next"), heads.map { it.title })
+        assertEquals(listOf(0 to 0, 1 to 0), heads.map { it.part to it.index })
+        assertEquals(listOf(1, 2), heads.map { it.level })
+        val hits = ReaderHtml.search(parts, "BOLD")
+        // A match may cross tags, as the page's text reads it.
+        assertEquals(listOf(0 to 0, 0 to 1), hits.map { it.part to it.nth })
+        assertEquals("bold", hits[1].match)
+        assertTrue(hits[0].after.startsWith(" text"))
+        assertEquals("a\u00a0b \u2014 \u00e9", ReaderHtml.plainText("a&nbsp;b &mdash; &#233;"))
+    }
 }

@@ -1736,6 +1736,17 @@
     <string name="find_in_page">Найти на странице</string>
     <string name="reader_open_failed">Не удалось открыть этот файл.</string>
     <string name="reader_close">Закрыть просмотр</string>
+    <string name="reader_theme">Тема</string>
+    <string name="theme_sepia">Сепия</string>
+    <string name="theme_gray">Серая</string>
+    <string name="theme_black">Чёрная</string>
+    <string name="theme_custom">Своя</string>
+    <string name="reader_page_colour">Страница</string>
+    <string name="reader_text_colour">Текст</string>
+    <string name="reader_paper_look">Бумага</string>
+    <string name="paper_plain">Гладкая</string>
+    <string name="paper_grain">Зернистая</string>
+    <string name="paper_old">Старая</string>
     <string name="reader_scroll">Прокрутка</string>
     <string name="reader_two_pages">Две страницы</string>
     <string name="default_for_all_files">По умолчанию для всех файлов</string>

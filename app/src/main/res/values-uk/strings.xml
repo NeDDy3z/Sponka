@@ -1736,6 +1736,17 @@
     <string name="find_in_page">Знайти на сторінці</string>
     <string name="reader_open_failed">Не вдалося відкрити цей файл.</string>
     <string name="reader_close">Закрити читач</string>
+    <string name="reader_theme">Тема</string>
+    <string name="theme_sepia">Сепія</string>
+    <string name="theme_gray">Сіра</string>
+    <string name="theme_black">Чорна</string>
+    <string name="theme_custom">Власна</string>
+    <string name="reader_page_colour">Сторінка</string>
+    <string name="reader_text_colour">Текст</string>
+    <string name="reader_paper_look">Папір</string>
+    <string name="paper_plain">Гладкий</string>
+    <string name="paper_grain">Зернистий</string>
+    <string name="paper_old">Старий</string>
     <string name="reader_scroll">Прокрутка</string>
     <string name="reader_two_pages">Дві сторінки</string>
     <string name="default_for_all_files">Типово для всіх файлів</string>

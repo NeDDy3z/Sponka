@@ -57,8 +57,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.xnotes.R
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.DarkMode
 import com.xnotes.canvas.PdfColorFilter
 import com.xnotes.canvas.ReaderPageMode
 import com.xnotes.canvas.ReaderSettings
@@ -249,39 +247,101 @@ private fun readerViewLabel(view: String): String = stringResource(
         "horizontal" -> R.string.reader_horizontal
         "single" -> R.string.reader_single_page
         "double" -> R.string.reader_two_pages
+        "cover" -> R.string.view_cover
         else -> R.string.reader_scroll
     },
 )
 
-/** The gear of a read-only file and its panel; [onOpenChange] hears it open and shut, so the islands stay up meanwhile. */
+/**
+ * The gear of a read-only file and its panel; [onOpenChange] hears it open and shut, so the islands
+ * stay up meanwhile. [autoscroll] is null where the view cannot scroll on its own.
+ */
 @Composable
-internal fun FileReaderSettingsButton(editor: Editor, file: ReaderFile, fullscreen: Boolean, onToggleFullscreen: () -> Unit, onOpenChange: (Boolean) -> Unit) {
+internal fun FileReaderSettingsButton(
+    editor: Editor,
+    file: ReaderFile,
+    fullscreen: Boolean,
+    onToggleFullscreen: () -> Unit,
+    autoscroll: Boolean?,
+    onAutoscroll: (Boolean) -> Unit,
+    onOpenChange: (Boolean) -> Unit,
+) {
     var open by remember { mutableStateOf(false) }
     DisposableEffect(open) {
         onOpenChange(open)
         onDispose { if (open) onOpenChange(false) }
     }
-    SettingsButton(open, { open = it }) { FileReaderPanel(editor, file, fullscreen, onToggleFullscreen) { open = false } }
+    SettingsButton(open, { open = it }) { FileReaderPanel(editor, file, fullscreen, onToggleFullscreen, autoscroll, onAutoscroll) { open = false } }
 }
 
-/** Light or dark, the bars docked or floating, the file's view and paper, and the text's size. */
+/** The file's colours and paper, the bars docked or floating, its view and page turning, autoscroll and the text's size. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ColumnScope.FileReaderPanel(editor: Editor, file: ReaderFile, fullscreen: Boolean, onToggleFullscreen: () -> Unit, close: () -> Unit) {
+private fun ColumnScope.FileReaderPanel(
+    editor: Editor,
+    file: ReaderFile,
+    fullscreen: Boolean,
+    onToggleFullscreen: () -> Unit,
+    autoscroll: Boolean?,
+    onAutoscroll: (Boolean) -> Unit,
+    close: () -> Unit,
+) {
     val p = remember(editor.prefsVersion) { editor.preferences }
     val openedDefault = remember { p.readerView }
-    val dark = p.readerDark ?: LocalPalette.current.isDark
     fun set(next: com.xnotes.settings.Preferences) = editor.applyHomePreferences(next)
+    val kind = com.xnotes.core.util.ReaderKind.ofName(file.name)
+    val deck = kind in READER_SLIDE_KINDS
+    val view = readerViewOf(p, file)
     PanelCloseRow(close)
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         QuickTile(XnotesIcons.fullscreen, stringResource(R.string.toolbar_fullscreen), fullscreenState(fullscreen), fullscreen, Modifier.weight(1f)) { onToggleFullscreen() }
         QuickTile(
-            Icons.Outlined.DarkMode,
-            stringResource(R.string.theme_dark),
-            stringResource(if (dark) R.string.on else R.string.off),
-            dark,
+            XnotesIcons.autoscroll,
+            stringResource(R.string.caption_autoscroll),
+            stringResource(if (autoscroll == true) R.string.on else R.string.off),
+            autoscroll == true,
             Modifier.weight(1f),
-        ) { set(p.copy(readerDark = !dark)) }
+            enabled = autoscroll != null,
+        ) { onAutoscroll(autoscroll != true) }
+    }
+    if (autoscroll == true) {
+        Spacer(Modifier.height(10.dp))
+        PanelCard {
+            val speed = p.autoScrollSpeed
+            PanelSlider(
+                stringResource(R.string.caption_autoscroll_speed),
+                stringResource(R.string.speed_mm_s, tenths(speed)),
+                speed.toFloat(),
+                com.xnotes.settings.Preferences.AUTOSCROLL_MIN.toFloat()..com.xnotes.settings.Preferences.AUTOSCROLL_MAX.toFloat(),
+            ) { v -> v.roundToInt().let { if (it != speed) set(p.copy(autoScrollSpeed = it)) } }
+        }
+    }
+    Spacer(Modifier.height(10.dp))
+    PanelCard {
+        // The file's own colours; behind it the app keeps its theme.
+        PanelCaption(stringResource(R.string.reader_theme))
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            for (t in com.xnotes.settings.Preferences.READER_THEMES) {
+                PanelChip(readerThemeLabel(t), selected = t == p.readerTheme) { set(p.copy(readerTheme = t)) }
+            }
+        }
+        if (p.readerTheme == "custom") {
+            Spacer(Modifier.height(6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                ThemeColour(stringResource(R.string.reader_page_colour), p.readerCustomPaper) { set(editor.preferences.copy(readerCustomPaper = it)) }
+                Spacer(Modifier.width(10.dp))
+                ThemeColour(stringResource(R.string.reader_text_colour), p.readerCustomText) { set(editor.preferences.copy(readerCustomText = it)) }
+            }
+        }
+        if (!deck && kind !in READER_DOC_KINDS) {
+            Spacer(Modifier.height(4.dp))
+            PanelCaption(stringResource(R.string.reader_paper_look))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                for (l in com.xnotes.settings.Preferences.READER_PAPERS) {
+                    PanelChip(readerPaperLabel(l), selected = l == p.readerPaperLook) { set(p.copy(readerPaperLook = l)) }
+                }
+            }
+        }
     }
     Spacer(Modifier.height(10.dp))
     PanelCard {
@@ -294,12 +354,10 @@ private fun ColumnScope.FileReaderPanel(editor: Editor, file: ReaderFile, fullsc
         }
     }
     Spacer(Modifier.height(10.dp))
-    val kind = com.xnotes.core.util.ReaderKind.ofName(file.name)
     // A deck's slides are its pages already, so it only scrolls.
-    if (kind !in READER_SLIDE_KINDS) PanelCard {
-        val view = readerViewOf(p, file)
-        // This file keeps its own view; the newest few hundred are remembered.
-        fun withFileView(v: String) = (p.readerFileViews - file.uri + (file.uri to v)).entries.toList().takeLast(200).associate { it.key to it.value }
+    if (!deck) PanelCard {
+        // This file keeps its own view, by name so it follows the file to other devices.
+        fun withFileView(v: String) = (p.readerFileViews - file.name + (file.name to v)).entries.toList().takeLast(300).associate { it.key to it.value }
         PanelCaption(stringResource(R.string.title_view))
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             for (v in com.xnotes.settings.Preferences.READER_VIEWS) {
@@ -308,6 +366,10 @@ private fun ColumnScope.FileReaderPanel(editor: Editor, file: ReaderFile, fullsc
         }
         PanelCheck(stringResource(R.string.default_for_all_files), view == p.readerView) { on ->
             set(p.copy(readerView = if (on) view else openedDefault.takeIf { it != view } ?: "scroll", readerFileViews = withFileView(view)))
+        }
+        if (view == "single" || view == "double" || view == "cover") {
+            PanelToggle(stringResource(R.string.caption_turn_animation), p.readerTurnAnimation) { set(p.copy(readerTurnAnimation = it)) }
+            PanelToggle(stringResource(R.string.caption_tap_to_turn), p.readerTapToTurn) { set(p.copy(readerTapToTurn = it)) }
         }
         // A Word or OpenDocument file brings its own page size.
         if (view != "scroll" && kind !in READER_DOC_KINDS) {
@@ -332,6 +394,38 @@ private fun ColumnScope.FileReaderPanel(editor: Editor, file: ReaderFile, fullsc
         }
     }
 }
+
+/** One colour of the custom reader theme: its name and a dot that opens the colour picker. */
+@Composable
+private fun ThemeColour(label: String, argb: Int, onPick: (Int) -> Unit) {
+    val colour = com.xnotes.core.model.Rgba.fromArgb(argb or (0xff shl 24))
+    Text(label, color = LocalPalette.current.text.toComposeColor(), fontSize = 13.sp)
+    ColorPickerDot(colour, custom = true, onPick = { onPick(it.toArgb()) }, dismissOnPick = false) { d, pick ->
+        ColorPickerPopup(initial = colour, recents = emptyList(), onDismiss = d, onPick = pick)
+    }
+}
+
+@Composable
+private fun readerThemeLabel(theme: String): String = stringResource(
+    when (theme) {
+        "light" -> R.string.theme_light
+        "sepia" -> R.string.theme_sepia
+        "gray" -> R.string.theme_gray
+        "dark" -> R.string.theme_dark
+        "black" -> R.string.theme_black
+        "custom" -> R.string.theme_custom
+        else -> R.string.theme_system
+    },
+)
+
+@Composable
+private fun readerPaperLabel(look: String): String = stringResource(
+    when (look) {
+        "grain" -> R.string.paper_grain
+        "old" -> R.string.paper_old
+        else -> R.string.paper_plain
+    },
+)
 
 /** The panel's close, on a row of its own above the cards. */
 @Composable

@@ -873,4 +873,19 @@ class SettingsTest {
         // Unset, it stays the factory's and is not written.
         assertEquals(null, Settings.fromJson(Settings().toJson()).textBox)
     }
+
+    @Test fun readerPositionsMarksAndThemeRoundTripAndTheOldDarkSwitchBecomesATheme() {
+        val p = Preferences(
+            readerTheme = "sepia", readerPaperLook = "old", readerTurnAnimation = false,
+            readerPositions = mapOf("Book.epub" to 0.25f), readerMarks = mapOf("Book.epub" to listOf(ReaderMark(0.5f, "Half"))),
+        )
+        val back = Preferences.fromJson(p.toJson())
+        assertEquals("sepia", back.readerTheme)
+        assertEquals("old", back.readerPaperLook)
+        assertFalse(back.readerTurnAnimation)
+        assertEquals(0.25f, back.readerPositions["Book.epub"])
+        assertEquals(listOf(ReaderMark(0.5f, "Half")), back.readerMarks["Book.epub"])
+        assertEquals("dark", Preferences.fromJson(JSONObject().put("reader_dark", true)).readerTheme)
+        assertEquals("auto", Preferences.fromJson(JSONObject()).readerTheme)
+    }
 }

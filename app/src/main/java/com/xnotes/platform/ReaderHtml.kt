@@ -57,24 +57,86 @@ object ReaderHtml {
     // --- page shell ---
 
     /**
-     * Wraps [body] in a full page styled with [c]; [wide] drops the reading-width cap (tables, slides).
-     * [around] colours what is behind the content, which keeps the app's theme; [dark] turns a
-     * document's own white pages dark with the reader.
+     * How the reader dresses a file beyond its colours: [around] fills what is behind the content and
+     * keeps the app's theme; [docFilter] tints a document's own white pages to the reader's theme
+     * ("" leaves them), [imageFilter] undoes it on pictures; [paperLook] is the CSS backgrounds a book's
+     * pages are printed on ("" for plain).
      */
-    fun page(body: String, c: Colors, wide: Boolean = false, around: String = c.background, dark: Boolean = false): String =
-        shell(body, c, wide, "", around = around, dark = dark)
+    class Look(val around: String, val docFilter: String = "", val imageFilter: String = "", val paperLook: String = "")
 
     /**
-     * [body] cut into pages by the reader's own script, the only one the page lets run ([nonce]).
-     * [view] is "vertical", "horizontal", "single" or "double"; [paper] is the page size and margins
-     * in cm ("w h top right bottom left") or "screen". A document's own page ([docPage]) wins over it.
-     * "slides" keeps a deck as it scrolls and only counts its slides as the pages.
+     * [body] as the reader shows it, with the reader's own script, the only one the page lets run ([nonce]).
+     * [view] is "scroll" (one flowing column), "slides" (a deck, each slide counted as a page), or pages
+     * cut to [paper] laid out "vertical", "horizontal", "single", "double" or "cover". [paper] is the page
+     * size and margins in cm ("w h top right bottom left") or "screen"; a document's own page ([docPage])
+     * wins over it. [smooth] slides a page turn across rather than jumping.
      */
-    fun pagedPage(body: String, c: Colors, view: String, paper: String, nonce: String, around: String = c.background, dark: Boolean = false, wide: Boolean = false): String {
-        val attrs = " class=\"$view${if (dark) " dark" else ""}\" data-view=\"$view\" data-paper=\"$paper\""
+    fun readerPage(body: String, c: Colors, view: String, paper: String, nonce: String, look: Look, wide: Boolean = false, smooth: Boolean = true): String {
+        val attrs = " class=\"$view\" data-view=\"$view\" data-paper=\"$paper\"${if (smooth) " data-smooth" else ""}"
         val script = "<script nonce=\"$nonce\">$PAGER_JS</script>"
-        return if (view == "slides") shell(body + script, c, wide, "", attrs, nonce, around = around, dark = dark)
-        else shell("<div id=\"src\">$body</div><div id=\"pages\"></div>$script", c, true, pagesCss(c), attrs, nonce, minScale = true, around = around, dark = dark)
+        return if (view == "scroll" || view == "slides") shell(body + script, c, wide, "", attrs, nonce, look = look)
+        else shell("<div id=\"src\">$body</div><div id=\"pages\"></div>$script", c, true, pagesCss(c), attrs, nonce, minScale = true, look = look)
+    }
+
+    /** A heading the reader's contents lists: the [part] it is in, its [index] among that part's h1 to h3, its [level] and [title]. */
+    class PartHeading(val part: Int, val index: Int, val level: Int, val title: String)
+
+    private val headingTag = Regex("<h([1-3])\\b[^>]*>(.*?)</h\\1\\s*>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+
+    /** Every h1 to h3 of [parts], in order, as the page script finds them (R.heading). */
+    fun headings(parts: List<String>): List<PartHeading> = parts.flatMapIndexed { part, html ->
+        headingTag.findAll(html).mapIndexedNotNull { i, m ->
+            plainText(m.groupValues[2]).trim().replace(Regex("\\s+"), " ").takeIf { it.isNotEmpty() }?.let { PartHeading(part, i, m.groupValues[1].toInt(), it) }
+        }.toList()
+    }
+
+    private val entityNames = mapOf(
+        "amp" to "&", "lt" to "<", "gt" to ">", "quot" to "\"", "apos" to "'", "nbsp" to "\u00a0", "emsp" to "\u2003", "ensp" to "\u2002",
+        "thinsp" to "\u2009", "mdash" to "\u2014", "ndash" to "\u2013", "hellip" to "\u2026", "lsquo" to "\u2018", "rsquo" to "\u2019",
+        "ldquo" to "\u201c", "rdquo" to "\u201d", "copy" to "\u00a9", "reg" to "\u00ae", "trade" to "\u2122", "shy" to "\u00ad",
+    )
+
+    /** [html]'s text as the page shows it: tags dropped, entities read. */
+    fun plainText(html: String): String = html.replace(Regex("<[^>]*>"), "").replace(Regex("&(#x[0-9a-fA-F]+|#[0-9]+|[a-zA-Z]+);")) { m ->
+        val e = m.groupValues[1]
+        when {
+            e.startsWith("#x") || e.startsWith("#X") -> e.substring(2).toIntOrNull(16)?.let { String(Character.toChars(it)) }
+            e.startsWith("#") -> e.substring(1).toIntOrNull()?.let { String(Character.toChars(it)) }
+            else -> entityNames[e]
+        } ?: m.value
+    }
+
+    /** A match of a search: the [part] it is in, which match it is there ([nth], as R.find counts) and its context. */
+    class PartHit(val part: Int, val nth: Int, val before: String, val match: String, val after: String)
+
+    /** Every match of [query] in [parts], ignoring case, up to [max]. */
+    fun search(parts: List<String>, query: String, max: Int = 500): List<PartHit> {
+        val q = query.lowercase()
+        if (q.isBlank()) return emptyList()
+        val hits = ArrayList<PartHit>()
+        for ((part, html) in parts.withIndex()) {
+            val text = plainText(html)
+            val low = text.lowercase()
+            var at = low.indexOf(q)
+            var nth = 0
+            while (at >= 0) {
+                fun clip(s: String) = s.replace(Regex("\\s+"), " ")
+                hits += PartHit(part, nth++, clip(text.substring((at - 40).coerceAtLeast(0), at)).trimStart(), text.substring(at, at + q.length), clip(text.substring(at + q.length, (at + q.length + 60).coerceAtMost(text.length))).trimEnd())
+                if (hits.size >= max) return hits
+                at = low.indexOf(q, at + 1)
+            }
+        }
+        return hits
+    }
+
+    /** A grain of paper fibres drawn by the page itself, grey so it shows on light and dark alike. */
+    private const val GRAIN = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .5 0 0 0 0 .5 0 0 0 0 .5 0 0 0 .09 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")"
+
+    /** The CSS backgrounds of a paper look: "grain", "old" (yellowed, darker to the edges) or plain. */
+    fun paperLookCss(look: String): String = when (look) {
+        "grain" -> GRAIN
+        "old" -> "radial-gradient(ellipse at center,rgba(0,0,0,0) 55%,rgba(110,75,20,.22)),linear-gradient(rgba(190,145,60,.10),rgba(190,145,60,.10)),$GRAIN"
+        else -> ""
     }
 
     /**
@@ -118,30 +180,32 @@ object ReaderHtml {
         body{max-width:none;margin:0;padding:0;overflow-wrap:break-word;background:transparent}
         #src{display:none}
         #pages{display:flex;flex-direction:column;align-items:center;gap:16px;width:max-content;min-width:100%}
-        .page{box-sizing:border-box;flex:none;overflow:hidden;background:${c.background};box-shadow:0 1px 5px rgba(0,0,0,.4)}
+        .page{box-sizing:border-box;flex:none;overflow:hidden;background-color:${c.background};box-shadow:0 1px 5px rgba(0,0,0,.4)}
         .page:has(> .doc){background:#fff}
         .page > .content{height:100%;overflow:hidden;width:auto!important;max-width:none!important;padding:0!important;margin:0!important;box-shadow:none!important}
         .page > .content > :first-child{margin-top:0}
         .page img{max-width:100%;object-fit:contain}
         .page pre{white-space:pre-wrap;overflow:visible}
         .page table{display:table;overflow:visible}
-        body.horizontal #pages,body.single #pages,body.double #pages{flex-direction:row;align-items:center;min-width:0}
-        body.single #pages,body.double #pages{gap:0}
+        body.horizontal #pages,body.single #pages,body.double #pages,body.cover #pages{flex-direction:row;align-items:center;min-width:0}
+        body.single #pages,body.double #pages,body.cover #pages{gap:0}
         .spread{display:flex;flex:none;align-items:center;justify-content:center;gap:12px;box-sizing:border-box}
         body.horizontal #pages{box-sizing:border-box}
     """.trimIndent()
 
     // Moves the content into fixed-size pages, splitting lists, tables and long paragraphs between
-    // them, then fits the pages to the screen. It tells the app the page count and the page in view
-    // through the title ("count|page"), and the app turns pages with R.go(n).
+    // them, then fits the pages to the screen; a scroll or a deck is left as it flows. It tells the
+    // app through the title: "count|page", and "count|page|edge|n" when a turn runs past either end.
+    // The app drives it with R.go(page), R.turn(by), R.heading(n) and R.find(text, nth).
     private val PAGER_JS = """
         (function(){
-        var b=document.body,src=document.getElementById('src'),out=document.getElementById('pages'),view=b.getAttribute('data-view'),cm=96/2.54;
+        var b=document.body,de=document.documentElement,src=document.getElementById('src'),out=document.getElementById('pages');
+        var view=b.getAttribute('data-view'),smooth=b.hasAttribute('data-smooth'),cm=96/2.54;
+        var flowing=view==='scroll'||view==='slides',paired=view==='double'||view==='cover',whole=view==='single'||paired;
         var doc=src&&src.querySelector('article.doc'),spec=(doc&&doc.getAttribute('data-page'))||b.getAttribute('data-paper')||'screen',W,H,M;
-        var de=document.documentElement;
         if(spec==='screen'){W=de.clientWidth;H=de.clientHeight;M=[76,22,84,22];}
         else{var v=spec.split(' ').map(Number);W=v[0]*cm;H=v[1]*cm;M=v.slice(2).map(function(x){return x*cm;});}
-        var per=view==='double'?2:1,c,stack=[],placed=0,pages=[];
+        var c,stack=[],placed=0,pages=[],spreads=0,edges=0;
         function newPage(){
           var p=document.createElement('div');p.className='page';
           p.style.cssText='width:'+W+'px;height:'+H+'px;padding:'+M.join('px ')+'px';
@@ -164,7 +228,7 @@ object ReaderHtml {
           if(n.nodeType===1&&TEXT.test(n.tagName)&&cut(n))return;
           target().appendChild(n);placed++;
         }
-        // Splits a block too tall for an empty page after the last word that still fits.
+        // Splits a block too tall for an empty page after the last word that still fits; the rest is marked as a continuation.
         function cut(el){
           target().appendChild(el);
           var limit=c.getBoundingClientRect().top+c.clientHeight,w=document.createTreeWalker(el,NodeFilter.SHOW_TEXT),pts=[],n;
@@ -173,13 +237,16 @@ object ReaderHtml {
           while(lo<=hi){var m=(lo+hi)>>1;r.setStart(el,0);r.setEnd(pts[m][0],pts[m][1]);var rs=r.getClientRects(),bot=rs.length?rs[rs.length-1].bottom:0;if(bot<=limit){best=m;lo=m+1;}else hi=m-1;}
           if(best<0){el.parentNode.removeChild(el);return false;}
           r.setStart(pts[best][0],pts[best][1]);r.setEndAfter(el.lastChild);
-          var k=el.cloneNode(false);k.removeAttribute('id');k.appendChild(r.extractContents());k.style.textIndent='0';
+          var k=el.cloneNode(false);k.removeAttribute('id');k.classList.add('r-cont');k.appendChild(r.extractContents());k.style.textIndent='0';
           placed++;newPage();flow(k);return true;
         }
-        // The layout viewport, which a pinch or wide content never changes.
+        // Which spread a page is on and the first page of a spread: single, pairs, or the cover alone then pairs.
+        function spreadOf(i){return view==='single'?i:view==='double'?Math.floor(i/2):(i===0?0:Math.floor((i+1)/2));}
+        function firstOf(s){return view==='single'?s:view==='double'?2*s:(s===0?0:2*s-1);}
         var z=1,vw=de.clientWidth,vh=de.clientHeight;
         function fit(){
           vw=de.clientWidth;vh=de.clientHeight;
+          var per=paired?2:1;
           if(view==='vertical')z=Math.min(1,(vw-24)/W);
           else if(view==='horizontal')z=Math.min(1,(vh-160)/H);
           else z=Math.min((vw-24-(per-1)*12)/(per*W),(vh-160)/H);
@@ -189,38 +256,68 @@ object ReaderHtml {
           else Array.prototype.forEach.call(out.children,function(s){s.style.width=(vw/z)+'px';s.style.height=(vh/z)+'px';s.style.padding=(76/z)+'px 0 '+(84/z)+'px';});
         }
         function at(){
-          if(view==='single'||view==='double')return Math.min(pages.length-1,Math.round(scrollX/vw)*per);
+          if(!pages.length)return 0;
+          if(whole)return firstOf(Math.max(0,Math.min(spreads-1,Math.round(scrollX/vw))));
           // The last page starting before the middle of the screen; slides differ in height.
           var x=view==='horizontal',mid=x?vw/2:vh/2,lo=0,hi=pages.length-1;
           while(lo<hi){var m=(lo+hi+1)>>1,r=pages[m].getBoundingClientRect();if((x?r.left:r.top)<=mid)lo=m;else hi=m-1;}
           return lo;
         }
-        function report(){var t=pages.length+'|'+at();if(document.title!==t)document.title=t;}
-        function go(i){
+        function report(){if(!pages.length)return;var t=pages.length+'|'+at();if(document.title.split('|').slice(0,2).join('|')!==t)document.title=t;}
+        function go(i,anim){
+          if(!pages.length)return;
           i=Math.max(0,Math.min(pages.length-1,i));
-          if(view==='single'||view==='double')scrollTo(Math.floor(i/per)*vw,0);
+          if(whole)scrollTo({left:spreadOf(i)*vw,top:0,behavior:anim&&smooth?'smooth':'instant'});
           else{var r=pages[i].getBoundingClientRect();if(view==='horizontal')scrollTo(r.left+scrollX-16,scrollY);else scrollTo(scrollX,r.top+scrollY-76);}
           report();
         }
+        // Turns [d] spreads on from page [p] (the page in view when left out), or reports running past an end.
+        function turn(d,p){
+          var from=p==null?at():p,s=whole?spreadOf(from)+d:from+d,last=whole?spreads-1:pages.length-1;
+          if(s<0||s>last){document.title=pages.length+'|'+at()+'|'+d+'|'+(++edges);return;}
+          go(whole?firstOf(s):s,true);
+        }
+        function reveal(el){
+          if(!el)return;
+          var holder=el.closest(view==='slides'?'section.slide':'.page');
+          if(holder&&pages.indexOf(holder)>=0){go(pages.indexOf(holder));return;}
+          el.scrollIntoView({block:'start'});scrollBy(0,-84);
+        }
+        function heading(k){reveal(document.querySelectorAll('h1:not(.r-cont),h2:not(.r-cont),h3:not(.r-cont)')[k]);}
+        // The nth match of text, counted over the page's text as one string, so a match may cross tags.
+        function find(q,n){
+          q=q.toLowerCase();
+          var w=document.createTreeWalker(b,NodeFilter.SHOW_TEXT,{acceptNode:function(t){return t.parentNode.closest('script')?2:1;}}),nodes=[],text='',t;
+          while((t=w.nextNode())){nodes.push(t);text+=t.data;}
+          var low=text.toLowerCase(),hit=-1;
+          for(var k=0;k<=n;k++){hit=low.indexOf(q,hit+1);if(hit<0)return;}
+          function point(o){var s=0;for(var i=0;i<nodes.length;i++){if(o<=s+nodes[i].data.length)return[nodes[i],o-s];s+=nodes[i].data.length;}return[nodes[nodes.length-1],nodes[nodes.length-1].data.length];}
+          var a=point(hit),e=point(hit+q.length),r=document.createRange();r.setStart(a[0],a[1]);r.setEnd(e[0],e[1]);
+          try{CSS.highlights.set('hit',new Highlight(r));}catch(x){}
+          // Scrolling, the match itself is brought a third of the way down; its block may be long.
+          if(view==='scroll'){var rr=r.getBoundingClientRect();scrollTo(scrollX,rr.top+scrollY-vh/3);return;}
+          reveal(a[0].parentNode);
+        }
         function run(){
-          if(view==='slides'){
-            pages=Array.prototype.slice.call(document.querySelectorAll('section.slide'));
-            if(!pages.length)return;
+          if(flowing){
+            if(view==='slides')pages=Array.prototype.slice.call(document.querySelectorAll('section.slide'));
             report();addEventListener('scroll',report,{passive:true});addEventListener('resize',report);return;
           }
           Array.prototype.slice.call((doc||src).childNodes).forEach(function(n){if(!c)newPage();flow(n);});
           if(!c)newPage();
           src.parentNode.removeChild(src);
-          if(view==='single'||view==='double'){
+          if(whole){
             var all=pages.slice();out.innerHTML='';
-            for(var i=0;i<all.length;i+=per){var sp=document.createElement('div');sp.className='spread';for(var j=i;j<Math.min(i+per,all.length);j++)sp.appendChild(all[j]);out.appendChild(sp);}
+            for(var i=0;i<all.length;i=firstOf(spreadOf(i)+1)){var sp=document.createElement('div');sp.className='spread';for(var j=i;j<Math.min(firstOf(spreadOf(i)+1),all.length);j++)sp.appendChild(all[j]);out.appendChild(sp);}
+            spreads=out.children.length;
           }
           Array.prototype.forEach.call(document.querySelectorAll('.page img'),function(im){im.style.maxHeight=(H-M[0]-M[2])+'px';});
           fit();report();
           addEventListener('scroll',report,{passive:true});
-          addEventListener('resize',function(){fit();report();});
+          // A new size (the side panel opening, a turn of the device) keeps the page in view.
+          addEventListener('resize',function(){var p=at();fit();go(p);});
         }
-        window.R={go:go};
+        window.R={go:go,turn:turn,heading:heading,find:find};
         if(document.readyState==='complete')run();else addEventListener('load',run);
         })();
     """.trimIndent()
@@ -241,7 +338,7 @@ object ReaderHtml {
 
     private fun shell(
         body: String, c: Colors, wide: Boolean, extraCss: String, bodyAttrs: String = "", nonce: String? = null, minScale: Boolean = false,
-        around: String = c.background, dark: Boolean = false,
+        look: Look = Look(c.background),
     ): String {
         val css = """
             html{-webkit-text-size-adjust:100%}
@@ -297,10 +394,13 @@ object ReaderHtml {
             .x-v{color:${c.muted}}
             .x-c{color:${c.muted};font-style:italic}
             .poem{margin:.8em 0 .8em 1.5em}
-            html{background:$around}
+            html{background:${look.around}}
+            body{min-height:100vh;box-sizing:border-box}
             body:has(> article.doc),body:has(section.slide){background:transparent}
-            body.dark article.doc:not(.content),body.dark .page:has(> .doc){filter:invert(.88) hue-rotate(180deg)}
-            body.dark .doc img{filter:invert(1) hue-rotate(180deg)}
+            ${if (look.docFilter.isEmpty()) "" else "article.doc:not(.content),.page:has(> .doc){filter:${look.docFilter}}"}
+            ${if (look.imageFilter.isEmpty()) "" else ".doc img{filter:${look.imageFilter}}"}
+            ${if (look.paperLook.isEmpty()) "" else "body.scroll:not(:has(> article.doc)),.page:not(:has(> .doc)){background-image:${look.paperLook}}"}
+            ::highlight(hit){background:rgba(255,200,0,.55);color:inherit}
             .doc{display:block;background:#fff;color:#000;font-size:11pt;line-height:1.15;margin:0 auto;box-sizing:border-box;max-width:100%;box-shadow:0 1px 5px rgba(0,0,0,.4)}
             .doc a{color:#1155cc}
             .doc p,.doc h1,.doc h2,.doc h3,.doc h4,.doc h5,.doc h6{margin:0}
@@ -313,7 +413,7 @@ object ReaderHtml {
         val policy = "default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src " + (nonce?.let { "'nonce-$it'" } ?: "'none'")
         return "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1${if (minScale) ", minimum-scale=1" else ""}\">" +
             "<meta http-equiv=\"Content-Security-Policy\" content=\"$policy\">" +
-            "<style>$css\n$extraCss</style></head><body${bodyAttrs.ifEmpty { if (dark) " class=\"dark\"" else "" }}>$body</body></html>"
+            "<style>$css\n$extraCss</style></head><body$bodyAttrs>$body</body></html>"
     }
 
     // --- Markdown ---

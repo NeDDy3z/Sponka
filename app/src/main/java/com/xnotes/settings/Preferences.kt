@@ -189,8 +189,20 @@ data class Preferences(
     val showHidden: Boolean = false,
     /** The button left of the reading islands' gear: "auto" (a bookmark when pages turn one at a time, else search), "bookmark", "search" or "none". */
     val readingQuickTool: String = "auto",
-    /** The light/dark choice for read-only files; null follows the app theme. Never written to the file. */
-    val readerDark: Boolean? = null,
+    /** The colours read-only files are shown in: one of [READER_THEMES]; "auto" follows the app theme. Never written to the file. */
+    val readerTheme: String = "auto",
+    /** The "custom" theme's page and text colours, as ARGB. */
+    val readerCustomPaper: Int = 0xFFF5F0E6.toInt(),
+    val readerCustomText: Int = 0xFF2B2B2B.toInt(),
+    /** The paper look behind a book's text: one of [READER_PAPERS]. */
+    val readerPaperLook: String = "plain",
+    /** Whether a page turned one or two at a time slides across, and whether a tap near an edge turns it. */
+    val readerTurnAnimation: Boolean = true,
+    val readerTapToTurn: Boolean = true,
+    /** How far through each read-only file the reader got, 0 to 1, by file name so it follows the file to other devices. */
+    val readerPositions: Map<String, Float> = emptyMap(),
+    /** Each read-only file's bookmarks, by file name. */
+    val readerMarks: Map<String, List<ReaderMark>> = emptyMap(),
     /** The page a book is laid out on to be read: "screen" (this device's screen), "a6", "a5", "a4" or "letter". */
     val readerPageFormat: String = "screen",
     /** How read-only files are shown by default: one of [READER_VIEWS]. */
@@ -340,7 +352,16 @@ data class Preferences(
         .put("hidden_items", org.json.JSONArray(hiddenItems.sorted()))
         .put("show_hidden", showHidden)
         .put("reading_quick_tool", readingQuickTool)
-        .apply { readerDark?.let { put("reader_dark", it) } }
+        .put("reader_theme", readerTheme)
+        .put("reader_custom_paper", readerCustomPaper)
+        .put("reader_custom_text", readerCustomText)
+        .put("reader_paper_look", readerPaperLook)
+        .put("reader_turn_animation", readerTurnAnimation)
+        .put("reader_tap_to_turn", readerTapToTurn)
+        .put("reader_positions", JSONObject(readerPositions.mapValues { it.value.toDouble() }))
+        .put("reader_marks", JSONObject().apply {
+            readerMarks.forEach { (file, marks) -> put(file, org.json.JSONArray(marks.map { JSONObject().put("at", it.at.toDouble()).put("label", it.label) })) }
+        })
         .put("reader_page_format", readerPageFormat)
         .put("reader_view", readerView)
         .put("reader_file_views", JSONObject(readerFileViews))
@@ -356,8 +377,12 @@ data class Preferences(
         /** The page formats a book can be laid out on, in the order they are offered. */
         val READER_PAGE_FORMATS = listOf("screen", "a6", "a5", "a4", "letter")
 
-        /** One long scroll, pages down or across, one page at a time, or two side by side. */
-        val READER_VIEWS = listOf("scroll", "vertical", "horizontal", "single", "double")
+        /** One long scroll, pages down or across, one page at a time, two side by side, or the first alone then pairs. */
+        val READER_VIEWS = listOf("scroll", "vertical", "horizontal", "single", "double", "cover")
+
+        val READER_THEMES = listOf("auto", "light", "sepia", "gray", "dark", "black", "custom")
+
+        val READER_PAPERS = listOf("plain", "grain", "old")
 
         /** The accent a two-tone setting saved without a seed of its own has always loaded as. */
         val LEGACY_ACCENT = Rgba(0, 230, 118, 255)
@@ -529,7 +554,23 @@ data class Preferences(
                 hiddenItems = o.optJSONArray("hidden_items")?.let { a -> (0 until a.length()).mapNotNull { a.optString(it).ifEmpty { null } }.toSet() }.orEmpty(),
                 showHidden = o.optBoolean("show_hidden", false),
                 readingQuickTool = o.optString("reading_quick_tool", "auto").let { if (it in listOf("bookmark", "search", "none")) it else "auto" },
-                readerDark = if (o.has("reader_dark")) o.optBoolean("reader_dark") else null,
+                // The old light/dark switch becomes the theme it picked.
+                readerTheme = o.optString("reader_theme", if (!o.has("reader_dark")) "auto" else if (o.optBoolean("reader_dark")) "dark" else "light")
+                    .let { if (it in READER_THEMES) it else "auto" },
+                readerCustomPaper = o.optInt("reader_custom_paper", 0xFFF5F0E6.toInt()),
+                readerCustomText = o.optInt("reader_custom_text", 0xFF2B2B2B.toInt()),
+                readerPaperLook = o.optString("reader_paper_look", "plain").let { if (it in READER_PAPERS) it else "plain" },
+                readerTurnAnimation = o.optBoolean("reader_turn_animation", true),
+                readerTapToTurn = o.optBoolean("reader_tap_to_turn", true),
+                readerPositions = o.optJSONObject("reader_positions")?.let { f ->
+                    f.keys().asSequence().associateWith { f.optDouble(it, 0.0).toFloat().coerceIn(0f, 1f) }
+                }.orEmpty(),
+                readerMarks = o.optJSONObject("reader_marks")?.let { f ->
+                    f.keys().asSequence().associateWith { k ->
+                        val a = f.optJSONArray(k) ?: org.json.JSONArray()
+                        (0 until a.length()).mapNotNull { i -> a.optJSONObject(i)?.let { ReaderMark(it.optDouble("at", 0.0).toFloat().coerceIn(0f, 1f), it.optString("label")) } }
+                    }
+                }.orEmpty(),
                 readerPageFormat = o.optString("reader_page_format", "screen").let { if (it in READER_PAGE_FORMATS) it else "screen" },
                 readerView = o.optString("reader_view", "scroll").let { if (it in READER_VIEWS) it else "scroll" },
                 readerFileViews = o.optJSONObject("reader_file_views")?.let { f ->
@@ -549,3 +590,6 @@ data class Preferences(
 
 /** A cloud folder picked for sync: the service's folder id and the path shown in preferences. */
 data class CloudFolder(val id: String, val name: String)
+
+/** A place marked in a read-only file: how far through it, 0 to 1, and its name. */
+data class ReaderMark(val at: Float, val label: String)
