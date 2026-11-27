@@ -50,9 +50,6 @@ android {
             // The tree-sitter parser tables gzip ~6x: compressed packaging keeps the
             // APK at ~12MB instead of ~30MB, at the cost of extract-on-install.
             useLegacyPackaging = true
-            // ONNX Runtime's core library is downloaded with the handwritten-maths add-on (see
-            // MathOcr); only its small JNI bridge ships in the APK.
-            excludes += "**/libonnxruntime.so"
         }
     }
 
@@ -92,17 +89,35 @@ android {
         }
     }
 
-    // Play forbids self-updating, so the play build drops the GitHub updater and its install permission.
+    // Only the github flavor has the self-updater and REQUEST_INSTALL_PACKAGES (src/github).
     flavorDimensions += "store"
     productFlavors {
         create("github") {
             dimension = "store"
             buildConfigField("boolean", "SELF_UPDATE", "true")
+            buildConfigField("boolean", "OCR", "true")
+            buildConfigField("boolean", "MATH_RUNTIME_BUNDLED", "false")
         }
+        // Play forbids downloading native code, so ONNX Runtime ships inside the APK here.
         create("play") {
             dimension = "store"
             buildConfigField("boolean", "SELF_UPDATE", "false")
+            buildConfigField("boolean", "OCR", "true")
+            buildConfigField("boolean", "MATH_RUNTIME_BUNDLED", "true")
         }
+        // F-Droid allows neither ML Kit (non-free) nor the downloaded ONNX Runtime, so OCR is left out.
+        create("fdroid") {
+            dimension = "store"
+            buildConfigField("boolean", "SELF_UPDATE", "false")
+            buildConfigField("boolean", "OCR", "false")
+            buildConfigField("boolean", "MATH_RUNTIME_BUNDLED", "false")
+        }
+    }
+
+    sourceSets {
+        getByName("github").java.srcDir("src/mlkit/java")
+        getByName("play").java.srcDirs("src/mlkit/java", "src/noupdate/java")
+        getByName("fdroid").java.srcDir("src/noupdate/java")
     }
 
     compileOptions {
@@ -124,6 +139,14 @@ android {
 kotlin {
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+    }
+}
+
+// The GitHub build downloads ONNX Runtime's core library with the handwritten-maths add-on (see
+// MathOcr); only its small JNI bridge ships in that APK.
+androidComponents {
+    onVariants(selector().withFlavor("store" to "github")) {
+        it.packaging.jniLibs.excludes.add("**/libonnxruntime.so")
     }
 }
 
@@ -152,12 +175,15 @@ dependencies {
     implementation(libs.androidsvg)
     implementation(libs.argon2kt)
     implementation(libs.androidx.work.runtime)
-    implementation(libs.mlkit.digital.ink)
+    "githubImplementation"(libs.mlkit.digital.ink)
+    "playImplementation"(libs.mlkit.digital.ink)
     implementation(libs.commonmark.autolink)
     implementation(libs.latex.base)
     implementation(libs.latex.parser)
     implementation(libs.latex.renderer)
-    implementation(libs.onnxruntime.android)
+    compileOnly(libs.onnxruntime.android)
+    "githubImplementation"(libs.onnxruntime.android)
+    "playImplementation"(libs.onnxruntime.android)
     implementation(libs.bundles.commonmark)
     implementation(libs.okhttp)
     debugImplementation(libs.androidx.ui.tooling)

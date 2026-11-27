@@ -62,8 +62,7 @@ import kotlinx.coroutines.launch
 // n-notes: this fork. xnotes: the original project it's built on.
 private const val N_REPO_URL = "https://github.com/NeDDy3z/Sponka"
 private const val N_ISSUES_URL = "https://github.com/NeDDy3z/Sponka/issues/new"
-private const val SPONSOR_URL = "https://github.com/sponsors/shardulvs"
-private const val ISSUES_URL = "https://github.com/shardulvs/xnotes-android/issues/new"
+private const val XNOTES_REPO_URL = "https://github.com/shardulvs/xnotes-android"
 private const val MIN_FILL_MS = 120L
 
 /**
@@ -137,20 +136,6 @@ fun AboutPane() {
                 AboutButton(XnotesIcons.idea, stringResource(R.string.request_feature)) { open(featureRequestUrl(N_ISSUES_URL)) }
             }
 
-            Spacer(Modifier.height(24.dp))
-            // The upstream project: bugs/features/sponsorship for xnotes proper.
-            Text(stringResource(R.string.help_make_better), color = palette.text.toComposeColor(), fontWeight = FontWeight.Bold, fontSize = 16.sp)
-            Spacer(Modifier.height(14.dp))
-            // Three buttons, side by side; each fills with the selection container while pressed.
-            Row(
-                Modifier.fillMaxWidth().height(IntrinsicSize.Min),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                AboutButton(XnotesIcons.bug, stringResource(R.string.report_bug)) { open(bugReportUrl(ISSUES_URL, version)) }
-                AboutButton(XnotesIcons.idea, stringResource(R.string.request_feature)) { open(featureRequestUrl(ISSUES_URL)) }
-                AboutButton(XnotesIcons.heart, stringResource(R.string.sponsor)) { open(SPONSOR_URL) }
-            }
-
             Spacer(Modifier.height(26.dp))
             // Quiet, single-line growth nudge (a link, never a popup).
             Row(
@@ -159,6 +144,14 @@ fun AboutPane() {
             ) {
                 Text(stringResource(R.string.enjoying_n_notes), color = palette.textDim.toComposeColor(), fontSize = 12.sp)
                 Text(stringResource(R.string.star_on_github), color = palette.accent.toComposeColor(), fontSize = 12.sp, fontWeight = FontWeight.Medium)
+            }
+            Spacer(Modifier.height(6.dp))
+            Row(
+                Modifier.clickable { open(XNOTES_REPO_URL) },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(stringResource(R.string.about_based_on), color = palette.textDim.toComposeColor(), fontSize = 12.sp)
+                Text("xnotes", color = palette.accent.toComposeColor(), fontSize = 12.sp, fontWeight = FontWeight.Medium)
             }
         }
     }

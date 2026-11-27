@@ -167,7 +167,7 @@ class EditorActivity : ComponentActivity() {
         com.xnotes.platform.TemplateLibrary.init(this)
         com.xnotes.ui.AudioPlayback.init(this)
         com.xnotes.ui.AudioRecording.init(this)
-        com.xnotes.platform.MathOcr.resume(this)
+        if (BuildConfig.OCR) com.xnotes.platform.MathOcr.resume(this)
         setTheme(com.xnotes.R.style.Theme_Xnotes) // leave the launch theme behind
         applyFullscreen(!deviceHasDisplayCutout(this)) // provisional; reconciled once the editor loads prefs
         // The intent that started the task comes back whenever Android rebuilds it, from a saved state
@@ -204,12 +204,6 @@ class EditorActivity : ComponentActivity() {
                 ready = true
                 ed.prewarmBackstage() // warm recents/explorer caches so the first backstage open is instant
             }
-            var update by remember { mutableStateOf<com.xnotes.update.UpdateChecker.Status.Available?>(null) }
-            LaunchedEffect(ready) {
-                if (!BuildConfig.SELF_UPDATE || !ready || rebuilt || !ed.preferences.checkUpdatesOnStartup) return@LaunchedEffect
-                val version = runCatching { packageManager.getPackageInfo(packageName, 0).versionName ?: "" }.getOrDefault("")
-                update = com.xnotes.update.UpdateChecker.check(version).getOrNull() as? com.xnotes.update.UpdateChecker.Status.Available
-            }
             XnotesTheme(ed.palette, ed.cornerStyle) {
                 CompositionLocalProvider(com.xnotes.ui.LocalToolbarLook provides ed.toolbarLook) {
                     Box(modifier = Modifier.fillMaxSize()) {
@@ -227,44 +221,7 @@ class EditorActivity : ComponentActivity() {
                         com.xnotes.ui.EyedropperOverlay()
                         SyncStrip(ed)
                     }
-                    update?.let { u ->
-                        var downloadProgress by remember { mutableStateOf<Float?>(null) }
-                        var downloadFailed by remember { mutableStateOf(false) }
-                        val progress = downloadProgress
-                        com.xnotes.ui.SheetDialog(
-                            title = stringResource(R.string.update_available),
-                            onDismiss = { update = null },
-                            text = when {
-                                progress != null -> stringResource(R.string.update_downloading, (progress * 100).toInt())
-                                downloadFailed -> stringResource(R.string.update_download_failed)
-                                else -> stringResource(R.string.update_is_out, u.version)
-                            },
-                            foot = {
-                                com.xnotes.ui.DialogButtons {
-                                    DialogButton(stringResource(R.string.update_turn_off)) {
-                                        update = null
-                                        ed.applyHomePreferences(ed.preferences.copy(checkUpdatesOnStartup = false))
-                                    }
-                                    DialogButton(stringResource(R.string.update_later)) { update = null }
-                                    DialogButton(stringResource(R.string.download), com.xnotes.ui.ButtonKind.CONFIRM, enabled = downloadProgress == null) download@{
-                                        val apkUrl = u.apkUrl
-                                        if (apkUrl == null) {
-                                            update = null
-                                            runCatching { startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(u.releaseUrl))) }
-                                            return@download
-                                        }
-                                        downloadFailed = false
-                                        downloadProgress = 0f
-                                        lifecycleScope.launch {
-                                            val result = com.xnotes.update.UpdateInstaller.downloadAndInstall(this@EditorActivity, apkUrl) { downloadProgress = it }
-                                            downloadProgress = null
-                                            if (result.isSuccess) update = null else downloadFailed = true
-                                        }
-                                    }
-                                }
-                            },
-                        )
-                    }
+                    com.xnotes.ui.UpdatePrompt(ed, ready, rebuilt)
                 }
             }
         }

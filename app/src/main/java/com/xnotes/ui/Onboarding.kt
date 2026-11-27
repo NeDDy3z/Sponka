@@ -286,10 +286,14 @@ fun Onboarding(editor: Editor) {
                                 OnboardingStep.PERMISSIONS -> PermissionsSection(syncOn = CloudServices.byId(prefs.cloudService) != null)
                                 OnboardingStep.OCR -> {
                                     SectionTitle(stringResource(R.string.pref_ocr))
-                                    FieldLabel(stringResource(R.string.pref_ocr_handwriting_language))
-                                    HandwritingLanguageControls(prefs.ocrLanguage) { update(prefs.copy(ocrLanguage = it)) }
-                                    FieldLabel(stringResource(R.string.pref_ocr_math))
-                                    MathAddonControls(prefs, ::update, onTrain = { practiceOpen = true })
+                                    if (com.xnotes.BuildConfig.OCR) {
+                                        FieldLabel(stringResource(R.string.pref_ocr_handwriting_language))
+                                        HandwritingLanguageControls(prefs.ocrLanguage) { update(prefs.copy(ocrLanguage = it)) }
+                                        FieldLabel(stringResource(R.string.pref_ocr_math))
+                                        MathAddonControls(prefs, ::update, onTrain = { practiceOpen = true })
+                                    } else {
+                                        OcrUnavailableNote()
+                                    }
                                 }
                                 OnboardingStep.TOOLBAR -> {
                                     SectionTitle(stringResource(R.string.pref_toolbar))

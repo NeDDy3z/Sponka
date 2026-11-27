@@ -84,9 +84,17 @@ Requires **JDK 17** (the project pins Java 17):
 ```
 git clone https://github.com/NeDDy3z/Sponka.git
 cd Sponka
-JAVA_HOME=/path/to/jdk-17 ./gradlew assembleDebug
+JAVA_HOME=/path/to/jdk-17 ./gradlew assembleGithubDebug
 
 ```
+
+There are three build flavors, one per channel:
+
+| Flavor | Release task | Differences |
+| ----- | ----- | ----- |
+| `github` | `assembleGithubRelease` | Built-in updater. ONNX Runtime is downloaded with the math add-on |
+| `play` | `bundlePlayRelease` | No updater. ONNX Runtime is bundled, since Play does not allow downloading native code |
+| `fdroid` | `assembleFdroidRelease` | No updater, no handwriting or math recognition (ML Kit is not free software) |
 
 ## Reporting issues
 

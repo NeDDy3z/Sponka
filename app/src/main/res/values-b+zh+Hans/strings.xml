@@ -883,11 +883,8 @@
     <!-- About -->
     <string name="app_tagline">Android 手写笔记与素描应用</string>
     <string name="copy_version">复制版本号</string>
-    <string name="help_make_better">帮助改进 xnotes</string>
     <string name="report_bug">报告问题</string>
     <string name="request_feature">功能建议</string>
-    <string name="sponsor">赞助</string>
-    <string name="enjoying_xnotes">喜欢 xnotes？</string>
     <string name="star_on_github">在 GitHub 上加星</string>
     <string name="mit_license">MIT 许可证</string>
     <string name="version_n">版本 %1$s</string>
@@ -1450,6 +1447,10 @@
     <string name="about_fork_tagline">xnotes 的定制分支，一款 Android 手写笔记和速写应用。原名 n-notes。</string>
     <string name="help_make_n_notes_better">帮助改进 Sponka</string>
     <string name="enjoying_n_notes">"喜欢 Sponka 吗？"</string>
+    <string name="about_based_on">"基于 "</string>
+    <string name="ocr_unavailable_fdroid">F-Droid 版本不包含手写和数学识别，因为 F-Droid 不允许其所需的库。如需使用，请从 GitHub 或 Google Play 安装 Sponka。</string>
+    <string name="ocr_get_github">从 GitHub 获取 Sponka</string>
+    <string name="ocr_get_play">在 Google Play 获取 Sponka</string>
     <string name="ocr_recognizing_handwriting">正在识别手写内容...</string>
     <string name="ocr_handwriting_failed">手写识别失败：%1$s</string>
     <string name="ocr_no_text">未识别到文本</string>

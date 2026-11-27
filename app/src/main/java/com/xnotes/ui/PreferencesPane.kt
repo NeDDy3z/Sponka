@@ -453,10 +453,14 @@ fun PreferencesPane(
             if (shown(PrefCategory.OCR)) {
                 if (all) HorizontalDivider(color = palette.border.toComposeColor())
                 if (all) SectionTitle(stringResource(R.string.pref_ocr))
-                FieldLabel(stringResource(R.string.pref_ocr_handwriting_language))
-                HandwritingLanguageControls(prefs.ocrLanguage) { update(prefs.copy(ocrLanguage = it)) }
-                FieldLabel(stringResource(R.string.pref_ocr_math))
-                MathAddonControls(prefs, ::update, onTrain = { mathPracticeOpen = true })
+                if (com.xnotes.BuildConfig.OCR) {
+                    FieldLabel(stringResource(R.string.pref_ocr_handwriting_language))
+                    HandwritingLanguageControls(prefs.ocrLanguage) { update(prefs.copy(ocrLanguage = it)) }
+                    FieldLabel(stringResource(R.string.pref_ocr_math))
+                    MathAddonControls(prefs, ::update, onTrain = { mathPracticeOpen = true })
+                } else {
+                    OcrUnavailableNote()
+                }
             }
             if (shown(PrefCategory.NEW_NOTES)) {
                 if (all) HorizontalDivider(color = palette.border.toComposeColor())
@@ -955,6 +959,25 @@ private fun MathModelInfo(model: MathModel) {
     }
 }
 
+/** F-Droid build only: says why OCR is missing and where to get a build that has it. */
+@Composable
+internal fun OcrUnavailableNote() {
+    val palette = LocalPalette.current
+    val link = androidx.compose.ui.text.TextLinkStyles(androidx.compose.ui.text.SpanStyle(color = palette.accent.toComposeColor()))
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(stringResource(R.string.ocr_unavailable_fdroid), color = palette.text.toComposeColor(), fontSize = 12.sp)
+        for ((label, url) in listOf(R.string.ocr_get_github to OCR_GITHUB_URL, R.string.ocr_get_play to OCR_PLAY_URL)) {
+            val text = stringResource(label)
+            Text(
+                androidx.compose.ui.text.buildAnnotatedString {
+                    withLink(androidx.compose.ui.text.LinkAnnotation.Url(url, link)) { append(text) }
+                },
+                fontSize = 13.sp,
+            )
+        }
+    }
+}
+
 /** Pick the handwriting language and download or delete its model; downloaded ones get a check. */
 @Composable
 internal fun HandwritingLanguageControls(selected: String, onSelect: (String) -> Unit) {
@@ -1060,6 +1083,8 @@ internal fun scrollForSection(y: Int, maxScroll: Int, height: Float, top: Float)
 
 /** Locales the app ships strings for; keep in sync with the res/values-* folders. */
 private val APP_LANGUAGES = listOf("en", "cs", "es", "fr", "ru", "uk", "zh-Hans")
+private const val OCR_GITHUB_URL = "https://github.com/NeDDy3z/Sponka/releases"
+private const val OCR_PLAY_URL = "https://play.google.com/store/apps/details?id=com.neddy.nnotes"
 private const val LANGUAGE_REQUEST_URL = "https://github.com/NeDDy3z/Sponka/issues/new?title=Language+request%3A+"
 
 private fun nativeName(tag: String): String {

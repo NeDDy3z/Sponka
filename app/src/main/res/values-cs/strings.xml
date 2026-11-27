@@ -994,11 +994,8 @@
     <!-- About -->
     <string name="app_tagline">Aplikace pro ručně psané poznámky a skicování pro Android</string>
     <string name="copy_version">Kopírovat verzi</string>
-    <string name="help_make_better">Pomoz vylepšit xnotes</string>
     <string name="report_bug">Nahlásit chybu</string>
     <string name="request_feature">Navrhnout funkci</string>
-    <string name="sponsor">Podpořit</string>
-    <string name="enjoying_xnotes">"Líbí se ti xnotes? "</string>
     <string name="star_on_github">Dej hvězdičku na GitHubu</string>
     <string name="mit_license">Licence MIT</string>
     <string name="version_n">Verze %1$s</string>
@@ -1609,6 +1606,10 @@
     <string name="about_fork_tagline">Upravený fork xnotes, aplikace pro ručně psané poznámky a skicování pro Android. Dříve n-notes.</string>
     <string name="help_make_n_notes_better">Pomoz vylepšit Sponka</string>
     <string name="enjoying_n_notes">"Líbí se ti Sponka? "</string>
+    <string name="about_based_on">"Založeno na "</string>
+    <string name="ocr_unavailable_fdroid">Rozpoznávání rukopisu a matematiky ve verzi z F-Droidu není, protože F-Droid nepovoluje knihovny, které potřebuje. Pokud ho chceš používat, nainstaluj si Sponku z GitHubu nebo z Google Play.</string>
+    <string name="ocr_get_github">Stáhnout Sponku z GitHubu</string>
+    <string name="ocr_get_play">Stáhnout Sponku z Google Play</string>
     <string name="ocr_recognizing_handwriting">Rozpoznávám rukopis...</string>
     <string name="ocr_handwriting_failed">Rozpoznání rukopisu se nezdařilo: %1$s</string>
     <string name="ocr_no_text">Nebyl rozpoznán žádný text</string>

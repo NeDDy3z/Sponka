@@ -985,11 +985,8 @@
     <!-- About -->
     <string name="app_tagline">A handwriting notes and sketching app for Android. Formerly n-notes.</string>
     <string name="copy_version">Copy version</string>
-    <string name="help_make_better">Help make xnotes better</string>
     <string name="report_bug">Report a bug</string>
     <string name="request_feature">Request a feature</string>
-    <string name="sponsor">Sponsor</string>
-    <string name="enjoying_xnotes">"Enjoying xnotes? "</string>
     <string name="star_on_github">Star it on GitHub</string>
     <string name="mit_license">MIT License</string>
     <string name="version_n">Version %1$s</string>
@@ -1562,6 +1559,10 @@
     <string name="about_fork_tagline">A customized fork of xnotes, a handwriting notes and sketching app for Android. Formerly n-notes.</string>
     <string name="help_make_n_notes_better">Help make Sponka better</string>
     <string name="enjoying_n_notes">"Enjoying Sponka? "</string>
+    <string name="about_based_on">"Based on "</string>
+    <string name="ocr_unavailable_fdroid">Handwriting and math recognition aren\'t in the F-Droid version, because F-Droid doesn\'t allow the libraries they need. To use them, install Sponka from GitHub or Google Play.</string>
+    <string name="ocr_get_github">Get Sponka from GitHub</string>
+    <string name="ocr_get_play">Get Sponka on Google Play</string>
     <string name="ocr_recognizing_handwriting">Recognizing handwriting...</string>
     <string name="ocr_handwriting_failed">Handwriting recognition failed: %1$s</string>
     <string name="ocr_no_text">No text recognized</string>

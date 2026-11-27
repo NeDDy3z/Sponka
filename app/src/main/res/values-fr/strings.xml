@@ -964,11 +964,8 @@
     <!-- About -->
     <string name="app_tagline">Une application de prise de notes manuscrites et de croquis pour Android. Anciennement n-notes.</string>
     <string name="copy_version">Copier la version</string>
-    <string name="help_make_better">Aidez à améliorer xnotes</string>
     <string name="report_bug">Signaler un bug</string>
     <string name="request_feature">Proposer une fonctionnalité</string>
-    <string name="sponsor">Soutenir</string>
-    <string name="enjoying_xnotes">"Vous aimez xnotes ? "</string>
     <string name="star_on_github">Ajoutez une étoile sur GitHub</string>
     <string name="mit_license">Licence MIT</string>
     <string name="version_n">Version %1$s</string>
@@ -1560,6 +1557,10 @@
     <string name="about_fork_tagline">Un fork personnalisé de xnotes, une application de prise de notes manuscrites et de croquis pour Android. Anciennement n-notes.</string>
     <string name="help_make_n_notes_better">Aidez à améliorer Sponka</string>
     <string name="enjoying_n_notes">"Vous aimez Sponka ? "</string>
+    <string name="about_based_on">"Basé sur "</string>
+    <string name="ocr_unavailable_fdroid">La reconnaissance de l\'écriture manuscrite et des maths n\'est pas dans la version F-Droid, car F-Droid n\'autorise pas les bibliothèques nécessaires. Pour l\'utiliser, installez Sponka depuis GitHub ou Google Play.</string>
+    <string name="ocr_get_github">Télécharger Sponka sur GitHub</string>
+    <string name="ocr_get_play">Télécharger Sponka sur Google Play</string>
     <string name="ocr_recognizing_handwriting">Reconnaissance de l\'écriture...</string>
     <string name="ocr_handwriting_failed">Échec de la reconnaissance de l\'écriture : %1$s</string>
     <string name="ocr_no_text">Aucun texte reconnu</string>

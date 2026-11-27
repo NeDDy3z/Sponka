@@ -16,6 +16,7 @@ import android.graphics.Paint
 import android.graphics.Path
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import com.xnotes.BuildConfig
 import com.xnotes.R
 import com.xnotes.core.geometry.Rect
 import com.xnotes.core.model.Stroke
@@ -107,7 +108,7 @@ object MathOcr {
     /** The model being downloaded, left behind if the process dies so the next launch carries on. */
     private fun pendingFile(context: Context) = File(root(context), "downloading.json")
 
-    private fun runtimeInstalled(context: Context) = runtimeFile?.let { File(runtimeDir(context), it.name).length() == it.installedSize } == true
+    private fun runtimeInstalled(context: Context) = BuildConfig.MATH_RUNTIME_BUNDLED || runtimeFile?.let { File(runtimeDir(context), it.name).length() == it.installedSize } == true
 
     /** [installed] results by model id, cleared whenever this object changes the files. */
     private val installedCache = HashMap<String, MathModel?>()
@@ -323,6 +324,8 @@ object MathOcr {
     fun resume(context: Context) {
         val app = context.applicationContext
         scope.launch {
+            // A runtime downloaded before it was bundled is dead weight now.
+            if (BuildConfig.MATH_RUNTIME_BUNDLED) runtimeDir(app).deleteRecursively()
             if (download?.isActive == true) return@launch
             val model = runCatching { MathModel.parse(JSONObject(pendingFile(app).readText())) }.getOrNull() ?: return@launch
             startDownload(app, model)
@@ -455,7 +458,8 @@ object MathOcr {
         release()
         val model = installed(context, id) ?: error("$id is not downloaded")
         val dir = modelDir(context, id)
-        if (!runtimeLoaded) {
+        // The bundled runtime is loaded by OrtEnvironment itself.
+        if (!runtimeLoaded && !BuildConfig.MATH_RUNTIME_BUNDLED) {
             System.load(File(runtimeDir(context), RUNTIME_LIB).path)
             runtimeLoaded = true
         }

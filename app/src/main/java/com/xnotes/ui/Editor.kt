@@ -985,7 +985,7 @@ class Editor(context: Context, val pane: Pane = Pane.PRIMARY) : ToolPopupHost, S
         }
     }
 
-    override val canConvertToMath: Boolean get() = com.xnotes.platform.MathOcr.isInstalled(appContext, settings.prefs.mathModel)
+    override val canConvertToMath: Boolean get() = com.xnotes.BuildConfig.OCR && com.xnotes.platform.MathOcr.isInstalled(appContext, settings.prefs.mathModel)
 
     /** How many Convert to math runs are still recognizing; the note shows a small progress pill meanwhile. */
     var mathConverting by mutableStateOf(0)

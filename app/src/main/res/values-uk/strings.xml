@@ -1016,11 +1016,8 @@
     <!-- About -->
     <string name="app_tagline">Застосунок для рукописних нотаток і скетчів для Android. Раніше n-notes.</string>
     <string name="copy_version">Копіювати версію</string>
-    <string name="help_make_better">Допоможіть зробити xnotes кращим</string>
     <string name="report_bug">Повідомити про помилку</string>
     <string name="request_feature">Запропонувати функцію</string>
-    <string name="sponsor">Підтримати</string>
-    <string name="enjoying_xnotes">"Подобається xnotes? "</string>
     <string name="star_on_github">Поставте зірку на GitHub</string>
     <string name="mit_license">Ліцензія MIT</string>
     <string name="version_n">Версія %1$s</string>
@@ -1609,6 +1606,10 @@
     <string name="about_fork_tagline">Змінена версія xnotes, застосунку для рукописних нотаток і ескізів на Android. Раніше n-notes.</string>
     <string name="help_make_n_notes_better">Допоможіть зробити Sponka кращою</string>
     <string name="enjoying_n_notes">"Подобається Sponka? "</string>
+    <string name="about_based_on">"На основі "</string>
+    <string name="ocr_unavailable_fdroid">Розпізнавання рукописного тексту та формул немає у версії з F-Droid, бо F-Droid не дозволяє потрібні для нього бібліотеки. Щоб ним користуватися, встановіть Sponka з GitHub або з Google Play.</string>
+    <string name="ocr_get_github">Завантажити Sponka з GitHub</string>
+    <string name="ocr_get_play">Завантажити Sponka з Google Play</string>
     <string name="ocr_recognizing_handwriting">Розпізнавання рукописного тексту...</string>
     <string name="ocr_handwriting_failed">Не вдалося розпізнати рукописний текст: %1$s</string>
     <string name="ocr_no_text">Текст не розпізнано</string>

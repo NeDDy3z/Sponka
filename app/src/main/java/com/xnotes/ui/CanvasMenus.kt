@@ -335,7 +335,7 @@ fun SelectionMenu(
         SelectionAction.CHANGE_STYLE -> host.selectionStyles().isNotEmpty() || host.selectionFills().isNotEmpty() || textBox != null
         SelectionAction.EDIT_FUNCTION -> host.selectionFunction != null
         SelectionAction.EDIT_TEXT -> host.selectionIsText
-        SelectionAction.CONVERT_TEXT -> host.selectionHasInk
+        SelectionAction.CONVERT_TEXT -> host.selectionHasInk && com.xnotes.BuildConfig.OCR
         SelectionAction.CONVERT_MATH -> host.selectionHasInk && host.canConvertToMath
         SelectionAction.LINK -> host.selectionCanLink
         SelectionAction.CAPTION -> host.selectionCanCaption
