@@ -62,6 +62,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -91,11 +92,6 @@ import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.xnotes.R
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.DarkMode
-import androidx.compose.material.icons.outlined.LightMode
-import androidx.compose.runtime.rememberCoroutineScope
-import kotlinx.coroutines.launch
 import com.xnotes.platform.PdfOutlineEntry
 import com.xnotes.ui.icons.XnotesIcons
 import com.xnotes.ui.theme.LocalPalette
@@ -235,19 +231,24 @@ internal fun BoxScope.ReadingIslands(
     var trackW by remember { mutableFloatStateOf(0f) }
     val inset = with(LocalDensity.current) { TRACK_INSET.toPx() }
     val bar = barMetrics(LocalToolbarLook.current.size)
+    val docked = !LocalToolbarLook.current.floating
+    // Docked, the top row is one strip that fades as a whole, and stays while the gear's panel is open.
+    val stripAlpha = remember { derivedStateOf { if (chrome.panelOpen) 1f else alpha.value } }
+    val stripDrift = remember { derivedStateOf { if (chrome.panelOpen) 0f else drift.value } }
+    fun Modifier.fading() = if (docked) this else drifting(alpha, drift, -TOP_DRIFT)
     CompositionLocalProvider(LocalBar provides bar) {
         Box(Modifier.fillMaxSize().onPlaced { root[0] = it }) {
-            TopIslands {
-                if (up) {
-                    HomeIsland(editor, chrome, onHome, Modifier.layoutId(HOME).drifting(alpha, drift, -TOP_DRIFT))
-                    TitleIsland(noteName(editor), Modifier.layoutId(TITLE).drifting(alpha, drift, -TOP_DRIFT))
+            TopIslands(if (docked) Modifier.drifting(stripAlpha, stripDrift, -TOP_DRIFT) else Modifier) {
+                if (up || (docked && chrome.panelOpen)) {
+                    HomeIsland(editor, chrome, onHome, Modifier.layoutId(HOME).fading())
+                    TitleIsland(noteName(editor), Modifier.layoutId(TITLE).fading())
                 }
                 // It fades with the others, but stays while its panel is open.
                 if (up || chrome.panelOpen) {
                     GearIsland(
                         editor, chrome, fullscreen, onToggleFullscreen, onImportTemplate, onClose,
                         Modifier.layoutId(GEAR).graphicsLayer { this.alpha = gear.value }
-                            .then(if (chrome.panelOpen) Modifier else Modifier.drifting(alpha, drift, -TOP_DRIFT)),
+                            .then(if (chrome.panelOpen) Modifier else Modifier.fading()),
                     )
                 }
             }
@@ -273,14 +274,65 @@ private fun Modifier.drifting(alpha: State<Float>, drift: State<Float>, toward: 
 }
 
 /**
+ * The islands over a read-only file: back with [home] beside it (the side panel, as on a note) and its
+ * name, [actions] by the gear along the top, [bottom] below. A tap shows or hides them, and they stay while [held].
+ * Floating, they keep [start] free on the left, where a full-height side panel lies.
+ */
+@Composable
+internal fun BoxScope.FileReadingIslands(
+    name: String,
+    awake: Boolean,
+    held: Boolean,
+    start: Dp,
+    onClose: () -> Unit,
+    home: @Composable RowScope.() -> Unit,
+    actions: @Composable RowScope.() -> Unit,
+    bottom: @Composable RowScope.() -> Unit,
+) {
+    val shown = awake || held
+    val alpha = animateFloatAsState(if (shown) 1f else 0f, fade(true, shown, SHOW_MS, EaseOut), label = "fileIslandsAlpha")
+    val drift = animateFloatAsState(if (shown) 0f else 1f, fade(true, shown, SHOW_DRIFT_MS, Settle), label = "fileIslandsDrift")
+    val gone by remember { derivedStateOf { alpha.value == 0f } }
+    if (!shown && gone) return
+    val docked = !LocalToolbarLook.current.floating
+    fun Modifier.fading() = if (docked) this else drifting(alpha, drift, -TOP_DRIFT)
+    CompositionLocalProvider(LocalBar provides barMetrics(LocalToolbarLook.current.size)) {
+        CompositionLocalProvider(LocalTipSide provides TipSide.BELOW) {
+            TopIslands(if (docked) Modifier.drifting(alpha, drift, -TOP_DRIFT) else Modifier.padding(start = start)) {
+                Island(Modifier.layoutId(HOME).fading()) {
+                    ToolbarIcon(XnotesIcons.prev, stringResource(R.string.reader_close), onClick = onClose)
+                    home()
+                }
+                TitleIsland(name, Modifier.layoutId(TITLE).fading())
+                Island(Modifier.layoutId(GEAR).fading(), actions)
+            }
+        }
+        CompositionLocalProvider(LocalTipSide provides TipSide.ABOVE) {
+            BottomBar(Modifier.drifting(alpha, drift, BOTTOM_DRIFT), if (docked) 0.dp else start, bottom)
+        }
+    }
+}
+
+/** How far down the top islands reach, which a panel beside the page keeps clear of. */
+@Composable
+internal fun topIslandsRoom(): Dp {
+    val look = LocalToolbarLook.current
+    return barMetrics(look.size).thickness + if (look.floating) ISLAND_MARGIN * 2 else 1.dp
+}
+
+/** The gap a scrubber keeps from its neighbours on the bottom bar, its touch reaching past its line's ends. */
+internal val SCRUBBER_ROOM = TRACK_GAP - TRACK_INSET
+
+/**
  * The row along the top: the home island at the start, the gear at the end, and between them the
  * title, centred and given what room is left, or left out when that is too little.
  */
 @Composable
-private fun TopIslands(islands: @Composable () -> Unit) {
+private fun TopIslands(modifier: Modifier = Modifier, islands: @Composable () -> Unit) {
+    val docked = !LocalToolbarLook.current.floating
     Layout(
         content = islands,
-        modifier = Modifier.fillMaxWidth().padding(ISLAND_MARGIN),
+        modifier = modifier.fillMaxWidth().then(if (docked) Modifier.dockedStrip(top = true) else Modifier.padding(ISLAND_MARGIN)),
     ) { measurables, constraints ->
         val loose = constraints.copy(minWidth = 0, minHeight = 0)
         val home = measurables.firstOrNull { it.layoutId == HOME }?.measure(loose)
@@ -301,14 +353,41 @@ private fun TopIslands(islands: @Composable () -> Unit) {
     }
 }
 
-/** An island: a row of the toolbar's buttons on its floating pill. */
+/** An island: a row of the toolbar's buttons on its floating pill, or bare on the docked strip. */
 @Composable
 private fun Island(modifier: Modifier = Modifier, content: @Composable RowScope.() -> Unit) {
     Row(
-        modifier.height(LocalBar.current.thickness).barPill().keepsTouches().padding(horizontal = ISLAND_PAD),
+        modifier.height(LocalBar.current.thickness).islandSurface().keepsTouches().padding(horizontal = ISLAND_PAD),
         verticalAlignment = Alignment.CenterVertically,
         content = content,
     )
+}
+
+/** The floating bar's pill while the toolbar floats; nothing while it is docked, where the strip is the surface. */
+@Composable
+private fun Modifier.islandSurface(): Modifier = if (LocalToolbarLook.current.floating) barPill() else this
+
+/** A docked bar's surface along the [top] or bottom edge: the panel colour and a hairline toward the page. */
+@Composable
+private fun Modifier.dockedStrip(top: Boolean): Modifier {
+    val palette = LocalPalette.current
+    val line = palette.border.toComposeColor()
+    return background(palette.panel.toComposeColor())
+        .drawBehind {
+            val y = if (top) size.height - 1.dp.toPx() / 2 else 1.dp.toPx() / 2
+            drawLine(line, Offset(0f, y), Offset(size.width, y), 1.dp.toPx())
+        }
+        .keepsTouches()
+}
+
+/** The bar along the bottom: a pill floating up to [BOTTOM_MAX] wide right of [start], or a strip across the whole edge while docked. */
+@Composable
+private fun BoxScope.BottomBar(modifier: Modifier, start: Dp = 0.dp, content: @Composable RowScope.() -> Unit) {
+    if (LocalToolbarLook.current.floating) {
+        Island(Modifier.align(Alignment.BottomCenter).padding(start = start).padding(ISLAND_MARGIN).widthIn(max = BOTTOM_MAX).fillMaxWidth().then(modifier), content)
+    } else {
+        Island(Modifier.align(Alignment.BottomCenter).fillMaxWidth().then(modifier).dockedStrip(top = false), content)
+    }
 }
 
 /** Holds a touch that lands on an island between its buttons, so the page under it stays put. */
@@ -339,7 +418,7 @@ private fun noteName(editor: Editor): String {
 private fun TitleIsland(name: String, modifier: Modifier) {
     val palette = LocalPalette.current
     Row(
-        modifier.height(LocalBar.current.thickness).barPill().keepsTouches().padding(start = 15.dp, end = 18.dp),
+        modifier.height(LocalBar.current.thickness).islandSurface().keepsTouches().padding(start = 15.dp, end = 18.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(9.dp),
     ) {
@@ -363,16 +442,7 @@ private fun GearIsland(
     CompositionLocalProvider(LocalTipSide provides TipSide.BELOW) {
         Island(modifier) {
             // The panel hangs just under the island, its end lined up with the island's.
-            // A read-only file is only ever read, so it has no editing to go back to.
-            if (editor.readerFile == null) ToolbarIcon(XnotesIcons.bookOpen, stringResource(R.string.reader_exit), active = true) { editor.toggleReadOnly() }
-            if (editor.readerFile != null) {
-                val scope = rememberCoroutineScope()
-                val dark = editor.readerDark
-                ToolbarIcon(
-                    if (dark) Icons.Outlined.LightMode else Icons.Outlined.DarkMode,
-                    stringResource(if (dark) R.string.reader_switch_to_light else R.string.reader_switch_to_dark),
-                ) { scope.launch { editor.toggleReaderDark() } }
-            }
+            ToolbarIcon(XnotesIcons.bookOpen, stringResource(R.string.reader_exit), active = true) { editor.toggleReadOnly() }
             when (editor.readingQuickTool) {
                 "bookmark" -> {
                     val marked = editor.bookmarkHere != null
@@ -430,7 +500,7 @@ private fun BoxScope.BottomIsland(
         }
     }
     CompositionLocalProvider(LocalTipSide provides TipSide.ABOVE) {
-        Island(Modifier.align(Alignment.BottomCenter).padding(ISLAND_MARGIN).widthIn(max = BOTTOM_MAX).fillMaxWidth().then(modifier)) {
+        BottomBar(modifier) {
             ToolbarIcon(XnotesIcons.prev, stringResource(R.string.previous_page), enabled = index > 0, shortcut = Keys.PREV_PAGE) { editor.prevPage() }
             if (typing) {
                 PageField(text, { text = it }, count, ::jump) { chrome.typing = false }
@@ -542,7 +612,7 @@ private fun GoButton(onClick: () -> Unit) {
  * that page.
  */
 @Composable
-private fun PageScrubber(
+internal fun PageScrubber(
     index: Int,
     last: Int,
     chapters: List<Int>,

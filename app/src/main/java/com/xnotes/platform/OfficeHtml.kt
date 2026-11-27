@@ -281,11 +281,81 @@ object OfficeHtml {
         }
     }
 
+    /** An OpenDocument file's look as far as the reader draws it: each style's settings, its fonts and its page. */
+    private class OdtLooks {
+        val props = HashMap<String, HashMap<String, String>>()
+        val parents = HashMap<String, String>()
+        val fonts = HashMap<String, String>()
+        val layouts = HashMap<String, List<String?>>()
+        var master: String? = null
+
+        fun read(bytes: ByteArray?, newParser: () -> XmlPullParser) {
+            if (bytes == null) return
+            val p = newParser().apply { setInput(bytes.inputStream(), "UTF-8") }
+            var style: HashMap<String, String>? = null
+            var layout: String? = null
+            var e = p.eventType
+            while (e != XmlPullParser.END_DOCUMENT) {
+                if (e == XmlPullParser.START_TAG) when (local(p.name)) {
+                    "style" -> {
+                        val name = attr(p, "name") ?: ""
+                        attr(p, "parent-style-name")?.let { parents[name] = it }
+                        style = props.getOrPut(name) { HashMap() }
+                    }
+                    "default-style" -> style = if (attr(p, "family") == "paragraph") props.getOrPut(DEFAULT) { HashMap() } else null
+                    "paragraph-properties", "text-properties" -> style?.let { s -> for (i in 0 until p.attributeCount) s[local(p.getAttributeName(i))] = p.getAttributeValue(i) }
+                    "font-face" -> attr(p, "name")?.let { n ->
+                        val generic = when (attr(p, "font-family-generic")) { "roman" -> "serif"; "modern" -> "monospace"; else -> "sans-serif" }
+                        fonts[n] = "'${(attr(p, "font-family") ?: n).replace("'", "")}',$generic"
+                    }
+                    "page-layout" -> layout = attr(p, "name")
+                    "page-layout-properties" -> layout?.let { l ->
+                        layouts[l] = listOf("page-width", "page-height", "margin-top", "margin-right", "margin-bottom", "margin-left").map { attr(p, it) }
+                    }
+                    "master-page" -> if (master == null || attr(p, "name") == "Standard") master = attr(p, "page-layout-name")
+                } else if (e == XmlPullParser.END_TAG && local(p.name).let { it == "style" || it == "default-style" }) style = null
+                e = p.next()
+            }
+        }
+
+        /** [name]'s settings over the styles it builds on, as CSS. */
+        fun css(name: String?): String {
+            if (name == null) return ""
+            val chain = ArrayList<String>()
+            var n: String? = name
+            while (n != null && chain.size < 10 && n !in chain) { chain.add(n); n = parents[n] }
+            val all = HashMap<String, String>()
+            for (s in chain.asReversed()) props[s]?.let(all::putAll)
+            return cssOf(all)
+        }
+
+        fun cssOf(all: Map<String, String>): String {
+            val css = StringBuilder()
+            fun put(k: String, v: String?) { if (v != null) css.append(k).append(':').append(v).append(';') }
+            put("font-size", all["font-size"])
+            put("color", all["color"])
+            put("font-family", all["font-name"]?.let { fonts[it] ?: "'$it',sans-serif" })
+            put("text-align", when (all["text-align"]) { null -> null; "start", "left" -> "left"; "end", "right" -> "right"; "center" -> "center"; "justify" -> "justify"; else -> null })
+            for (k in listOf("margin-top", "margin-bottom", "margin-left", "margin-right", "text-indent")) put(k, all[k])
+            put("line-height", all["line-height"]?.takeIf { it != "normal" })
+            put("background", all["background-color"]?.takeIf { it != "transparent" })
+            all["font-weight"]?.let { put("font-weight", if (it == "bold" || (it.toIntOrNull() ?: 0) >= 600) "bold" else "normal") }
+            all["font-style"]?.let { put("font-style", if (it == "italic") "italic" else "normal") }
+            return css.toString()
+        }
+
+        /** The base look every paragraph inherits: the default paragraph style's text settings. */
+        fun base(): String = cssOf(props[DEFAULT].orEmpty().filterKeys { !it.startsWith("margin") && it != "text-indent" })
+
+        companion object { const val DEFAULT = "\u0000default" }
+    }
+
     fun odt(zip: ReaderHtml.ZipRead, newParser: () -> XmlPullParser, labels: ReaderHtml.Labels = ReaderHtml.Labels()): String {
         val content = zip.read("content.xml") ?: throw IllegalArgumentException("not an OpenDocument file")
         val styles = HashMap<String, Fmt>()
         odtStyles(zip.read("styles.xml"), newParser, styles)
         odtStyles(content, newParser, styles)
+        val looks = OdtLooks().apply { read(zip.read("styles.xml"), newParser); read(content, newParser) }
         var spent = 0L
         val out = StringBuilder()
         val p = newParser().apply { setInput(content.inputStream(), "UTF-8") }
@@ -301,6 +371,7 @@ object OfficeHtml {
                     if (name == "text" && p.name.startsWith("office:")) inBody = true
                     if (!inBody) { e = p.next(); continue }
                     val fmt = attr(p, "style-name")?.let(styles::get)
+                    val look = looks.css(attr(p, "style-name")).let { if (it.isEmpty()) "" else " style=\"${ReaderHtml.esc(it)}\"" }
                     fun wrap(open: String, close: String) {
                         var o = open
                         var c = close
@@ -314,9 +385,9 @@ object OfficeHtml {
                         closers.add(c)
                     }
                     when (name) {
-                        "h" -> { val level = (attr(p, "outline-level")?.toIntOrNull() ?: 1).coerceIn(1, 6); wrap("<h$level>", "</h$level>") }
-                        "p" -> wrap("<p>", "</p>")
-                        "span" -> wrap("", "")
+                        "h" -> { val level = (attr(p, "outline-level")?.toIntOrNull() ?: 1).coerceIn(1, 6); wrap("<h$level$look>", "</h$level>") }
+                        "p" -> wrap("<p$look>", "</p>")
+                        "span" -> if (look.isEmpty()) wrap("", "") else wrap("<span$look>", "</span>")
                         "a" -> wrap("<a href=\"${ReaderHtml.esc(attr(p, "href").orEmpty())}\">", "</a>")
                         "list" -> wrap("<ul>", "</ul>")
                         "list-item", "list-header" -> wrap("<li>", "</li>")
@@ -354,7 +425,10 @@ object OfficeHtml {
             }
             e = p.next()
         }
-        return out.toString().ifBlank { empty(labels) }
+        if (out.isBlank()) return empty(labels)
+        val page = looks.master?.let { looks.layouts[it] }
+        fun cm(i: Int, fallback: Double) = ReaderHtml.odfCm(page?.getOrNull(i))?.takeIf { it >= 0 } ?: fallback
+        return ReaderHtml.docPage(cm(0, 21.0) to cm(1, 29.7), listOf(cm(2, 2.0), cm(3, 2.0), cm(4, 2.0), cm(5, 2.0)), looks.base(), out.toString())
     }
 
     private const val MAX_IMAGE_TOTAL = 40L * 1024 * 1024

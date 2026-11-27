@@ -34,6 +34,27 @@ class BookHtmlTest {
     }
 
     @Test
+    fun epubServedImagesAreLinkedNotInlined() {
+        val book = zip(
+            "META-INF/container.xml" to "<container><rootfiles><rootfile full-path=\"OEBPS/content.opf\"/></rootfiles></container>",
+            "OEBPS/content.opf" to "<package><manifest><item id=\"a\" href=\"text/a.xhtml\"/></manifest><spine><itemref idref=\"a\"/></spine></package>",
+            "OEBPS/text/a.xhtml" to "<html><body><img src=\"../img/p.png\" alt=\"pic\"/></body></html>",
+            "OEBPS/img/p.png" to "\u0089PNG\r\n\u001a\nxxxx",
+        )
+        val html = BookHtml.epub(book) { "https://book.local/$it" }
+        assertTrue(html.contains("<img src=\"https://book.local/OEBPS/img/p.png\" alt=\"pic\">"))
+        assertFalse(html.contains("data:"))
+    }
+
+    @Test
+    fun pageChunksCutOnlyChaptersPastTheLongest() {
+        val long = "<section class=\"chapter\">" + "<p>${"w ".repeat(40)}</p>".repeat(10) + "</section>"
+        val short = "<section class=\"chapter\"><p>s</p></section>"
+        assertEquals(listOf(long, short + short), ReaderHtml.pageChunks(long + short + short, max = 300, longest = 10_000))
+        assertTrue(ReaderHtml.pageChunks(long, max = 300).size > 1)
+    }
+
+    @Test
     fun fb2KeepsTitleSectionsAndEmphasis() {
         val fb2 = """<?xml version="1.0" encoding="utf-8"?>
             <FictionBook xmlns:l="http://www.w3.org/1999/xlink"><description><title-info><book-title>Book</book-title><annotation><p>skip me</p></annotation></title-info></description>

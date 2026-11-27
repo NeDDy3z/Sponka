@@ -1256,8 +1256,6 @@
     <string name="reader_rows_truncated">仅显示前 %1$d 行。</string>
     <string name="reader_image">图片</string>
     <string name="reader_empty">此文件为空。</string>
-    <string name="reader_switch_to_light">切换到浅色</string>
-    <string name="reader_switch_to_dark">切换到深色</string>
     <string name="convert_to_note">转换为笔记</string>
     <string name="converting_to_pdf">正在转换为 PDF...</string>
     <string name="converting_to_note">正在转换为笔记...</string>
@@ -1652,10 +1650,26 @@
     <string name="file_info_location">位置</string>
     <string name="open_note">打开笔记</string>
     <string name="include_expand_in_pdf">导出 PDF 时包含</string>
-    <string name="reader_layout">布局</string>
     <string name="reader_text_size">文字大小</string>
     <string name="reader_format_screen">屏幕</string>
     <string name="reading_quick_tool">齿轮旁的按钮</string>
     <string name="reading_quick_bookmark">书签</string>
     <string name="remove_bookmark_here">移除书签</string>
+    <string name="find_in_page">页内查找</string>
+    <string name="reader_open_failed">无法打开此文件。</string>
+    <string name="reader_close">关闭阅读器</string>
+    <string name="reader_theme">主题</string>
+    <string name="theme_sepia">棕褐</string>
+    <string name="theme_gray">灰色</string>
+    <string name="theme_black">黑色</string>
+    <string name="theme_custom">自定义</string>
+    <string name="reader_page_colour">页面</string>
+    <string name="reader_text_colour">文字</string>
+    <string name="reader_paper_look">纸张</string>
+    <string name="paper_plain">普通</string>
+    <string name="paper_grain">纹理</string>
+    <string name="paper_old">旧纸</string>
+    <string name="reader_scroll">滚动</string>
+    <string name="reader_two_pages">双页</string>
+    <string name="default_for_all_files">所有文件的默认设置</string>
 </resources>

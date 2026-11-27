@@ -25,12 +25,13 @@ import kotlin.math.abs
 /** A file open in the read-only reader. */
 data class ReaderFile(val uri: String, val name: String)
 
-private sealed interface ReaderContent {
-    class Html(val body: String, val wide: Boolean) : ReaderContent
+internal sealed interface ReaderContent {
+    /** [zip] is a book kept open for its pictures, which the page asks for by [ReaderHtml.BOOK_IMAGES] URLs; the reader closes it. */
+    class Html(val body: String, val wide: Boolean, val zip: ZipFile? = null) : ReaderContent
     object Failed : ReaderContent
 }
 
-private fun readerLabels(context: Context) = ReaderHtml.Labels(
+internal fun readerLabels(context: Context) = ReaderHtml.Labels(
     slide = { n, total -> context.getString(R.string.reader_slide, n, total) },
     notes = context.getString(R.string.reader_notes),
     truncatedRows = { context.getString(R.string.reader_rows_truncated, it) },
@@ -39,24 +40,20 @@ private fun readerLabels(context: Context) = ReaderHtml.Labels(
     empty = context.getString(R.string.reader_empty),
 )
 
-private fun readerColors(p: Palette, background: String = Rgba.toHex(p.paper)) = ReaderHtml.Colors(
+internal fun readerColors(p: Palette, background: String = Rgba.toHex(p.paper)) = ReaderHtml.Colors(
     background, Rgba.toHex(p.text), Rgba.toHex(p.textDim), Rgba.toHex(p.accent), Rgba.toHex(raisedOnPaper(p)), Rgba.toHex(p.border),
 )
 
-/** How a book is laid out into pages: their [media] size, the paper kept round the text and the text's size in percent. */
-data class ReaderLayout(val media: android.print.PrintAttributes.MediaSize, val marginMm: Int, val textZoom: Int)
-
 /**
- * Prints a reader file as the reader shows it, on white paper or [dark], into an A4 PDF in the
+ * Prints a reader file as the light reader shows it, on white paper, into an A4 PDF in the
  * cache (turned sideways for wide content), for reading or turning into a note; null when it will
  * not open. Without [to], each call replaces the previous one's file.
  */
-internal suspend fun readerFileToPdf(context: Context, editor: Editor, file: ReaderFile, to: File? = null, preview: Boolean = false, dark: Boolean = false): File? {
+internal suspend fun readerFileToPdf(context: Context, editor: Editor, file: ReaderFile, to: File? = null, preview: Boolean = false): File? {
     val content = withContext(Dispatchers.IO) { runCatching { readerHtmlBody(context, editor, file, readerLabels(context)) }.getOrNull() } ?: return null
     // A preview needs the first page only, so a long book prints just its start.
     val body = if (preview && content.body.length > PREVIEW_CHARS) content.body.substring(0, content.body.indexOf('<', PREVIEW_CHARS).takeIf { it > 0 } ?: PREVIEW_CHARS) else content.body
-    val colors = if (dark) readerColors(editor.readerPalette(dark = true)) else readerColors(editor.readerPalette(dark = false), "#ffffff")
-    val html = ReaderHtml.printPage(body, colors, content.wide)
+    val html = ReaderHtml.printPage(body, readerColors(editor.readerPalette(dark = false), "#ffffff"), content.wide)
     val a4 = android.print.PrintAttributes.MediaSize.ISO_A4
     val media = if (content.wide) a4.asLandscape() else a4
     val out = to ?: withContext(Dispatchers.IO) {
@@ -64,10 +61,6 @@ internal suspend fun readerFileToPdf(context: Context, editor: Editor, file: Rea
     }
     return out.takeIf { ReaderPrint.toPdf(context, html, media, out) }
 }
-
-/** A book's reader HTML, its images inlined; null when it will not read. IO. */
-internal fun readerBookHtml(context: Context, editor: Editor, file: ReaderFile): String? =
-    runCatching { readerHtmlBody(context, editor, file, readerLabels(context))?.body }.getOrNull()
 
 /** How much of a file's HTML a preview prints: a few pages' worth. */
 private const val PREVIEW_CHARS = 12_000
@@ -79,9 +72,10 @@ private fun raisedOnPaper(p: Palette): Rgba {
     return (gaps.filter { it.second >= 14 }.minByOrNull { it.second } ?: gaps.maxBy { it.second }).first
 }
 
-/** The HTML body of a reader file; null for an unknown kind. */
-private fun readerHtmlBody(context: Context, editor: Editor, file: ReaderFile, labels: ReaderHtml.Labels): ReaderContent.Html? {
+/** The HTML body of a reader file; null for an unknown kind. [serveImages] leaves an EPUB's pictures in its open zip rather than inlined. */
+internal fun readerHtmlBody(context: Context, editor: Editor, file: ReaderFile, labels: ReaderHtml.Labels, serveImages: Boolean = false): ReaderContent.Html? {
     val uri = Uri.parse(file.uri)
+    if (serveImages && ReaderKind.ofName(file.name) == ReaderKind.EPUB) return openEpub(context, uri, labels)
     return when (ReaderKind.ofName(file.name)) {
         ReaderKind.MARKDOWN -> ReaderContent.Html(
             ReaderHtml.markdown(readText(context, uri), labels, ::readerMath) { readLinkedImage(context, editor, uri, it) }, wide = false,
@@ -95,7 +89,9 @@ private fun readerHtmlBody(context: Context, editor: Editor, file: ReaderFile, l
         ReaderKind.RTF -> ReaderContent.Html(com.xnotes.platform.OfficeHtml.rtf(readText(context, uri), labels), wide = false)
         ReaderKind.TEX -> ReaderContent.Html(com.xnotes.platform.OfficeHtml.tex(readText(context, uri), labels), wide = false)
         ReaderKind.XML -> ReaderContent.Html(com.xnotes.platform.OfficeHtml.xml(readText(context, uri), labels), wide = true)
+        ReaderKind.HTML -> ReaderContent.Html(com.xnotes.platform.BookHtml.html(readText(context, uri), labels), wide = false)
         ReaderKind.ODT -> ReaderContent.Html(withZip(context, uri) { com.xnotes.platform.OfficeHtml.odt(it, ::newParser, labels) }, wide = false)
+        ReaderKind.ODP -> ReaderContent.Html(withZip(context, uri) { ReaderHtml.odp(it, ::newParser, labels) }, wide = false)
         ReaderKind.PPT -> ReaderContent.Html(com.xnotes.platform.OfficeHtml.ppt(readBytes(context, uri), labels), wide = false)
         ReaderKind.EPUB -> ReaderContent.Html(withZip(context, uri) { com.xnotes.platform.BookHtml.epub(it, labels) }, wide = false)
         ReaderKind.FB2 -> ReaderContent.Html(com.xnotes.platform.BookHtml.fb2(readBytes(context, uri), ::newParser, labels), wide = false)
@@ -119,6 +115,24 @@ private const val READER_MATH_PX = 17.0
 /** Office XML is read with prefixed names (w:p, r:id), which the converters match on. */
 private fun newParser(): XmlPullParser =
     android.util.Xml.newPullParser().apply { setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, false) }
+
+private fun openEpub(context: Context, uri: Uri, labels: ReaderHtml.Labels): ReaderContent.Html {
+    val temp = File.createTempFile("reader", ".zip", context.cacheDir)
+    try {
+        context.contentResolver.openInputStream(uri)?.use { input -> temp.outputStream().use { input.copyTo(it) } }
+            ?: throw IllegalStateException("cannot read file")
+        val zip = ZipFile(temp)
+        val body = runCatching {
+            com.xnotes.platform.BookHtml.epub(ReaderHtml.ZipRead { zip.readEntry(it) }, labels) { ReaderHtml.BOOK_IMAGES + Uri.encode(it, "/") }
+        }.onFailure { zip.close() }.getOrThrow()
+        return ReaderContent.Html(body, wide = false, zip)
+    } finally {
+        // The open zip keeps reading the file after it is gone.
+        temp.delete()
+    }
+}
+
+internal fun ZipFile.readEntry(path: String): ByteArray? = getEntry(path)?.let { e -> getInputStream(e).use { it.readBytes() } }
 
 private fun <T> withZip(context: Context, uri: Uri, block: (ReaderHtml.ZipRead) -> T): T {
     val temp = File.createTempFile("reader", ".zip", context.cacheDir)

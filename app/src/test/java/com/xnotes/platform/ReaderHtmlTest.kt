@@ -14,6 +14,17 @@ class ReaderHtmlTest {
     }
 
     @Test
+    fun strayEndTagsNeverCloseThePagesSource() {
+        assertEquals("<p>a</p><p>b</p>", ReaderHtml.balanced("<p>a</p></div><p>b</p>"))
+        assertEquals("<div><p>a</p></div>", ReaderHtml.balanced("<div><p>a</p>"))
+        assertEquals("<p>a<br><img src=\"x\" alt=\"\"><a id=\"x\"></a><br/></p>", ReaderHtml.balanced("<p>a<br><img src=\"x\" alt=\"\"><a id=\"x\"></a><br/></p>"))
+        val c = ReaderHtml.Colors("#fff", "#000", "#777", "#36c", "#eee", "#ccc")
+        val page = ReaderHtml.readerPage("<section class=\"chapter\"><p>one</p></div></section><p>two</p>", c, "single", "screen", "n", ReaderHtml.Look("#fff"))
+        val src = page.substringAfter("<div id=\"src\">").substringBefore("<div id=\"pages\">")
+        assertTrue(src.contains("two") && !src.substringBefore("two").contains("</div>"))
+    }
+
+    @Test
     fun wikilinksBecomeReaderLinksWithAliasAndHeading() {
         val md = ReaderHtml.obsidianSyntax("See [[My Note|this one]] and [[Other#Part]].")
         assertEquals("See [this one](<nnotes-wiki:My%20Note>) and [Other > Part](<nnotes-wiki:Other>).", md)
@@ -157,6 +168,42 @@ class ReaderHtmlTest {
     }
 
     @Test
+    fun pptxWithAChildExtentOnTheSlideTreeStillDrawsTheSlide() {
+        val ns = "xmlns:p=\"p\" xmlns:a=\"a\" xmlns:r=\"r\""
+        val pres = """<p:presentation $ns><p:sldIdLst><p:sldId id="256" r:id="rId2"/></p:sldIdLst><p:sldSz cx="1000" cy="1000"/></p:presentation>"""
+        val presRels = """<Relationships><Relationship Id="rId2" Type="t/slide" Target="slides/slide1.xml"/></Relationships>"""
+        val slide = """<p:sld $ns><p:cSld><p:spTree><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>
+            <p:sp><p:spPr><a:xfrm><a:off x="100" y="200"/><a:ext cx="500" cy="300"/></a:xfrm></p:spPr><p:txBody><a:p><a:r><a:t>Title</a:t></a:r></a:p></p:txBody></p:sp>
+            </p:spTree></p:cSld></p:sld>"""
+        val html = ReaderHtml.pptx(zip("ppt/presentation.xml" to pres, "ppt/_rels/presentation.xml.rels" to presRels, "ppt/slides/slide1.xml" to slide), parser)
+        assertTrue(html, html.contains("<div class=\"shape\" style=\"left:10.000%;top:20.000%;width:50.000%;height:30.000%;"))
+    }
+
+    @Test
+    fun odpDrawsEachPageWithItsShapesInPlaceAndNotesBelow() {
+        val styles = """<office:document-styles xmlns:office="o" xmlns:style="s" xmlns:fo="f" xmlns:draw="d"><office:automatic-styles>
+            <style:page-layout style:name="PM1"><style:page-layout-properties fo:page-width="20cm" fo:page-height="10cm"/></style:page-layout>
+            </office:automatic-styles><office:master-styles><style:master-page style:name="M" style:page-layout-name="PM1"/></office:master-styles></office:document-styles>"""
+        val content = """<office:document-content xmlns:office="o" xmlns:style="s" xmlns:fo="f" xmlns:draw="d" xmlns:text="t" xmlns:svg="v" xmlns:presentation="p">
+            <office:automatic-styles>
+            <style:style style:name="dp1" style:family="drawing-page"><style:drawing-page-properties draw:fill="solid" draw:fill-color="#0b0f19"/></style:style>
+            <style:style style:name="gr1" style:family="graphic"><style:graphic-properties draw:fill="none" draw:textarea-vertical-align="middle"/></style:style>
+            <style:style style:name="P1" style:family="paragraph"><style:paragraph-properties fo:text-align="center"/></style:style>
+            <style:style style:name="T1" style:family="text"><style:text-properties fo:color="#22d3ee" fo:font-size="20pt" fo:font-weight="bold"/></style:style>
+            </office:automatic-styles><office:body><office:presentation>
+            <draw:page draw:style-name="dp1" draw:master-page-name="M">
+              <draw:custom-shape draw:style-name="gr1" svg:x="2cm" svg:y="1cm" svg:width="10cm" svg:height="5cm"><text:p text:style-name="P1"><text:span text:style-name="T1">ITER</text:span></text:p></draw:custom-shape>
+              <presentation:notes><draw:frame svg:x="0cm" svg:y="0cm" svg:width="1cm" svg:height="1cm"><draw:text-box><text:p>Said aloud</text:p></draw:text-box></draw:frame></presentation:notes>
+            </draw:page></office:presentation></office:body></office:document-content>"""
+        val html = ReaderHtml.odp(zip("styles.xml" to styles, "content.xml" to content), parser, ReaderHtml.Labels(slide = { n, total -> "S$n/$total" }, notes = "Notes"))
+        assertTrue(html, html.contains("S1/1</div><div class=\"deck-slide\" style=\"aspect-ratio:20.000/10.000;background:#0b0f19;"))
+        assertTrue(html, html.contains("left:10.000%;top:10.000%;width:50.000%;height:50.000%;"))
+        assertTrue(html, html.contains("justify-content:center;"))
+        assertTrue(html, html.contains("<p style=\"text-align:center;\"><span style=\"color:#22d3ee;font-size:3.528cqw;font-weight:bold;\">ITER</span></p>"))
+        assertTrue(html, html.contains("<div class=\"notes\"><b>Notes</b><p>Said aloud</p></div>"))
+    }
+
+    @Test
     fun xlsxShowsSheetsWithSharedStringsNumbersAndDates() {
         val wb = """<workbook xmlns:r="r"><sheets><sheet name="Data" sheetId="1" r:id="rId1"/><sheet name="Empty" sheetId="2" r:id="rId2"/></sheets></workbook>"""
         val wbRels = """<Relationships><Relationship Id="rId1" Type="x/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="x/worksheet" Target="/xl/worksheets/sheet2.xml"/></Relationships>"""
@@ -227,5 +274,76 @@ class ReaderHtmlTest {
         assertTrue(html, html.contains("<img src=\"data:image/jpeg;base64,AQID\""))
         assertTrue(html, html.contains("<span class=\"missing\">[gone]</span>"))
         assertTrue(html, html.contains("<span class=\"missing\">[web]</span>"))
+    }
+
+    @Test
+    fun pageChunksSplitChaptersThenLongOnesAfterAParagraph() {
+        val long = "<section class=\"chapter\" id=\"ch1\">" + "<p>abcdefgh</p>".repeat(10) + "</section>"
+        val body = "<h1>T</h1><section class=\"chapter\" id=\"ch0\"><p>a</p></section>$long"
+        val chunks = ReaderHtml.pageChunks(body, max = 40)
+        assertEquals(body, chunks.joinToString(""))
+        assertEquals("<h1>T</h1>", chunks[0])
+        assertTrue(chunks[1].startsWith("<section class=\"chapter\" id=\"ch0\""))
+        assertTrue(chunks.size > 3)
+        assertTrue(chunks.drop(2).dropLast(1).all { it.endsWith("</p>") })
+        assertEquals(listOf("<p>x</p>"), ReaderHtml.pageChunks("<p>x</p>"))
+        val big = "<section class=\"slide\">" + "<p>x</p>".repeat(20) + "</section>"
+        assertEquals(listOf(big), ReaderHtml.pageChunks(big, max = 20))
+        val slides = "<section class=\"slide\">1</section><section class=\"slide\">2</section><section class=\"slide\">3</section>"
+        assertEquals(listOf("<section class=\"slide\">1</section><section class=\"slide\">2</section>", "<section class=\"slide\">3</section>"), ReaderHtml.pageChunks(slides, max = 70))
+        // A picture's data does not count, so it never leaves a part with only the picture and a paragraph.
+        val pictured = "<section class=\"chapter\"><img src=\"data:image/png;base64,${"A".repeat(500)}\"><p>one</p><p>two</p><p>three</p></section>"
+        assertEquals(listOf(pictured), ReaderHtml.pageChunks(pictured, max = 100))
+    }
+
+    @Test
+    fun docxTakesItsPageAndStylesAndRunLooks() {
+        val ns = "xmlns:w=\"w\""
+        val styles = """<w:styles $ns><w:docDefaults><w:rPrDefault><w:rPr><w:sz w:val="22"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="160" w:line="276" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>
+            <w:style w:type="paragraph" w:styleId="Quote"><w:pPr><w:jc w:val="center"/></w:pPr><w:rPr><w:color w:val="404040"/></w:rPr></w:style></w:styles>"""
+        val document = """<w:document $ns><w:body>
+            <w:p><w:pPr><w:pStyle w:val="Quote"/></w:pPr><w:r><w:rPr><w:sz w:val="28"/></w:rPr><w:t>Big</w:t></w:r></w:p>
+            <w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr>
+            </w:body></w:document>"""
+        val html = ReaderHtml.docx(zip("word/styles.xml" to styles, "word/document.xml" to document), parser)
+        assertTrue(html, html.startsWith("<article class=\"doc\" data-page=\"21.001 29.700 2.540 2.540 2.540 2.540\""))
+        assertTrue(html, html.contains("font-size:11.0pt;line-height:1.15;"))
+        assertTrue(html, html.contains("<p style=\"margin-bottom:8.0pt;text-align:center;color:#404040;\"><span style=\"font-size:14.0pt;\">Big</span></p>"))
+    }
+
+    @Test
+    fun headingsAndSearchCountAsThePageScriptDoes() {
+        val parts = listOf("<h1>One &amp; two</h1><p>Some <b>bo</b>ld text, bold.</p>", "<h2 id=\"x\">Next</h2><p>no match</p><h4>skip</h4>")
+        val heads = ReaderHtml.headings(parts)
+        assertEquals(listOf("One & two", "Next"), heads.map { it.title })
+        assertEquals(listOf(0 to 0, 1 to 0), heads.map { it.part to it.index })
+        assertEquals(listOf(1, 2), heads.map { it.level })
+        val hits = ReaderHtml.search(parts, "BOLD")
+        // A match may cross tags, as the page's text reads it.
+        assertEquals(listOf(0 to 0, 0 to 1), hits.map { it.part to it.nth })
+        assertEquals("bold", hits[1].match)
+        assertTrue(hits[0].after.startsWith(" text"))
+        assertEquals("a\u00a0b \u2014 \u00e9", ReaderHtml.plainText("a&nbsp;b &mdash; &#233;"))
+    }
+
+    @Test
+    fun longPartsAreNotCutInsideATable() {
+        val table = "<table>" + "<tr><td><p>${"x".repeat(30)}</p></td></tr>".repeat(5) + "</table>"
+        val body = "<section class=\"chapter\">$table<p>after</p><p>end</p></section>"
+        val chunks = ReaderHtml.pageChunks(body, max = 40)
+        assertEquals(body, chunks.joinToString(""))
+        assertTrue(chunks[0], chunks[0].endsWith("</table><p>after</p>"))
+    }
+
+    @Test
+    fun searchKeepsPlaceWhenLowercaseGrowsTheText() {
+        val hits = ReaderHtml.search(listOf("<p>\u0130\u0130\u0130 ab</p>"), "ab")
+        assertEquals(listOf("ab"), hits.map { it.match })
+        assertEquals("caf\u00e9 \u00c9", ReaderHtml.plainText("caf&eacute; &Eacute;"))
+    }
+
+    @Test
+    fun docxStylesAreEscaped() {
+        assertEquals("font-family:x&quot;&gt;&lt;a;", ReaderHtml.cssOf(mapOf("font-family" to "x\"><a")))
     }
 }

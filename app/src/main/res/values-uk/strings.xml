@@ -1431,8 +1431,6 @@
     <string name="reader_rows_truncated">Показано перші %1$d рядків.</string>
     <string name="reader_image">зображення</string>
     <string name="reader_empty">Цей файл порожній.</string>
-    <string name="reader_switch_to_light">Світла тема</string>
-    <string name="reader_switch_to_dark">Темна тема</string>
     <string name="err_convert_to_note">Не вдалося перетворити цей файл.</string>
     <string name="reader_truncated_cells">Показано перші %1$d рядків і %2$d стовпців цього аркуша.</string>
     <string name="material_contrast">"Контраст  %1$s"</string>
@@ -1730,10 +1728,26 @@
     <string name="file_info_location">Розташування</string>
     <string name="open_note">Відкрити нотатку</string>
     <string name="include_expand_in_pdf">Включати під час експорту в PDF</string>
-    <string name="reader_layout">Макет</string>
     <string name="reader_text_size">Розмір тексту</string>
     <string name="reader_format_screen">Екран</string>
     <string name="reading_quick_tool">Кнопка поруч із шестернею</string>
     <string name="reading_quick_bookmark">Закладка</string>
     <string name="remove_bookmark_here">Прибрати закладку</string>
+    <string name="find_in_page">Знайти на сторінці</string>
+    <string name="reader_open_failed">Не вдалося відкрити цей файл.</string>
+    <string name="reader_close">Закрити читач</string>
+    <string name="reader_theme">Тема</string>
+    <string name="theme_sepia">Сепія</string>
+    <string name="theme_gray">Сіра</string>
+    <string name="theme_black">Чорна</string>
+    <string name="theme_custom">Власна</string>
+    <string name="reader_page_colour">Сторінка</string>
+    <string name="reader_text_colour">Текст</string>
+    <string name="reader_paper_look">Папір</string>
+    <string name="paper_plain">Гладкий</string>
+    <string name="paper_grain">Зернистий</string>
+    <string name="paper_old">Старий</string>
+    <string name="reader_scroll">Прокрутка</string>
+    <string name="reader_two_pages">Дві сторінки</string>
+    <string name="default_for_all_files">Типово для всіх файлів</string>
 </resources>

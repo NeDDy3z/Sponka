@@ -165,9 +165,20 @@ fun SidePanel(
 /** The tabs along the panel's top; the chosen one sits in a pill that glides over to each new pick. */
 @Composable
 private fun PanelTabs(editor: Editor) {
+    SideTabStrip(SidePanelTab.entries.size, editor.sidePanelTab.ordinal) {
+        PanelTab(editor, SidePanelTab.PAGES, XnotesIcons.thumbnails, stringResource(R.string.pages))
+        PanelTab(editor, SidePanelTab.CONTENTS, XnotesIcons.contents, stringResource(R.string.contents))
+        PanelTab(editor, SidePanelTab.BOOKMARKS, XnotesIcons.bookmark, stringResource(R.string.bookmarks))
+        PanelTab(editor, SidePanelTab.SEARCH, XnotesIcons.search, stringResource(R.string.search), Keys.SEARCH)
+    }
+}
+
+/** A row of [count] side panel tabs, the [selected] one in a pill that glides over to each new pick. */
+@Composable
+internal fun SideTabStrip(count: Int, selected: Int, tabs: @Composable RowScope.() -> Unit) {
     val palette = LocalPalette.current
     var cell by remember { mutableStateOf(0f) }
-    val glide = rememberGlide(if (cell > 0f) cell * (editor.sidePanelTab.ordinal + 0.5f) else null)
+    val glide = rememberGlide(if (cell > 0f) cell * (selected + 0.5f) else null)
     val shape = MaterialTheme.shapes.small
     val fill = palette.selectionBackground.toComposeColor()
     Row(
@@ -175,7 +186,7 @@ private fun PanelTabs(editor: Editor) {
             .fillMaxWidth()
             .height(52.dp)
             .padding(horizontal = 8.dp)
-            .onSizeChanged { cell = it.width / SidePanelTab.entries.size.toFloat() }
+            .onSizeChanged { cell = it.width / count.toFloat() }
             .drawBehind {
                 if (glide.visible == 0f) return@drawBehind
                 val w = TAB_PILL_W.toPx().coerceAtMost(cell)
@@ -185,12 +196,8 @@ private fun PanelTabs(editor: Editor) {
                 }
             },
         verticalAlignment = Alignment.CenterVertically,
-    ) {
-        PanelTab(editor, SidePanelTab.PAGES, XnotesIcons.thumbnails, stringResource(R.string.pages))
-        PanelTab(editor, SidePanelTab.CONTENTS, XnotesIcons.contents, stringResource(R.string.contents))
-        PanelTab(editor, SidePanelTab.BOOKMARKS, XnotesIcons.bookmark, stringResource(R.string.bookmarks))
-        PanelTab(editor, SidePanelTab.SEARCH, XnotesIcons.search, stringResource(R.string.search), Keys.SEARCH)
-    }
+        content = tabs,
+    )
     Box(Modifier.fillMaxWidth().height(1.dp).background(palette.border.toComposeColor()))
 }
 
@@ -199,9 +206,13 @@ private val TAB_PILL_W = 52.dp
 private val TAB_PILL_H = 32.dp
 
 @Composable
-private fun RowScope.PanelTab(editor: Editor, tab: SidePanelTab, icon: ImageVector, label: String, shortcut: String? = null) {
+private fun RowScope.PanelTab(editor: Editor, tab: SidePanelTab, icon: ImageVector, label: String, shortcut: String? = null) =
+    SideTab(editor.sidePanelTab == tab, icon, label, shortcut) { editor.sidePanelTab = tab }
+
+/** One tab of a [SideTabStrip]. */
+@Composable
+internal fun RowScope.SideTab(selected: Boolean, icon: ImageVector, label: String, shortcut: String? = null, onClick: () -> Unit) {
     val palette = LocalPalette.current
-    val selected = editor.sidePanelTab == tab
     val tint by animateColorAsState(
         (if (selected) palette.selectionForeground else palette.accent).toComposeColor(),
         tween(GLIDE_TINT_MS),
@@ -210,7 +221,7 @@ private fun RowScope.PanelTab(editor: Editor, tab: SidePanelTab, icon: ImageVect
     // No ripple: the pill is the feedback, as on the toolbar.
     Tooltip(label, Modifier.weight(1f).height(40.dp), shortcut = shortcut) {
         Box(
-            Modifier.selectable(selected, remember { MutableInteractionSource() }, indication = null, role = Role.Tab) { editor.sidePanelTab = tab },
+            Modifier.selectable(selected, remember { MutableInteractionSource() }, indication = null, role = Role.Tab, onClick = onClick),
             contentAlignment = Alignment.Center,
         ) {
             Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(20.dp))
@@ -805,7 +816,7 @@ private fun PageSelectionBar(
 
 /** The current text style with figures of one width, so counts and page numbers line up. */
 @Composable
-private fun tabular(): TextStyle = LocalTextStyle.current.copy(fontFeatureSettings = "tnum")
+internal fun tabular(): TextStyle = LocalTextStyle.current.copy(fontFeatureSettings = "tnum")
 
 /** The selection bar's three-dot menu: everything else that can be done to the selected pages. */
 @Composable

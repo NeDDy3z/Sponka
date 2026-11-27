@@ -179,7 +179,8 @@ internal fun ColumnScope.ToolbarAround(
                                 ToolbarPosition.RIGHT -> Row(Modifier.fillMaxSize(), across) { Box(Modifier.weight(1f).fillMaxHeight()) { body(docked) }; dockedBar() }
                             }
                         }
-                        Box(Modifier.onSizeChanged { move.strip = it.height }) { strip() }
+                        // Reading, the strip goes with the bar, as it does floating.
+                        Box(Modifier.onSizeChanged { move.strip = it.height }) { if (!reading) strip() }
                         // The bar keeps the edge it is docked on, so the strip shows over it and never moves it.
                         if (position == ToolbarPosition.BOTTOM) dockedBar()
                     }
