@@ -8,6 +8,7 @@ import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.ViewConfiguration
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
@@ -86,9 +87,15 @@ internal fun ReaderScreen(
     }
     BackHandler(onBack = onClose)
 
-    val content by produceState<ReaderContent?>(null, file.uri) {
-        value = withContext(Dispatchers.IO) { runCatching { readerHtmlBody(context, editor, file, readerLabels(context)) }.getOrNull() ?: ReaderContent.Failed }
+    // The file and its parts are read off the main thread; a book in smaller parts, so each lays out quickly.
+    val loaded by produceState<Pair<ReaderContent, List<String>>?>(null, file.uri) {
+        value = withContext(Dispatchers.IO) {
+            val c = runCatching { readerHtmlBody(context, editor, file, readerLabels(context), serveImages = true) }.getOrNull() ?: ReaderContent.Failed
+            c to ((c as? ReaderContent.Html)?.let { if (ReaderKind.isBook(file.name)) ReaderHtml.pageChunks(it.body, BOOK_PART, longest = 100_000) else ReaderHtml.pageChunks(it.body) } ?: listOf(""))
+        }
     }
+    val content = loaded?.first
+    DisposableEffect(content) { onDispose { (content as? ReaderContent.Html)?.zip?.close() } }
 
     var webView by remember { mutableStateOf<ReaderWebView?>(null) }
     // The islands: a tap shows or hides them, moving the page hides them.
@@ -117,7 +124,7 @@ internal fun ReaderScreen(
     // How far through the whole file the reader is, from 0 to 1.
     var bookAt by remember(file.uri) { mutableFloatStateOf(prefs.readerPositions[file.name] ?: 0f) }
     // A file is shown a part at a time, since laying it all out at once takes the WebView long.
-    val chunks = remember(content) { (content as? ReaderContent.Html)?.let { ReaderHtml.pageChunks(it.body) } ?: listOf("") }
+    val chunks = loaded?.second ?: listOf("")
     var chunk by remember(file.uri) { mutableIntStateOf(0) }
     // Where the next load opens, as a fraction of what it shows; null keeps the place as it was.
     var enterAt by remember { mutableStateOf<Float?>(null) }
@@ -264,14 +271,14 @@ internal fun ReaderScreen(
                         if (shown && paged && !slides && chunks.size > 1 && partPages.size < chunks.size) {
                             val next = partPages.size
                             val countPage = remember(c, colors, look, view, next, paper) { ReaderHtml.readerPage(chunks[next], colors, view, paper, nonce, look, c.wide, false) }
-                            PageCounter(countPage, prefs.readerTextZoom, view, sideRoom.value.roundToInt()) { n -> if (partPages.size == next) partPages = partPages + n }
+                            PageCounter(countPage, c.zip, prefs.readerTextZoom, view, sideRoom.value.roundToInt()) { n -> if (partPages.size == next) partPages = partPages + n }
                         }
                         val smooth = prefs.readerTurnAnimation
                         val html = remember(c, colors, look, view, part, paper, smooth) {
                             ReaderHtml.readerPage(chunks[part], colors, view, paper, nonce, look, c.wide, smooth)
                         }
                         ReaderWebView(
-                            html, appPalette.bg, prefs.readerTextZoom, view, prefs.readerTapToTurn, smooth, enterAt, sideRoom.value.roundToInt(),
+                            html, c.zip, appPalette.bg, prefs.readerTextZoom, view, prefs.readerTapToTurn, smooth, enterAt, sideRoom.value.roundToInt(),
                             modifier = Modifier.fillMaxSize(),
                             onCreated = { webView = it },
                             onEntered = { enterAt = null },
@@ -360,6 +367,9 @@ internal fun ReaderScreen(
 }
 
 private const val PERMILLE = 1000
+
+/** The characters a book's part gathers short chapters up to, so each loads quickly; a chapter is only cut past the usual size. */
+private const val BOOK_PART = 30_000
 
 
 /** A slide's hold in autoscroll, in speed x seconds: 200 is 10 s at the default speed, 2 s at the fastest. */
@@ -474,6 +484,20 @@ internal class ReaderWebView(context: Context) : WebView(context) {
     private var pages = 0
     private var pageAt = 0
 
+    /** The open book whose pictures the page asks for. */
+    var zip: java.util.zip.ZipFile? = null
+
+    /** A book's picture from [zip], or null to let any other request through to the blocked network. */
+    fun bookImage(request: WebResourceRequest): WebResourceResponse? {
+        val url = request.url.toString()
+        if (!url.startsWith(ReaderHtml.BOOK_IMAGES)) return null
+        val path = Uri.decode(url.removePrefix(ReaderHtml.BOOK_IMAGES))
+        // The book may be closed while the page is still asking; it then gets no picture.
+        val bytes = runCatching { zip?.readEntry(path) }.getOrNull()
+        val mime = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(path.substringAfterLast('.').lowercase())
+        return WebResourceResponse(mime ?: "image/*", null, bytes?.inputStream())
+    }
+
     val paged get() = view != "scroll"
 
     /** Whether pages only turn whole, by a tap or a swipe, rather than scroll. */
@@ -539,6 +563,7 @@ internal class ReaderWebView(context: Context) : WebView(context) {
 @Composable
 private fun ReaderWebView(
     html: String,
+    zip: java.util.zip.ZipFile?,
     background: Rgba,
     textZoom: Int,
     view: String,
@@ -582,6 +607,8 @@ private fun ReaderWebView(
                     override fun onReceivedTitle(view: WebView, title: String?) = pagesReported(title)
                 }
                 webViewClient = object : WebViewClient() {
+                    override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest) = bookImage(request)
+
                     override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                         val url = request.url.toString()
                         if (url.startsWith("about:blank#")) return false
@@ -665,6 +692,7 @@ private fun ReaderWebView(
             }
         },
         update = { wv ->
+            wv.zip = zip
             wv.setBackgroundColor(background.toComposeColor().toArgb())
             if (wv.settings.textZoom != textZoom) wv.settings.textZoom = textZoom
             wv.settings.setSupportZoom(view == "scroll" || view == "vertical" || view == "slides")
@@ -690,7 +718,7 @@ private fun ReaderWebView(
 /** A hidden page that lays out [html] as the reader would, only to count its pages. */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-private fun PageCounter(html: String, textZoom: Int, view: String, inset: Int, onCount: (Int) -> Unit) {
+private fun PageCounter(html: String, zip: java.util.zip.ZipFile?, textZoom: Int, view: String, inset: Int, onCount: (Int) -> Unit) {
     val onCountNow = rememberUpdatedState(onCount)
     AndroidView(
         modifier = Modifier.fillMaxSize().alpha(0f),
@@ -704,9 +732,13 @@ private fun PageCounter(html: String, textZoom: Int, view: String, inset: Int, o
                 webChromeClient = object : android.webkit.WebChromeClient() {
                     override fun onReceivedTitle(view: WebView, title: String?) = pagesReported(title)
                 }
+                webViewClient = object : WebViewClient() {
+                    override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest) = bookImage(request)
+                }
             }
         },
         update = { wv ->
+            wv.zip = zip
             if (wv.settings.textZoom != textZoom) wv.settings.textZoom = textZoom
             val tag = "$view|$textZoom|$inset|$html"
             if (wv.tag != tag) {

@@ -26,7 +26,8 @@ import kotlin.math.abs
 data class ReaderFile(val uri: String, val name: String)
 
 internal sealed interface ReaderContent {
-    class Html(val body: String, val wide: Boolean) : ReaderContent
+    /** [zip] is a book kept open for its pictures, which the page asks for by [ReaderHtml.BOOK_IMAGES] URLs; the reader closes it. */
+    class Html(val body: String, val wide: Boolean, val zip: ZipFile? = null) : ReaderContent
     object Failed : ReaderContent
 }
 
@@ -71,9 +72,10 @@ private fun raisedOnPaper(p: Palette): Rgba {
     return (gaps.filter { it.second >= 14 }.minByOrNull { it.second } ?: gaps.maxBy { it.second }).first
 }
 
-/** The HTML body of a reader file; null for an unknown kind. */
-internal fun readerHtmlBody(context: Context, editor: Editor, file: ReaderFile, labels: ReaderHtml.Labels): ReaderContent.Html? {
+/** The HTML body of a reader file; null for an unknown kind. [serveImages] leaves an EPUB's pictures in its open zip rather than inlined. */
+internal fun readerHtmlBody(context: Context, editor: Editor, file: ReaderFile, labels: ReaderHtml.Labels, serveImages: Boolean = false): ReaderContent.Html? {
     val uri = Uri.parse(file.uri)
+    if (serveImages && ReaderKind.ofName(file.name) == ReaderKind.EPUB) return openEpub(context, uri, labels)
     return when (ReaderKind.ofName(file.name)) {
         ReaderKind.MARKDOWN -> ReaderContent.Html(
             ReaderHtml.markdown(readText(context, uri), labels, ::readerMath) { readLinkedImage(context, editor, uri, it) }, wide = false,
@@ -113,6 +115,24 @@ private const val READER_MATH_PX = 17.0
 /** Office XML is read with prefixed names (w:p, r:id), which the converters match on. */
 private fun newParser(): XmlPullParser =
     android.util.Xml.newPullParser().apply { setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, false) }
+
+private fun openEpub(context: Context, uri: Uri, labels: ReaderHtml.Labels): ReaderContent.Html {
+    val temp = File.createTempFile("reader", ".zip", context.cacheDir)
+    try {
+        context.contentResolver.openInputStream(uri)?.use { input -> temp.outputStream().use { input.copyTo(it) } }
+            ?: throw IllegalStateException("cannot read file")
+        val zip = ZipFile(temp)
+        val body = runCatching {
+            com.xnotes.platform.BookHtml.epub(ReaderHtml.ZipRead { zip.readEntry(it) }, labels) { ReaderHtml.BOOK_IMAGES + Uri.encode(it, "/") }
+        }.onFailure { zip.close() }.getOrThrow()
+        return ReaderContent.Html(body, wide = false, zip)
+    } finally {
+        // The open zip keeps reading the file after it is gone.
+        temp.delete()
+    }
+}
+
+internal fun ZipFile.readEntry(path: String): ByteArray? = getEntry(path)?.let { e -> getInputStream(e).use { it.readBytes() } }
 
 private fun <T> withZip(context: Context, uri: Uri, block: (ReaderHtml.ZipRead) -> T): T {
     val temp = File.createTempFile("reader", ".zip", context.cacheDir)

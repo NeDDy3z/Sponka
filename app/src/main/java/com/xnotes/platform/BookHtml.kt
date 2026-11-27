@@ -19,7 +19,8 @@ object BookHtml {
 
     // --- EPUB ---
 
-    fun epub(zip: ReaderHtml.ZipRead, labels: ReaderHtml.Labels = ReaderHtml.Labels()): String {
+    /** [imageUrl], when given, turns an image's path in the book into a URL the reader serves, instead of inlining its data. */
+    fun epub(zip: ReaderHtml.ZipRead, labels: ReaderHtml.Labels = ReaderHtml.Labels(), imageUrl: ((String) -> String)? = null): String {
         val container = zip.read("META-INF/container.xml")?.let { String(it) } ?: throw IllegalArgumentException("not an EPUB")
         val opfPath = Regex("full-path=\"([^\"]+)\"").find(container)?.groupValues?.get(1) ?: throw IllegalArgumentException("no package")
         val opf = zip.read(opfPath)?.let { String(it) } ?: throw IllegalArgumentException("no package")
@@ -37,18 +38,19 @@ object BookHtml {
         if (spine.isEmpty()) return "<p class=\"missing\">${ReaderHtml.esc(labels.empty)}</p>"
         val chapters = spine.withIndex().associate { (i, path) -> path to "ch$i" }
         val images = Images(labels)
+        fun image(path: String, alt: String = "") = imageUrl?.let { "<img src=\"${it(path)}\" alt=\"${ReaderHtml.esc(alt)}\">" } ?: images.tag(zip, path, alt)
         val out = StringBuilder()
         for ((i, path) in spine.withIndex()) {
             val bytes = zip.read(path) ?: continue
             val dir = path.substringBeforeLast('/', "")
             var body = clean(bodyOf(String(bytes)))
             body = svgImage.replace(body) { m ->
-                attrOf(m.value, "href")?.let { images.tag(zip, ReaderHtml.resolvePath(dir, decode(it))) } ?: ""
+                attrOf(m.value, "href")?.let { image(ReaderHtml.resolvePath(dir, decode(it))) } ?: ""
             }
             body = imgTag.replace(body) { m ->
                 val src = attrOf(m.value, "src") ?: return@replace ""
                 if (src.startsWith("data:")) return@replace m.value
-                images.tag(zip, ReaderHtml.resolvePath(dir, decode(src)), attrOf(m.value, "alt").orEmpty())
+                image(ReaderHtml.resolvePath(dir, decode(src)), attrOf(m.value, "alt").orEmpty())
             }
             body = hrefAttr.replace(body) { m ->
                 val href = m.groupValues[1]

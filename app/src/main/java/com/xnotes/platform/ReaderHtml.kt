@@ -34,6 +34,9 @@ object ReaderHtml {
     /** Reads a ZIP entry by path, or null when it is absent. */
     fun interface ZipRead { fun read(path: String): ByteArray? }
 
+    /** Where a book's pictures are asked for by the page, the path in the book following; the reader serves them. */
+    const val BOOK_IMAGES = "https://book.local/"
+
     /** Link scheme for Obsidian [[wikilinks]]; the reader resolves the target by file name. */
     const val WIKI_SCHEME = "nnotes-wiki"
 
@@ -168,11 +171,12 @@ object ReaderHtml {
      * [body] cut into parts of about [max] characters at chapter, slide or paragraph ends, so the
      * WebView lays out one part at a time. A whole book at once takes it minutes. Pictures' data is not
      * counted: it costs the layout nothing, and counted, a chapter's opening picture alone filled a part.
+     * Only a chapter longer than [longest] is cut.
      */
-    fun pageChunks(body: String, max: Int = 100_000): List<String> {
+    fun pageChunks(body: String, max: Int = 100_000, longest: Int = max): List<String> {
         // A document's parts each keep its page and look.
         Regex("^<article class=\"doc\"[^>]*>").find(body)?.takeIf { body.endsWith("</article>") }?.let { open ->
-            return pageChunks(body.substring(open.range.last + 1, body.length - "</article>".length), max).map { open.value + it + "</article>" }
+            return pageChunks(body.substring(open.range.last + 1, body.length - "</article>".length), max, longest).map { open.value + it + "</article>" }
         }
         val parts = ArrayList<String>()
         val pending = StringBuilder()
@@ -181,7 +185,7 @@ object ReaderHtml {
         for (section in body.split(Regex("(?=<section class=\"(?:chapter|slide)\")"))) {
             if (section.isBlank()) continue
             // A slide is drawn whole, so only flowing text is cut.
-            for (piece in if (section.startsWith("<section class=\"slide\"")) listOf(section) else cutLong(section, max)) {
+            for (piece in if (section.startsWith("<section class=\"slide\"")) listOf(section) else cutLong(section, longest)) {
                 val weight = textWeight(piece)
                 if (pending.isNotEmpty() && pendingWeight + weight > max) { parts += pending.toString(); pending.clear(); pendingWeight = 0 }
                 pending.append(piece)
@@ -484,7 +488,7 @@ object ReaderHtml {
             .doc th,.doc td{border-color:#999}
         """.trimIndent()
         // Only the reader's own script may run; anything a file brings stays inert.
-        val policy = "default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src " + (nonce?.let { "'nonce-$it'" } ?: "'none'")
+        val policy = "default-src 'none'; img-src data: $BOOK_IMAGES; style-src 'unsafe-inline'; script-src " + (nonce?.let { "'nonce-$it'" } ?: "'none'")
         return "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1${if (minScale) ", minimum-scale=1" else ""}\">" +
             "<meta http-equiv=\"Content-Security-Policy\" content=\"$policy\">" +
             "<style>$css\n$extraCss</style></head><body$bodyAttrs>$body</body></html>"
