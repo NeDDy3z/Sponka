@@ -325,4 +325,25 @@ class ReaderHtmlTest {
         assertTrue(hits[0].after.startsWith(" text"))
         assertEquals("a\u00a0b \u2014 \u00e9", ReaderHtml.plainText("a&nbsp;b &mdash; &#233;"))
     }
+
+    @Test
+    fun longPartsAreNotCutInsideATable() {
+        val table = "<table>" + "<tr><td><p>${"x".repeat(30)}</p></td></tr>".repeat(5) + "</table>"
+        val body = "<section class=\"chapter\">$table<p>after</p><p>end</p></section>"
+        val chunks = ReaderHtml.pageChunks(body, max = 40)
+        assertEquals(body, chunks.joinToString(""))
+        assertTrue(chunks[0], chunks[0].endsWith("</table><p>after</p>"))
+    }
+
+    @Test
+    fun searchKeepsPlaceWhenLowercaseGrowsTheText() {
+        val hits = ReaderHtml.search(listOf("<p>\u0130\u0130\u0130 ab</p>"), "ab")
+        assertEquals(listOf("ab"), hits.map { it.match })
+        assertEquals("caf\u00e9 \u00c9", ReaderHtml.plainText("caf&eacute; &Eacute;"))
+    }
+
+    @Test
+    fun docxStylesAreEscaped() {
+        assertEquals("font-family:x&quot;&gt;&lt;a;", ReaderHtml.cssOf(mapOf("font-family" to "x\"><a")))
+    }
 }

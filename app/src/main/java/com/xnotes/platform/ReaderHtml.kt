@@ -118,11 +118,17 @@ object ReaderHtml {
         }.toList()
     }
 
+    // shortcut: Latin-1 and common punctuation only, not every HTML5 name; add more if a real file shows one raw.
     private val entityNames = mapOf(
         "amp" to "&", "lt" to "<", "gt" to ">", "quot" to "\"", "apos" to "'", "nbsp" to "\u00a0", "emsp" to "\u2003", "ensp" to "\u2002",
         "thinsp" to "\u2009", "mdash" to "\u2014", "ndash" to "\u2013", "hellip" to "\u2026", "lsquo" to "\u2018", "rsquo" to "\u2019",
         "ldquo" to "\u201c", "rdquo" to "\u201d", "copy" to "\u00a9", "reg" to "\u00ae", "trade" to "\u2122", "shy" to "\u00ad",
-    )
+        "euro" to "\u20ac", "bull" to "\u2022", "laquo" to "\u00ab", "raquo" to "\u00bb", "sbquo" to "\u201a", "bdquo" to "\u201e",
+    ) + ("nbsp iexcl cent pound curren yen brvbar sect uml copy ordf laquo not shy reg macr deg plusmn sup2 sup3 acute micro para middot " +
+        "cedil sup1 ordm raquo frac14 frac12 frac34 iquest Agrave Aacute Acirc Atilde Auml Aring AElig Ccedil Egrave Eacute Ecirc Euml Igrave " +
+        "Iacute Icirc Iuml ETH Ntilde Ograve Oacute Ocirc Otilde Ouml times Oslash Ugrave Uacute Ucirc Uuml Yacute THORN szlig agrave aacute " +
+        "acirc atilde auml aring aelig ccedil egrave eacute ecirc euml igrave iacute icirc iuml eth ntilde ograve oacute ocirc otilde ouml " +
+        "divide oslash ugrave uacute ucirc uuml yacute thorn yuml").split(' ').mapIndexed { i, n -> n to (160 + i).toChar().toString() }
 
     /** [html]'s text as the page shows it: tags dropped, entities read. */
     fun plainText(html: String): String = html.replace(Regex("<[^>]*>"), "").replace(Regex("&(#x[0-9a-fA-F]+|#[0-9]+|[a-zA-Z]+);")) { m ->
@@ -144,7 +150,8 @@ object ReaderHtml {
         val hits = ArrayList<PartHit>()
         for ((part, html) in parts.withIndex()) {
             val text = plainText(html)
-            val low = text.lowercase()
+            // Per char, so the match's place in low is its place in text too.
+            val low = String(CharArray(text.length) { text[it].lowercaseChar() })
             var at = low.indexOf(q)
             var nth = 0
             while (at >= 0) {
@@ -203,19 +210,27 @@ object ReaderHtml {
         var start = 0
         var weighed = 0
         var weight = 0
-        var end = html.indexOf("</p>")
-        while (end >= 0 && left > max) {
-            val cut = end + 4
+        var depth = 0
+        for (m in tagToken.findAll(html)) {
+            if (left <= max) break
+            val name = m.groupValues[2].lowercase()
+            val closing = m.groupValues[1].isNotEmpty()
+            if (name in boxTags) { depth += if (closing) -1 else 1; continue }
+            // Only a paragraph outside any table, list or quote ends a piece, so none is split between parts.
+            if (!closing || name != "p" || depth > 0) continue
+            val end = m.range.first
+            val cut = m.range.last + 1
             if (cut >= html.length) break
             // A paragraph ending at or past [max] ends the piece.
             weight += textWeight(html.subSequence(weighed, end))
             weighed = end
             if (weight >= max) { out += html.substring(start, cut); start = cut; left -= weight; weight = 0 }
-            end = html.indexOf("</p>", cut)
         }
         out += html.substring(start)
         return out
     }
+
+    private val boxTags = setOf("table", "ul", "ol", "dl", "blockquote")
 
     private val dataUri = Regex("data:[^\"')\\s]+")
 
@@ -242,7 +257,7 @@ object ReaderHtml {
     // Moves the content into fixed-size pages, splitting lists, tables and long paragraphs between
     // them, then fits the pages to the screen; a scroll or a deck is left as it flows. It tells the
     // app through the title: "count|page", and "count|page|edge|n" when a turn runs past either end.
-    // The app drives it with R.go(page), R.turn(by), R.heading(n), R.find(text, nth) and R.inset(px).
+    // The app drives it with R.go(page), R.turn(by), R.heading(n), R.find(text, nth), R.anchor(id) and R.inset(px).
     private val PAGER_JS = """
         (function(){
         var b=document.body,de=document.documentElement,src=document.getElementById('src'),out=document.getElementById('pages');
@@ -340,6 +355,7 @@ object ReaderHtml {
           if(holder&&pages.indexOf(holder)>=0){go(pages.indexOf(holder));return;}
           el.scrollIntoView({block:'start'});scrollBy(0,-84);
         }
+        function anchor(id){reveal(document.getElementById(id));}
         function heading(k){reveal(document.querySelectorAll('h1:not(.r-cont),h2:not(.r-cont),h3:not(.r-cont)')[k]);}
         // The nth match of text, counted over the page's text as one string, so a match may cross tags.
         function find(q,n){
@@ -394,7 +410,7 @@ object ReaderHtml {
           else scrollTo(scrollX,frac*Math.max(0,de.scrollHeight-innerHeight));
         }
         function setInset(p){inset=p;de.style.paddingLeft=p+'px';relayout();}
-        window.R={go:go,turn:turn,heading:heading,find:find,inset:setInset};
+        window.R={go:go,turn:turn,heading:heading,find:find,anchor:anchor,inset:setInset};
         if(document.readyState==='complete')run();else addEventListener('load',run);
         })();
     """.trimIndent()
@@ -960,7 +976,7 @@ object ReaderHtml {
 
     private fun twipsPt(v: String?): String? = v?.toDoubleOrNull()?.let { String.format(java.util.Locale.ROOT, "%.1fpt", it / 20) }
 
-    internal fun cssOf(css: Map<String, String>) = css.entries.joinToString("") { "${it.key}:${it.value};" }
+    internal fun cssOf(css: Map<String, String>) = esc(css.entries.joinToString("") { "${it.key}:${it.value};" })
 
     /**
      * A document laid out on pages: its page size and margins in cm for the reader's pages, and
@@ -1244,7 +1260,7 @@ object ReaderHtml {
             para?.let { b ->
                 // Notes sit outside the slide, so they keep the reader's own type.
                 val css = if (inNotes) "" else textCss(spans.lastOrNull())
-                if (css.isEmpty()) b.append(esc(t)) else b.append("<span style=\"").append(css).append("\">").append(esc(t)).append("</span>")
+                if (css.isEmpty()) b.append(esc(t)) else b.append("<span style=\"").append(esc(css)).append("\">").append(esc(t)).append("</span>")
             }
         }, onEnd = { name ->
             when (name) {
@@ -1261,7 +1277,7 @@ object ReaderHtml {
                         css.append(textCss(paraStyle))
                         val bullet = lists > 0 && text.isNotBlank()
                         if (bullet) css.append(String.format(java.util.Locale.ROOT, "padding-left:%.1fem;text-indent:-1.1em;", 1.1 + (lists - 1) * 1.2))
-                        s.append(if (css.isEmpty()) "<p>" else "<p style=\"$css\">")
+                        s.append(if (css.isEmpty()) "<p>" else "<p style=\"${esc(css.toString())}\">")
                         if (bullet) s.append("• ")
                         s.append(if (text.isBlank()) "&nbsp;" else text).append("</p>")
                     }
@@ -1269,7 +1285,7 @@ object ReaderHtml {
                 }
                 "frame", "custom-shape", "rect", "ellipse" -> if (depth == shapeAt) shape?.let { s ->
                     if (s.isNotEmpty() || "background:" in shapeCss) {
-                        slide?.append(if (picture) "<div class=\"shape pic\" style=\"" else "<div class=\"shape\" style=\"")?.append(shapeCss)?.append("\">")?.append(s)?.append("</div>")
+                        slide?.append(if (picture) "<div class=\"shape pic\" style=\"" else "<div class=\"shape\" style=\"")?.append(esc(shapeCss))?.append("\">")?.append(s)?.append("</div>")
                     }
                     shape = null
                 }
@@ -1278,7 +1294,7 @@ object ReaderHtml {
                     number++
                     out.append("<section class=\"slide\"><div class=\"slide-no\">").append(esc(labels.slide(number, total))).append("</div>")
                     out.append("<div class=\"deck-slide\" style=\"aspect-ratio:").append(String.format(java.util.Locale.ROOT, "%.3f/%.3f", size.first, size.second))
-                        .append(";background:").append(background).append(";color:#000000\">").append(s).append("</div>")
+                        .append(";background:").append(esc(background)).append(";color:#000000\">").append(s).append("</div>")
                     if (notes.isNotEmpty()) out.append("<div class=\"notes\"><b>").append(esc(labels.notes)).append("</b>").append(notes).append("</div>")
                     out.append("</section>")
                     slide = null
@@ -1560,7 +1576,7 @@ object ReaderHtml {
             })
 
             val bg = background ?: layout?.background ?: master?.background ?: "#ffffff"
-            val ink = colors["tx1"]?.let { "#" + it.takeLast(6) } ?: "#000000"
+            val ink = colors["tx1"]?.let { "#" + esc(it.takeLast(6)) } ?: "#000000"
             val out = StringBuilder("<div class=\"deck-slide\" style=\"aspect-ratio:$width/$height;background:$bg;color:$ink\">")
             val loose = StringBuilder()
             for (b in blocks) {
