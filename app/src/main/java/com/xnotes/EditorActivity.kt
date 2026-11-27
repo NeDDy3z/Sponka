@@ -206,7 +206,7 @@ class EditorActivity : ComponentActivity() {
             }
             var update by remember { mutableStateOf<com.xnotes.update.UpdateChecker.Status.Available?>(null) }
             LaunchedEffect(ready) {
-                if (!ready || rebuilt || !ed.preferences.checkUpdatesOnStartup) return@LaunchedEffect
+                if (!BuildConfig.SELF_UPDATE || !ready || rebuilt || !ed.preferences.checkUpdatesOnStartup) return@LaunchedEffect
                 val version = runCatching { packageManager.getPackageInfo(packageName, 0).versionName ?: "" }.getOrDefault("")
                 update = com.xnotes.update.UpdateChecker.check(version).getOrNull() as? com.xnotes.update.UpdateChecker.Status.Available
             }

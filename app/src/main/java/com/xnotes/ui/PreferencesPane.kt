@@ -413,9 +413,11 @@ fun PreferencesPane(
                 Box(Modifier.searchAnchor(stringResource(R.string.search_keywords_permissions))) { Column(verticalArrangement = Arrangement.spacedBy(4.dp)) { PermissionsSection(syncOn = CloudServices.byId(prefs.cloudService) != null) } }
                 if (all) HorizontalDivider(color = palette.border.toComposeColor())
                 Box(Modifier.searchAnchor(stringResource(R.string.search_keywords_port))) { PortSection(editor) }
-                if (all) HorizontalDivider(color = palette.border.toComposeColor())
-                Box(Modifier.searchAnchor(stringResource(R.string.search_keywords_update)).sectionAnchor(stringResource(R.string.pref_updates))) {
-                    UpdateSection(prefs.checkUpdatesOnStartup) { updateHome(prefs.copy(checkUpdatesOnStartup = it)) }
+                if (com.xnotes.BuildConfig.SELF_UPDATE) {
+                    if (all) HorizontalDivider(color = palette.border.toComposeColor())
+                    Box(Modifier.searchAnchor(stringResource(R.string.search_keywords_update)).sectionAnchor(stringResource(R.string.pref_updates))) {
+                        UpdateSection(prefs.checkUpdatesOnStartup) { updateHome(prefs.copy(checkUpdatesOnStartup = it)) }
+                    }
                 }
                 if (confirmOnboarding) {
                     SheetDialog(

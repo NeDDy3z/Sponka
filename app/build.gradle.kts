@@ -92,6 +92,19 @@ android {
         }
     }
 
+    // Play forbids self-updating, so the play build drops the GitHub updater and its install permission.
+    flavorDimensions += "store"
+    productFlavors {
+        create("github") {
+            dimension = "store"
+            buildConfigField("boolean", "SELF_UPDATE", "true")
+        }
+        create("play") {
+            dimension = "store"
+            buildConfigField("boolean", "SELF_UPDATE", "false")
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -99,6 +112,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     // Lists every values-* translation in the manifest so Android 13+ offers a per-app language.
