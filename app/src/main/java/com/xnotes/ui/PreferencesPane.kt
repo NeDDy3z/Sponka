@@ -392,7 +392,7 @@ fun PreferencesPane(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
                     ) {
-                        Icon(c.icon, null, tint = palette.textDim.toComposeColor(), modifier = Modifier.size(22.dp))
+                        Icon(c.icon, null, tint = palette.accent.toComposeColor(), modifier = Modifier.size(22.dp))
                         Column {
                             Text(stringResource(c.title), color = palette.text.toComposeColor(), fontSize = 16.sp)
                             Text(stringResource(c.summary), color = palette.textDim.toComposeColor(), fontSize = 12.sp)
@@ -1573,7 +1573,7 @@ private fun PrefSectionsPanel(titles: List<String>, current: String?, icons: Lis
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                icons.getOrNull(i)?.let { Icon(it, null, tint = color, modifier = Modifier.size(18.dp)) }
+                icons.getOrNull(i)?.let { Icon(it, null, tint = (if (selected) palette.selectionForeground else palette.accent).toComposeColor(), modifier = Modifier.size(18.dp)) }
                 Text(
                     title,
                     color = color,
